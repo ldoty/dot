@@ -43,9 +43,10 @@ function split(d) {
 const docKey = (doc) => `DOC#${doc}#STATE`;
 const uid = () => 'x' + Math.random().toString(36).slice(2, 9);
 
-function put(item, condition) {
+function put(item, condition, values) {
   const args = ['put-item', '--item', JSON.stringify(item)];
   if (condition) args.push('--condition-expression', condition);
+  if (values) args.push('--expression-attribute-values', JSON.stringify(values));
   try {
     aws(...args);
     return true;
@@ -85,16 +86,43 @@ for (const [doc, st] of Object.entries(docs)) {
   console.log(ok ? `${doc}: created from ${legacy ? 'legacy STATE' : 'DEFAULTS'}` : `${doc}: already exists, left as is`);
 }
 
-// --- default tag ---------------------------------------------------------------
-if (!get('TAG#default')) {
-  const shared = JSON.parse(get(docKey('shared')).state.S);
-  delete shared.version; delete shared.edited; delete shared.updated;
+// --- Tags: one "default" per doc ---------------------------------------------------------
+// Tags are TAG#<doc>#<name>. Before 2026-10-02 they were TAG#<name> and Shared-only: copy those over.
+function query(prefix) {
+  const out = execFileSync('aws', ['dynamodb', 'query', '--table-name', TABLE, '--output', 'json',
+    '--key-condition-expression', 'pk = :pk AND begins_with(sk, :p)',
+    '--expression-attribute-values', JSON.stringify({ ':pk': S(PK), ':p': S(prefix) })], { env, encoding: 'utf8' });
+  return JSON.parse(out).Items;
+}
+const oldTags = query('TAG#').filter((t) => t.sk.S.split('#').length === 2);
+for (const t of oldTags) {
+  const name = t.sk.S.slice(4);
+  if (put({ pk: S(PK), sk: S(`TAG#shared#${name}`), versionId: t.versionId, updatedBy: S('migrate') }, 'attribute_not_exists(pk)')) {
+    console.log(`tag ${name}: copied to TAG#shared#${name}`);
+  }
+}
+if (process.argv.includes('--cleanup')) {
+  for (const t of oldTags) {
+    aws('delete-item', '--key', JSON.stringify({ pk: S(PK), sk: t.sk }));
+    console.log(`old tag row ${t.sk.S} deleted`);
+  }
+}
+
+// Any doc without a default: save its working copy as "Starting point", tag it default, and
+// mark the working copy as that version so the page opens on it without an "unsaved" banner.
+for (const doc of ['shared', ...PEOPLE]) {
+  if (get(`TAG#${doc}#default`)) { console.log(`${doc}: default tag already exists`); continue; }
+  const item = get(docKey(doc));
+  const st = JSON.parse(item.state.S);
+  const snap = { ...st };
+  delete snap.version; delete snap.edited; delete snap.updated;
   const id = uid();
-  put({ pk: S(PK), sk: S(`DOC#shared#VERSION#${id}`), name: S('Starting point'), savedAt: N(Date.now()), state: S(JSON.stringify(shared)), updatedBy: S('seed') });
-  put({ pk: S(PK), sk: S('TAG#default'), versionId: S(id), updatedBy: S('seed') });
-  console.log(`Shared version "Starting point" (${id}) tagged default`);
-} else {
-  console.log('default tag already exists, left as is');
+  put({ pk: S(PK), sk: S(`DOC#${doc}#VERSION#${id}`), name: S('Starting point'), savedAt: N(Date.now()), state: S(JSON.stringify(snap)), updatedBy: S('seed') });
+  put({ pk: S(PK), sk: S(`TAG#${doc}#default`), versionId: S(id), updatedBy: S('seed') });
+  const rev = Number(item.rev.N);
+  const marked = put({ ...item, state: S(JSON.stringify({ ...st, version: 'Starting point', edited: false })), rev: N(rev + 1) },
+    'rev = :rev', { ':rev': N(rev) });
+  console.log(`${doc}: "Starting point" (${id}) tagged default${marked ? ', working copy marked' : ' (working copy changed meanwhile; left as is)'}`);
 }
 
 // --- Import from a browser export ----------------------------------------------

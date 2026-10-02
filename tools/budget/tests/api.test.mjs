@@ -11,11 +11,11 @@ test('GET /all returns every doc, version and tag', async () => {
   assert.deepEqual(Object.keys(body.docs).sort(), ['Amber', 'Luke', 'shared']);
   assert.equal(body.docs.shared.rev, 1);
   assert.deepEqual(body.versions.shared.map((v) => v.name), ['Starting point']);
-  assert.deepEqual(body.tags, [{ name: 'default', versionId: 'v1' }]);
+  assert.deepEqual(body.tags, { shared: [{ name: 'default', versionId: 'v1' }], Luke: [], Amber: [] });
 });
 
 test('every route refuses missing, forged, wrong-group and other-tool tokens', async () => {
-  for (const [m, p] of [['GET', '/all'], ['PUT', '/docs/shared/state'], ['PUT', '/tags/default'], ['DELETE', '/docs/Luke/versions/v1']]) {
+  for (const [m, p] of [['GET', '/all'], ['PUT', '/docs/shared/state'], ['PUT', '/docs/shared/tags/default'], ['DELETE', '/docs/Luke/versions/v1']]) {
     assert.equal((await call(m, p, {}, null)).status, 401, `${m} ${p} no token`);
     assert.equal((await call(m, p, {}, forgedToken({ clientId: CLIENT_ID, group: 'family_budget' }))).status, 401, `${m} ${p} forged`);
     assert.equal((await call(m, p, {}, accessToken({ clientId: CLIENT_ID, group: 'recipes' }))).status, 403, `${m} ${p} wrong group`);
@@ -43,7 +43,7 @@ test('docs are independent: saving Luke doesn’t touch Shared or Amber', async 
 test('rejects unknown docs, bad ids and bad tag names', async () => {
   assert.equal((await call('PUT', '/docs/Bob/state', { state: {}, rev: 1 })).status, 400);
   assert.equal((await call('PUT', '/docs/Luke/versions/bad%20id', { name: 'x', state: {} })).status, 400);
-  assert.equal((await call('PUT', '/tags/Bad Tag', { versionId: 'v1' })).status, 400);
+  assert.equal((await call('PUT', '/docs/shared/tags/Bad Tag', { versionId: 'v1' })).status, 400);
 });
 
 test('versions are per doc', async () => {
@@ -54,9 +54,9 @@ test('versions are per doc', async () => {
 });
 
 test('tags must point at an existing shared version', async () => {
-  assert.equal((await call('PUT', '/tags/stretch', { versionId: 'nope' })).status, 400);
-  assert.equal((await call('PUT', '/tags/stretch', { versionId: 'v1' })).status, 200);
-  assert.equal(table.get(PK, 'TAG#stretch').versionId, 'v1');
+  assert.equal((await call('PUT', '/docs/shared/tags/stretch', { versionId: 'nope' })).status, 400);
+  assert.equal((await call('PUT', '/docs/shared/tags/stretch', { versionId: 'v1' })).status, 200);
+  assert.equal(table.get(PK, 'TAG#shared#stretch').versionId, 'v1');
 });
 
 test('a tagged shared version can’t be deleted; untagged can', async () => {
@@ -69,13 +69,30 @@ test('a tagged shared version can’t be deleted; untagged can', async () => {
 });
 
 test('the default tag can’t be deleted; others can', async () => {
-  assert.equal((await call('DELETE', '/tags/default')).status, 400);
-  await call('PUT', '/tags/stretch', { versionId: 'v1' });
-  assert.equal((await call('DELETE', '/tags/stretch')).status, 200);
+  assert.equal((await call('DELETE', '/docs/shared/tags/default')).status, 400);
+  await call('PUT', '/docs/shared/tags/stretch', { versionId: 'v1' });
+  assert.equal((await call('DELETE', '/docs/shared/tags/stretch')).status, 200);
 });
 
 test('GET /defaults returns the combined starting numbers', async () => {
   const { status, body } = await call('GET', '/defaults');
   assert.equal(status, 200);
   assert.ok(body.state.people.Luke);
+});
+
+test('tags are per doc: a personal tag must point at that person’s version', async () => {
+  await call('PUT', '/docs/Luke/versions/lv1', { name: 'Lean', savedAt: 5, state: { income: [] } });
+  assert.equal((await call('PUT', '/docs/Luke/tags/default', { versionId: 'v1' })).status, 400, 'a Shared version id is refused');
+  assert.equal((await call('PUT', '/docs/Luke/tags/default', { versionId: 'lv1' })).status, 200);
+  const { body } = await call('GET', '/all');
+  assert.deepEqual(body.tags.Luke, [{ name: 'default', versionId: 'lv1' }]);
+  assert.deepEqual(body.tags.Amber, []);
+  assert.deepEqual(body.tags.shared, [{ name: 'default', versionId: 'v1' }]);
+});
+
+test('a tagged personal version can’t be deleted, and personal default can’t be removed', async () => {
+  await call('PUT', '/docs/Amber/versions/av1', { name: 'Plan', savedAt: 5, state: { income: [] } });
+  await call('PUT', '/docs/Amber/tags/default', { versionId: 'av1' });
+  assert.equal((await call('DELETE', '/docs/Amber/versions/av1')).status, 409);
+  assert.equal((await call('DELETE', '/docs/Amber/tags/default')).status, 400);
 });

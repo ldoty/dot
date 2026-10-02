@@ -8,8 +8,13 @@ const HTML = readFileSync(new URL('../../web/index.html', import.meta.url), 'utf
   .replace('<script src="family-auth.js"></script>', '');
 const API = 'https://api.test';
 export const wait = (ms = 0) => new Promise((r) => setTimeout(r, ms));
-/** Edits save ~0.9s after the last change */
-export const saved = () => wait(1000);
+let inFlight = 0;
+/** Edits save ~0.9s after the last change: wait for that, then for every request to finish */
+export async function saved() {
+  await wait(1000);
+  for (let i = 0; inFlight > 0 && i < 200; i++) await wait(10);
+  await wait(10);
+}
 
 export async function openBudget(hash = '#shared') {
   const requests = [];
@@ -23,8 +28,13 @@ export async function openBudget(hash = '#shared') {
         if (url === 'config.json') return json(200, { apiUrl: API });
         const method = o.method || 'GET', path = url.slice(API.length);
         requests.push(`${method} ${path}`);
-        const r = await call(method, path, o.body ? JSON.parse(o.body) : undefined);
-        return json(r.status, r.body);
+        inFlight++;
+        try {
+          const r = await call(method, path, o.body ? JSON.parse(o.body) : undefined);
+          return json(r.status, r.body);
+        } finally {
+          inFlight--;
+        }
       };
     },
   });

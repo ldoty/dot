@@ -1,15 +1,16 @@
 // Budget API. The household has three budgets ("docs"): shared, Luke, Amber. Each has its own
-// working copy and saved versions. Tags name shared versions; personal docs follow a tag.
+// working copy, saved versions and tags (names for versions; "default" opens on load).
+// Personal docs also follow a Shared tag for their share of the shared costs.
 //
-//   GET    /all                       -> { docs: {doc: {state, rev}}, versions: {doc: [...]}, tags: [{name, versionId}] }
+//   GET    /all                       -> { docs: {doc: {state, rev}}, versions: {doc: [...]}, tags: {doc: [{name, versionId}]} }
 //   GET    /defaults                  -> { state }   the household's starting numbers (Reset)
 //   PUT    /docs/{doc}/state          { state, rev } -> { rev }   409 + current { state, rev } if rev is stale
 //   PUT    /docs/{doc}/versions/{id}  { name, savedAt, state }
 //   DELETE /docs/{doc}/versions/{id}  409 if a tag points at it
-//   PUT    /tags/{name}               { versionId }  (a shared version)
-//   DELETE /tags/{name}               "default" can't be deleted
+//   PUT    /docs/{doc}/tags/{name}    { versionId }  (a version of that doc)
+//   DELETE /docs/{doc}/tags/{name}    "default" can't be deleted
 //
-// Rows (pk = HOUSEHOLD#<id>): DOC#<doc>#STATE, DOC#<doc>#VERSION#<id>, TAG#<name>, DEFAULTS.
+// Rows (pk = HOUSEHOLD#<id>): DOC#<doc>#STATE, DOC#<doc>#VERSION#<id>, TAG#<doc>#<name>, DEFAULTS.
 //
 // Auth is checked twice. API Gateway's JWT authorizer runs first, but this handler
 // does not trust it: it re-verifies the token's signature against the pool's JWKS
@@ -54,11 +55,13 @@ async function queryAll(prefix) {
 }
 
 async function getAll() {
-  const out = { docs: {}, versions: Object.fromEntries(DOCS.map((d) => [d, []])), tags: [] };
+  const perDoc = () => Object.fromEntries(DOCS.map((d) => [d, []]));
+  const out = { docs: {}, versions: perDoc(), tags: perDoc() };
   for (const i of await queryAll('')) {
     const [kind, doc, sub, id] = i.sk.split('#');
-    if (kind === 'TAG') out.tags.push({ name: i.sk.slice(4), versionId: i.versionId });
-    if (kind !== 'DOC' || !DOCS.includes(doc)) continue;
+    if (!DOCS.includes(doc)) continue;
+    if (kind === 'TAG' && sub) out.tags[doc].push({ name: sub, versionId: i.versionId });
+    if (kind !== 'DOC') continue;
     if (sub === 'STATE') out.docs[doc] = { state: JSON.parse(i.state), rev: i.rev };
     if (sub === 'VERSION') out.versions[doc].push({ id, name: i.name, savedAt: i.savedAt, state: JSON.parse(i.state) });
   }
@@ -100,20 +103,18 @@ async function putVersion(doc, id, body, user) {
 }
 
 async function deleteVersion(doc, id) {
-  if (doc === 'shared') {
-    const tagged = (await queryAll('TAG#')).filter((t) => t.versionId === id).map((t) => t.sk.slice(4));
-    if (tagged.length) return json(409, { error: 'tagged', tags: tagged });
-  }
+  const tagged = (await queryAll(`TAG#${doc}#`)).filter((t) => t.versionId === id).map((t) => t.sk.split('#')[2]);
+  if (tagged.length) return json(409, { error: 'tagged', tags: tagged });
   await db.send(new DeleteCommand({ TableName: TABLE, Key: { pk: PK, sk: versionKey(doc, id) } }));
   return json(200, { id });
 }
 
-async function putTag(name, body, user) {
+async function putTag(doc, name, body, user) {
   const versionId = body.versionId;
-  if (typeof versionId !== 'string' || !(await getItem(versionKey('shared', versionId)))) return json(400, { error: 'no such shared version' });
+  if (typeof versionId !== 'string' || !(await getItem(versionKey(doc, versionId)))) return json(400, { error: `no such ${doc} version` });
   await db.send(new PutCommand({
     TableName: TABLE,
-    Item: { pk: PK, sk: `TAG#${name}`, versionId, updatedAt: new Date().toISOString(), updatedBy: user },
+    Item: { pk: PK, sk: `TAG#${doc}#${name}`, versionId, updatedAt: new Date().toISOString(), updatedBy: user },
   }));
   return json(200, { name, versionId });
 }
@@ -157,11 +158,11 @@ export const handler = async (event) => {
       return putVersion(doc, id, body, user);
     case 'DELETE /docs/{doc}/versions/{id}':
       return deleteVersion(doc, id);
-    case 'PUT /tags/{name}':
-      return putTag(name, body, user);
-    case 'DELETE /tags/{name}':
+    case 'PUT /docs/{doc}/tags/{name}':
+      return putTag(doc, name, body, user);
+    case 'DELETE /docs/{doc}/tags/{name}':
       if (name === 'default') return json(400, { error: 'default can’t be deleted' });
-      await db.send(new DeleteCommand({ TableName: TABLE, Key: { pk: PK, sk: `TAG#${name}` } }));
+      await db.send(new DeleteCommand({ TableName: TABLE, Key: { pk: PK, sk: `TAG#${doc}#${name}` } }));
       return json(200, { name });
     default:
       return json(404, { error: 'no route' });

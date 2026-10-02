@@ -14,7 +14,7 @@ export const memberToken = () => accessToken({ clientId: CLIENT_ID, group: 'fami
 
 const callApi = caller(handler, [
   'GET /all', 'GET /defaults', 'PUT /docs/{doc}/state', 'PUT /docs/{doc}/versions/{id}',
-  'DELETE /docs/{doc}/versions/{id}', 'PUT /tags/{name}', 'DELETE /tags/{name}',
+  'DELETE /docs/{doc}/versions/{id}', 'PUT /docs/{doc}/tags/{name}', 'DELETE /docs/{doc}/tags/{name}',
 ]);
 
 /** Calls the handler like API Gateway would, as a family_budget member unless a token is given. */
@@ -31,12 +31,13 @@ export const personDoc = (p, follows = 'default') => ({
   follows,
 });
 
-/** Resets the table to: three docs at rev 1, one shared version "Starting point" tagged default. */
+/** Resets the table to: three docs at rev 1, one shared version "Starting point" tagged default.
+ *  The shared working copy ($2,000) differs from it and isn't saved, so Shared opens with the unsaved banner. */
 export function seed({ working = sharedDoc(2000) } = {}) {
   table.clear();
   const doc = (d, state) => table.put({ pk: PK, sk: `DOC#${d}#STATE`, state: JSON.stringify(state), rev: 1 });
   doc('shared', working); doc('Luke', personDoc('Luke')); doc('Amber', personDoc('Amber'));
   table.put({ pk: PK, sk: 'DOC#shared#VERSION#v1', name: 'Starting point', savedAt: 1, state: JSON.stringify(sharedDoc(1000)) });
-  table.put({ pk: PK, sk: 'TAG#default', versionId: 'v1' });
+  table.put({ pk: PK, sk: 'TAG#shared#default', versionId: 'v1' });
   table.put({ pk: PK, sk: 'DEFAULTS', state: JSON.stringify({ ...sharedDoc(1000), people: { Luke: personDoc('Luke'), Amber: personDoc('Amber') } }) });
 }

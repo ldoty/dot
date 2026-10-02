@@ -13,7 +13,7 @@ const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 test('every API route refuses requests without a token', async () => {
   const routes = [['GET', '/all'], ['GET', '/defaults'], ['PUT', '/docs/shared/state'], ['PUT', '/docs/Luke/versions/x1'],
-    ['DELETE', '/docs/Amber/versions/x1'], ['PUT', '/tags/x'], ['DELETE', '/tags/x']];
+    ['DELETE', '/docs/Amber/versions/x1'], ['PUT', '/docs/shared/tags/x'], ['DELETE', '/docs/Luke/tags/x']];
   for (const [method, path] of routes) {
     const res = await fetch(config.apiUrl + path, { method });
     assert.equal(res.status, 401, `${method} ${path}`);
@@ -47,9 +47,11 @@ test('the real handler code reads the live table (GET /all), read-only', async (
   assert.equal(res.statusCode, 200);
   const all = JSON.parse(res.body);
   assert.deepEqual(Object.keys(all.docs).sort(), ['Amber', 'Luke', 'shared']);
-  assert.ok(all.tags.some((t) => t.name === 'default'), 'default tag exists');
-  const def = all.tags.find((t) => t.name === 'default');
-  assert.ok(all.versions.shared.some((v) => v.id === def.versionId), 'default points at a real version');
+  for (const doc of ['shared', 'Luke', 'Amber']) {
+    const def = all.tags[doc].find((t) => t.name === 'default');
+    assert.ok(def, `${doc} has a default tag`);
+    assert.ok(all.versions[doc].some((v) => v.id === def.versionId), `${doc} default points at one of its versions`);
+  }
 });
 
 test('the deployed Lambda loads (its bundle is complete) and does its own token check', async () => {

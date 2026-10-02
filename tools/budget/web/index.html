@@ -210,6 +210,10 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
 .ve-replace { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; display: grid; gap: 2px; justify-items: start }
 .ve-replace button { border: 0; background: none; padding: 0; font-size: 13px; color: var(--pool); text-decoration: underline; text-underline-offset: 2px }
 .ve-replace button.arm { color: var(--bad); text-decoration: none; font-weight: 700 }
+.resume { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -8px 0 22px }
+.resume span { flex: 1 1 260px }
+.resume button { padding: 5px 12px; font-size: 13px }
+.resume button.arm { color: var(--bad); border-color: var(--bad) }
 .cur .v-update { margin-left: 6px; padding: 3px 10px; font-size: 12px }
 .follow { display: grid; gap: 4px; width: 100%; font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted) }
 .follow select { text-transform: none; letter-spacing: 0; font: 14px var(--body); color: var(--ink) }
@@ -255,7 +259,9 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   // revs guard against overwriting someone else's edit. tags name saved Shared versions; each
   // personal doc follows a tag, and its share of costs comes from the version that tag points to.
   var DOCS = ["shared", "Luke", "Amber"];
-  var cfg, docs = {}, revs = {}, versions = { shared: [], Luke: [], Amber: [] }, tags = [];
+  var cfg, docs = {}, revs = {}, versions = { shared: [], Luke: [], Amber: [] }, tags = { shared: [], Luke: [], Amber: [] };
+  // Tabs that kept unsaved work on open instead of switching to their default version
+  var resumed = {};
   function label(doc) { return doc === "shared" ? "Shared" : doc + "’s budget"; }
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   var app = document.getElementById("app");
@@ -302,11 +308,14 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   }
 
   // Tags
-  function tagFor(name) { return tags.filter(function (t) { return t.name === name; })[0]; }
-  function tagsOn(versionId) { return tags.filter(function (t) { return t.versionId === versionId; }).map(function (t) { return t.name; }).sort(); }
-  function sharedVersion(id) { return versions.shared.filter(function (v) { return v.id === id; })[0]; }
+  // Tags are per doc: each tab names its own saved versions ("default" opens on load)
+  function tagList(doc) { return tags[doc] || []; }
+  function tagFor(doc, name) { return tagList(doc).filter(function (t) { return t.name === name; })[0]; }
+  function tagsOn(doc, versionId) { return tagList(doc).filter(function (t) { return t.versionId === versionId; }).map(function (t) { return t.name; }).sort(); }
+  function versionIn(doc, id) { return versions[doc].filter(function (v) { return v.id === id; })[0]; }
+  function sharedVersion(id) { return versionIn("shared", id); }
   // The Shared version a personal doc follows, or null if its tag points nowhere yet
-  function followed(pd) { var t = tagFor(pd.follows) || tagFor("default"); return t ? sharedVersion(t.versionId) || null : null; }
+  function followed(pd) { var t = tagFor("shared", pd.follows) || tagFor("shared", "default"); return t ? sharedVersion(t.versionId) || null : null; }
   function cleanTag(s) { return s.trim().toLowerCase().replace(/\s+/g, "-"); }
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
   function uid() { return "x" + Math.random().toString(36).slice(2, 9); }
@@ -439,19 +448,22 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   // Each tab saves its own versions. Shared versions can also be tagged in the same step.
   function versionsPanel(shared) {
     return '<div class="panel"><h3>' + (shared ? "Shared versions" : "Saved versions") + "</h3>" +
-      '<div class="v-save' + (shared ? " with-tag" : "") + '"><input id="v-name" placeholder="Name this version" aria-label="Version name" maxlength="60">' +
-      (shared ? '<input id="v-tag" list="tag-names" placeholder="Tag it (optional)" aria-label="Tag this version" maxlength="30"><datalist id="tag-names"></datalist>' : "") +
+      '<div class="v-save with-tag"><input id="v-name" placeholder="Name this version" aria-label="Version name" maxlength="60">' +
+      '<input id="v-tag" list="tag-names" placeholder="Tag it (optional)" aria-label="Tag this version" maxlength="30"><datalist id="tag-names"></datalist>' +
       '<button class="primary" id="v-save">Save</button></div>' +
       '<p class="cur" id="v-cur"></p><ul class="v-list" id="v-list"></ul></div>';
   }
-  var tagsPanel = '<div class="panel"><h3>Tags</h3><ul class="t-list" id="t-list"></ul>' +
-    '<p class="split-foot">Luke’s and Amber’s tabs use the Shared version their tag points to. Edits here reach them only once saved and tagged.</p></div>';
+  function tagsPanel(doc) {
+    return '<div class="panel"><h3>Tags</h3><ul class="t-list" id="t-list"></ul><p class="split-foot">' +
+      (doc === "shared" ? "The version tagged default opens when the page loads. Luke’s and Amber’s tabs use the Shared version their tag points to, so edits here reach them only once saved and tagged."
+        : "The version tagged default opens when the page loads. Tag other versions to find them quickly.") + "</p></div>";
+  }
   var barsPanel = '<div class="panel"><h3>Where the money goes</h3><div class="bars" id="bars"></div></div>';
 
   function sharedBody() {
     return '<div class="tiles">' + tile("Monthly total", "k-total") + tile("Mortgage payment", "k-mort") + tile("Luke pays", "k-luke") + tile("Amber pays", "k-amber") + "</div>" +
       '<div class="layout"><div>' + mortgageHtml() + docs.shared.categories.map(function (c, i, a) { return catHtml(c, false, i, a.length); }).join("") + addCatBtn + "</div>" +
-      '<aside class="rail">' + versionsPanel(true) + tagsPanel +
+      '<aside class="rail">' + versionsPanel(true) + tagsPanel("shared") +
       '<div class="panel"><h3>Split</h3><div class="split-range">' +
       '<div class="ends"><span id="s-luke-pct"></span><span id="s-amber-pct"></span></div>' +
       '<input type="range" id="split-r" min="0" max="100" step="5" value="' + docs.shared.split + '" aria-label="Luke’s share of shared costs">' +
@@ -461,7 +473,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   }
   function personBody(p) {
     var pp = docs[p];
-    var opts = tags.map(function (t) { return t.name; }).sort().map(function (n) { return "<option" + (n === pp.follows ? " selected" : "") + ">" + esc(n) + "</option>"; }).join("");
+    var opts = tagOptions(pp.follows);
     return '<div class="tiles">' + tile("Take-home income", "k-inc") + tile("Spending", "k-out") + tile("Saving & investing", "k-save") + tile("Left over", "k-left") + "</div>" +
       '<div class="layout"><div>' +
       '<section class="cat" data-cat="inc-' + p + '"><div class="cat-head"><h2>Income</h2><div class="tot"><span id="t-inc"></span> <small>/ mo</small></div></div>' +
@@ -469,7 +481,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       (pp.income.length ? "" : '<p class="empty">Add take-home pay to see what’s left over each month.</p>') +
       '<button class="add" data-add="inc-' + p + '">+ Add income</button></section>' +
       pp.categories.map(function (c, i, a) { return catHtml(c, true, i, a.length); }).join("") + addCatBtn + "</div>" +
-      '<aside class="rail">' + versionsPanel(false) +
+      '<aside class="rail">' + versionsPanel(false) + tagsPanel(p) +
       '<div class="panel"><h3>From the shared budget</h3><div class="from-shared">' +
       '<label class="follow">Following tag<select id="follow">' + (opts || "<option>default</option>") + "</select></label>" +
       '<p class="split-foot" id="p-follow"></p><span class="big-sm" id="p-share"></span><p class="split-foot" id="p-share-note"></p>' +
@@ -486,6 +498,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       '<div class="mode" role="group" aria-label="Theme"><button data-mode="light">Daylight</button><button data-mode="dark">Evening</button><button data-mode="auto">Auto</button></div>' +
       '<button id="reset">Reset</button><button id="signout">Sign out</button></div></header>' +
       '<nav class="tabs" role="tablist" aria-label="Budgets">' + tabs + "</nav>" +
+      (resumed[tab] ? resumeBanner() : "") +
       (tab === "shared" ? sharedBody() : personBody(tab)) + "</div>";
     totals();
     renderVersions();
@@ -513,7 +526,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
         var P = personSummary(pv, fv ? sharedSummary(normalizeShared(clone(fv.state))).ctx : { price: 0, shares: {} });
         meta = '<span class="v-meta">Left over ' + money.format(P.left) + "/mo · follows " + esc(pv.follows) + "</span>";
       }
-      var vt = doc === "shared" ? tagsOn(v.id) : [];
+      var vt = tagsOn(doc, v.id);
       return '<li class="v-item' + (v.name === d.version ? " on" : "") + '"><span class="v-name">' + esc(v.name) +
         (vt.length ? '<span class="v-tags">' + vt.map(function (n) { return '<span class="tagchip">' + esc(n) + "</span>"; }).join("") + "</span>" : "") + "</span>" +
         '<span class="v-acts"><button data-vload="' + esc(v.id) + '">Load</button><button data-vedit="' + esc(v.id) + '" aria-label="Edit ' + esc(v.name) + '">Edit</button><button class="v-del" data-vdel="' + esc(v.id) + '" aria-label="Delete ' + esc(v.name) + '">Delete</button></span>' +
@@ -527,13 +540,12 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   function versionEditor(v, doc) {
     var html = '<li class="v-item v-edit" data-veditor="' + esc(v.id) + '">' +
       '<label class="v-lbl" for="ve-name">Name</label><input id="ve-name" value="' + esc(v.name) + '" maxlength="60">';
-    if (doc === "shared") {
-      var vt = tagsOn(v.id);
-      html += '<span class="v-lbl">Tags</span><div class="ve-tags">' + (vt.map(function (n) {
+    var vt = tagsOn(doc, v.id);
+    html += '<span class="v-lbl">Tags</span><div class="ve-tags">' + (vt.map(function (n) {
         return '<span class="tagchip">' + esc(n) + (n === "default" ? "" : '<button data-vuntag="' + esc(n) + '" aria-label="Remove tag ' + esc(n) + '">&times;</button>') + "</span>";
       }).join("") || '<span class="ve-none">No tags</span>') + "</div>" +
         '<div class="ve-add"><input id="ve-tag" list="tag-names" placeholder="Tag name" aria-label="Add a tag" maxlength="30"><button data-vaddtag="' + esc(v.id) + '">Add tag</button></div>';
-    } else {
+    if (doc !== "shared") {
       var follows = normalizePerson(clone(v.state)).follows;
       html += '<label class="v-lbl" for="ve-follow">Follows tag</label><select id="ve-follow">' + tagOptions(follows) + "</select>" +
         '<p class="ve-hint" id="ve-follow-hint">' + esc(followHint(follows)) + "</p>";
@@ -543,13 +555,14 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       '<div class="ve-replace"><button data-vreplace="' + esc(v.id) + '">Replace with current numbers</button>' +
       '<p class="ve-hint">Overwrites this version with what’s on screen now.</p></div></li>';
   }
+  // Shared tags a personal budget can follow
   function tagOptions(selected) {
-    var names = tags.map(function (t) { return t.name; });
+    var names = tagList("shared").map(function (t) { return t.name; });
     if (selected && names.indexOf(selected) < 0) names.push(selected);
     return names.sort().map(function (n) { return "<option" + (n === selected ? " selected" : "") + ">" + esc(n) + "</option>"; }).join("");
   }
   function followHint(name) {
-    var t = tagFor(name), v = t && sharedVersion(t.versionId);
+    var t = tagFor("shared", name), v = t && sharedVersion(t.versionId);
     return v ? "Uses the Shared version “" + v.name + "”" : "No Shared version is tagged " + name + "; falls back to default";
   }
   function putVersion(doc, v) {
@@ -592,12 +605,12 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       setStatus("Updated “" + old.name + "” with the current numbers" + (fans.length ? ". " + fans.join(" & ") + (fans.length > 1 ? " follow it." : " follows it.") : ""));
     }).catch(function () { setStatus("Couldn’t update the version. Try again."); });
   }
-  function deleteTag(tn) {
-    return api("DELETE", "/tags/" + tn).then(function (res) {
+  function deleteTag(doc, tn) {
+    return api("DELETE", "/docs/" + doc + "/tags/" + tn).then(function (res) {
       if (!res.ok) throw new Error(res.status);
-      tags = tags.filter(function (x) { return x.name !== tn; });
-      // Anyone following it falls back to default
-      var moved = PEOPLE.filter(function (p) { return docs[p].follows === tn; });
+      tags[doc] = tagList(doc).filter(function (x) { return x.name !== tn; });
+      // Anyone following a deleted Shared tag falls back to default
+      var moved = doc === "shared" ? PEOPLE.filter(function (p) { return docs[p].follows === tn; }) : [];
       moved.forEach(function (p) { docs[p].follows = "default"; persist(false, p); });
       renderVersions(); setStatus("Deleted tag " + tn + (moved.length ? ". " + moved.join(" & ") + " now follow" + (moved.length > 1 ? "" : "s") + " default." : ""));
     }).catch(function () { setStatus("Couldn’t delete the tag. Try again."); });
@@ -606,24 +619,27 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     var inp = document.getElementById("ve-tag"), tn = cleanTag(inp.value);
     if (!tn) { inp.focus(); return; }
     if (!/^[a-z0-9][a-z0-9_-]{0,29}$/.test(tn)) { inp.focus(); setStatus("Tags use letters, numbers, - and _."); return; }
-    var prev = tagFor(tn), v = sharedVersion(id);
-    setTag(tn, id).then(function () {
+    var doc = tab, prev = tagFor(doc, tn), v = versionIn(doc, id);
+    setTag(doc, tn, id).then(function () {
       renderVersions(); var again = document.getElementById("ve-tag"); if (again) again.focus();
-      setStatus((prev && prev.versionId !== id ? "Moved " + tn + " to “" : "Tagged “") + (v ? v.name : "") + "”" + (prev && prev.versionId !== id ? "" : " " + tn) + followNote(tn));
+      setStatus((prev && prev.versionId !== id ? "Moved " + tn + " to “" : "Tagged “") + (v ? v.name : "") + "”" + (prev && prev.versionId !== id ? "" : " " + tn) + (doc === "shared" ? followNote(tn) : "."));
     }).catch(function () { setStatus("Couldn’t add the tag. Try again."); });
   }
   function renderTags() {
     var tl = document.getElementById("t-list"); if (!tl) return;
     var dl = document.getElementById("tag-names");
-    if (dl) dl.innerHTML = tags.map(function (t) { return '<option value="' + esc(t.name) + '">'; }).join("");
-    var names = tags.map(function (t) { return t.name; }).sort(function (a, b) { return a === "default" ? -1 : b === "default" ? 1 : a < b ? -1 : 1; });
+    var doc = tab, list = tagList(doc);
+    if (dl) dl.innerHTML = list.map(function (t) { return '<option value="' + esc(t.name) + '">'; }).join("");
+    var names = list.map(function (t) { return t.name; }).sort(function (a, b) { return a === "default" ? -1 : b === "default" ? 1 : a < b ? -1 : 1; });
     tl.innerHTML = names.map(function (n) {
-      var t = tagFor(n), fans = PEOPLE.filter(function (p) { return docs[p].follows === n || (n === "default" && !tagFor(docs[p].follows)); });
-      var opts = versions.shared.map(function (v) { return '<option value="' + esc(v.id) + '"' + (v.id === t.versionId ? " selected" : "") + ">" + esc(v.name) + "</option>"; }).join("");
+      var t = tagFor(doc, n);
+      var fans = doc === "shared" ? PEOPLE.filter(function (p) { return docs[p].follows === n || (n === "default" && !tagFor("shared", docs[p].follows)); }) : [];
+      var meta = doc === "shared" ? (fans.length ? "Followed by " + fans.join(" & ") : "Not followed yet") + (n === "default" ? " · opens on load" : "") : (n === "default" ? "Opens on load" : "");
+      var opts = versions[doc].map(function (v) { return '<option value="' + esc(v.id) + '"' + (v.id === t.versionId ? " selected" : "") + ">" + esc(v.name) + "</option>"; }).join("");
       return '<li class="t-item"><span class="tagchip">' + esc(n) + "</span>" +
         '<select data-tagsel="' + esc(n) + '" aria-label="Version tagged ' + esc(n) + '">' + opts + "</select>" +
         (n === "default" ? "<span></span>" : '<button class="t-del" data-tagdel="' + esc(n) + '" aria-label="Delete tag ' + esc(n) + '">Delete</button>') +
-        '<span class="v-meta">' + (fans.length ? "Followed by " + fans.join(" & ") : "Not followed yet") + "</span></li>";
+        (meta ? '<span class="v-meta">' + meta + "</span>" : "") + "</li>";
     }).join("") || '<li class="v-empty">No tags yet. Save a version with the tag “default”.</li>';
   }
   function saveVersion() {
@@ -640,10 +656,11 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       if (!res.ok) throw new Error(res.status);
       versions[doc] = [v].concat(versions[doc].filter(function (x) { return x.id !== v.id; }));
       d.version = name; d.edited = false; persist(true); inp.value = "";
+      if (resumed[doc]) { delete resumed[doc]; render(); }
       if (!tag) { renderVersions(); setStatus((existing ? "Updated “" : "Saved “") + name + "”"); return; }
-      return setTag(tag, v.id).then(function () {
+      return setTag(doc, tag, v.id).then(function () {
         tinp.value = ""; renderVersions();
-        setStatus("Saved “" + name + "” and tagged it " + tag + followNote(tag));
+        setStatus("Saved “" + name + "” and tagged it " + tag + (doc === "shared" ? followNote(tag) : "."));
       });
     }).catch(function () { setStatus("Couldn’t save the version. Try again."); });
   }
@@ -651,11 +668,45 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     var fans = PEOPLE.filter(function (p) { return docs[p].follows === tag; });
     return fans.length ? ". " + fans.join(" & ") + (fans.length > 1 ? " follow it." : " follows it.") : ".";
   }
-  function setTag(name, versionId) {
-    return api("PUT", "/tags/" + name, { versionId: versionId }).then(function (res) {
+  function setTag(doc, name, versionId) {
+    return api("PUT", "/docs/" + doc + "/tags/" + name, { versionId: versionId }).then(function (res) {
       if (!res.ok) throw new Error(res.status);
-      tags = tags.filter(function (t) { return t.name !== name; }).concat([{ name: name, versionId: versionId }]);
+      tags[doc] = tagList(doc).filter(function (t) { return t.name !== name; }).concat([{ name: name, versionId: versionId }]);
     });
+  }
+
+  // --- Opening on each tab's default version ---------------------------------------------
+  // Key-order-independent JSON, to compare numbers regardless of how they were saved
+  function stable(o) {
+    if (Array.isArray(o)) return "[" + o.map(stable).join(",") + "]";
+    if (o && typeof o === "object") return "{" + Object.keys(o).sort().map(function (k) { return JSON.stringify(k) + ":" + stable(o[k]); }).join(",") + "}";
+    return JSON.stringify(o);
+  }
+  function numbers(doc, st) { var c = normalizeDoc(doc, clone(st)); delete c.version; delete c.edited; delete c.updated; return stable(c); }
+  // True when the working copy holds work that isn't saved in any version
+  function unsaved(doc) {
+    var d = docs[doc];
+    return !(d.version && !d.edited && versions[doc].some(function (v) { return v.name === d.version; }));
+  }
+  function loadVersion(doc, v) {
+    docs[doc] = normalizeDoc(doc, clone(v.state)); docs[doc].version = v.name; docs[doc].edited = false;
+    delete resumed[doc]; persist(true, doc);
+  }
+  // Each tab opens on its default version, unless that would throw away unsaved work
+  function openDefaults() {
+    DOCS.forEach(function (doc) {
+      var t = tagFor(doc, "default"), v = t && versionIn(doc, t.versionId), d = docs[doc];
+      if (!v || (d.version === v.name && !d.edited)) return;
+      if (numbers(doc, d) === numbers(doc, v.state)) { d.version = v.name; d.edited = false; persist(true, doc); return; }
+      if (unsaved(doc)) { resumed[doc] = true; return; }
+      loadVersion(doc, v);
+    });
+  }
+  function resumeBanner() {
+    var d = docs[tab];
+    return '<div class="note resume"><span>This tab has unsaved changes' + (d.updated ? " from " + esc(d.updated) : "") +
+      ", so it didn’t switch to its default version. Save them as a version to keep them.</span>" +
+      '<button id="resume-keep">Keep editing</button><button id="resume-default">Discard and load default</button></div>';
   }
 
   function drawBars(rows) {
@@ -702,7 +753,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     // Personal tabs: the share line comes from the Shared version this tab's tag points to
     var p = tab, pd = docs[p], fv = followed(pd), fs = fv ? normalizeShared(clone(fv.state)) : null;
     var FS = fs ? sharedSummary(fs) : null, pctx = FS ? FS.ctx : { price: 0, shares: {} };
-    var P = personSummary(pd, pctx), tagName = tagFor(pd.follows) ? pd.follows : "default";
+    var P = personSummary(pd, pctx), tagName = tagFor("shared", pd.follows) ? pd.follows : "default";
     var shareNote = FS ? (p === "Luke" ? fs.split : 100 - fs.split) + "% of " + money.format(FS.by.Shared) + " shared costs" + (FS.by[p] ? " plus " + money.format(FS.by[p]) + " marked " + p : "") : "No Shared version is tagged yet";
     set("p-follow", fv ? tagName + " → “" + fv.name + "”, saved " + dateFmt.format(fv.savedAt) : "Nothing is tagged " + tagName + " yet. Save a Shared version with that tag.");
     var ctx = pctx;
@@ -823,10 +874,9 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       saveVersion();
     } else if (t.dataset.vload) {
       var v = versions[tab].filter(function (x) { return x.id === t.dataset.vload; })[0]; if (!v) return;
-      docs[tab] = normalizeDoc(tab, clone(v.state)); docs[tab].version = v.name; docs[tab].edited = false;
-      persist(true); render(); setStatus("Loaded “" + v.name + "”");
+      loadVersion(tab, v); render(); setStatus("Loaded “" + v.name + "”");
     } else if (t.dataset.vdel) {
-      var onIt = tab === "shared" ? tagsOn(t.dataset.vdel) : [];
+      var onIt = tagsOn(tab, t.dataset.vdel);
       if (onIt.length) { setStatus("That version is tagged " + onIt.join(", ") + ". Point the tag at another version first."); return; }
       if (armedDel !== t.dataset.vdel) {
         armedDel = t.dataset.vdel; t.textContent = "Confirm"; t.classList.add("arm");
@@ -859,7 +909,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     } else if (t.dataset.vaddtag) {
       addTag(t.dataset.vaddtag);
     } else if (t.dataset.vuntag) {
-      deleteTag(t.dataset.vuntag);
+      deleteTag(tab, t.dataset.vuntag);
     } else if (t.dataset.vreplace) {
       var rid = t.dataset.vreplace, fans = tab === "shared" ? followersOf(rid) : [];
       if (armedDel !== "replace:" + rid) {
@@ -871,6 +921,17 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       armedDel = null; replaceNumbers(tab, rid);
     } else if (t.id === "v-update") {
       replaceNumbers(tab, t.dataset.vid);
+    } else if (t.id === "resume-keep") {
+      delete resumed[tab]; render();
+    } else if (t.id === "resume-default") {
+      if (armedDel !== "resume") {
+        armedDel = "resume"; t.textContent = "Click again to discard"; t.classList.add("arm");
+        setTimeout(function () { if (armedDel === "resume") { armedDel = null; t.textContent = "Discard and load default"; t.classList.remove("arm"); } }, 3000);
+        return;
+      }
+      armedDel = null;
+      var dt = tagFor(tab, "default"), dv = dt && versionIn(tab, dt.versionId);
+      if (dv) { loadVersion(tab, dv); render(); setStatus("Loaded the default, “" + dv.name + "”"); }
     } else if (t.dataset.tagdel) {
       var tn = t.dataset.tagdel;
       if (armedDel !== "tag:" + tn) {
@@ -879,7 +940,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
         return;
       }
       armedDel = null;
-      deleteTag(tn);
+      deleteTag(tab, tn);
     } else if (t.id === "signout") {
       flush(); FamilyAuth.logout();
     }
@@ -972,9 +1033,9 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       return;
     }
     if (e.target.dataset.tagsel) {
-      var tn = e.target.dataset.tagsel, vid = e.target.value, vv = sharedVersion(vid);
-      setTag(tn, vid).then(function () {
-        renderVersions(); setStatus(tn + " now points at “" + (vv ? vv.name : "") + "”" + followNote(tn));
+      var tn = e.target.dataset.tagsel, vid = e.target.value, sdoc = tab, vv = versionIn(sdoc, vid);
+      setTag(sdoc, tn, vid).then(function () {
+        renderVersions(); setStatus(tn + " now points at “" + (vv ? vv.name : "") + "”" + (sdoc === "shared" ? followNote(tn) : "."));
       }).catch(function () { setStatus("Couldn’t move the tag. Try again."); renderVersions(); });
       return;
     }
@@ -1079,6 +1140,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
             if (all.docs[d]) { docs[d] = normalizeDoc(d, all.docs[d].state); revs[d] = all.docs[d].rev; }
             else { docs[d] = defs[d]; revs[d] = null; }
           });
+          openDefaults();
           render();
         });
       });

@@ -4,7 +4,7 @@ import { PK, personDoc, seed, sharedDoc, table } from './helpers/budget-api.mjs'
 import { openBudget, saved, wait } from './helpers/page.mjs';
 
 const doc = (d) => JSON.parse(table.get(PK, `DOC#${d}#STATE`).state);
-const tag = (n) => table.get(PK, `TAG#${n}`)?.versionId;
+const tag = (n, d = 'shared') => table.get(PK, `TAG#${d}#${n}`)?.versionId;
 beforeEach(() => seed());
 
 test('the page holds no budget figures until it loads them from the API', async () => {
@@ -86,7 +86,6 @@ test('a tagged version can’t be deleted', async () => {
 
 test('personal versions belong to that tab only', async () => {
   const p = await openBudget('#luke');
-  assert.equal(p.d.getElementById('v-tag'), null);
   p.type('#v-name', 'Luke lean'); p.click('#v-save'); await wait(50);
   assert.equal(table.keys().filter((k) => k.startsWith('DOC#Luke#VERSION#')).length, 1);
   await p.tab('Amber');
@@ -237,12 +236,11 @@ test('load, change, then Update: the button appears only with unsaved changes an
   p.close();
 });
 
-test('personal versions can be renamed and updated, with no tag controls', async () => {
+test('personal versions can be renamed and updated', async () => {
   const p = await openBudget('#luke');
   p.type('#v-name', 'Lean'); p.click('#v-save'); await wait(50);
   const id = table.keys().find((k) => k.startsWith('DOC#Luke#VERSION#')).split('#')[3];
   p.click(`[data-vedit="${id}"]`);
-  assert.equal(p.d.getElementById('ve-tag'), null);
   p.type('#ve-name', 'Lean month'); p.click(`[data-vsave="${id}"]`); await saved();
   assert.equal(version('Luke', id).name, 'Lean month');
   p.type('#a-Lukei', '3500'); await wait();
@@ -281,5 +279,111 @@ test('the editor has a tag picker only on personal tabs and tag chips only on Sh
   assert.equal(p.d.getElementById('ve-follow'), null);
   p.click('[data-vdone]');
   assert.equal(p.d.querySelector('[data-veditor]'), null, 'Cancel closes it');
+  p.close();
+});
+
+// --- Personal tags and opening on each tab's default ---------------------------------------
+
+const putVersion = (d, id, name, state) => table.put({ pk: PK, sk: `DOC#${d}#VERSION#${id}`, name, savedAt: 2, state: JSON.stringify(state) });
+const putDoc = (d, state, rev = 1) => table.put({ pk: PK, sk: `DOC#${d}#STATE`, state: JSON.stringify(state), rev });
+const putTag = (d, n, id) => table.put({ pk: PK, sk: `TAG#${d}#${n}`, versionId: id });
+
+test('personal tabs have their own tags: save + tag default, chips, and a Tags panel', async () => {
+  const p = await openBudget('#luke');
+  p.type('#v-name', 'Lean'); p.type('#v-tag', 'default'); p.click('#v-save'); await wait(50);
+  const id = table.keys().find((k) => k.startsWith('DOC#Luke#VERSION#')).split('#')[3];
+  assert.equal(tag('default', 'Luke'), id);
+  assert.equal(tag('default', 'shared'), 'v1', 'Shared default untouched');
+  assert.match(p.d.querySelector('.v-item .v-tags').textContent, /default/);
+  assert.ok(p.d.querySelector('[data-tagsel="default"]'), 'Tags panel lists Luke’s default');
+  assert.match(p.d.getElementById('t-list').textContent, /Opens on load/);
+  await p.tab('Amber');
+  assert.equal(p.d.querySelector('[data-tagsel]'), null, 'Amber has no tags yet');
+  p.close();
+});
+
+test('on open, a tab showing some other saved version switches to its default', async () => {
+  const shared = sharedDoc(1000);
+  putVersion('shared', 'v2', 'Plan B', sharedDoc(3000));
+  putDoc('shared', { ...sharedDoc(3000), version: 'Plan B', edited: false });
+  const p = await openBudget('#shared');
+  assert.equal(p.text('k-total'), '$1,000', 'opens on default (Starting point), not Plan B');
+  assert.equal(p.d.querySelector('.resume'), null);
+  await saved();
+  assert.equal(doc('shared').version, 'Starting point');
+  void shared;
+  p.close();
+});
+
+test('on open, unsaved work stays put with a banner; Keep editing hides it', async () => {
+  const p = await openBudget('#shared'); // seed: working $2,000, not saved anywhere
+  assert.equal(p.text('k-total'), '$2,000');
+  assert.match(p.el('.resume').textContent, /unsaved changes/);
+  p.click('#resume-keep'); await wait();
+  assert.equal(p.d.querySelector('.resume'), null);
+  assert.equal(p.text('k-total'), '$2,000');
+  p.close();
+});
+
+test('Discard and load default takes two clicks, then loads the default', async () => {
+  const p = await openBudget('#shared');
+  p.click('#resume-default');
+  assert.equal(p.el('#resume-default').textContent, 'Click again to discard');
+  assert.equal(p.text('k-total'), '$2,000', 'first click changes nothing');
+  p.click('#resume-default'); await saved();
+  assert.equal(p.text('k-total'), '$1,000');
+  assert.equal(doc('shared').version, 'Starting point');
+  assert.equal(p.d.querySelector('.resume'), null);
+  p.close();
+});
+
+test('saving the unsaved work as a version clears the banner', async () => {
+  const p = await openBudget('#shared');
+  p.type('#v-name', 'Big plan'); p.click('#v-save'); await wait(50);
+  assert.equal(p.d.querySelector('.resume'), null);
+  p.close();
+});
+
+test('on open, a working copy identical to the default is just marked as it (no banner, no change)', async () => {
+  putDoc('shared', sharedDoc(1000)); // same numbers as Starting point, no version marker
+  const p = await openBudget('#shared');
+  assert.equal(p.d.querySelector('.resume'), null);
+  await saved();
+  assert.equal(doc('shared').version, 'Starting point');
+  p.close();
+});
+
+test('on open, each personal tab loads its own default', async () => {
+  putVersion('Luke', 'lv1', 'Lean', { ...personDoc('Luke'), income: [{ id: 'Lukei', name: 'Pay', amount: 4000, freq: 'mo' }] });
+  putTag('Luke', 'default', 'lv1');
+  putVersion('Luke', 'lv2', 'Splurge', personDoc('Luke'));
+  putDoc('Luke', { ...personDoc('Luke'), version: 'Splurge', edited: false });
+  const p = await openBudget('#luke');
+  assert.equal(p.text('k-inc'), '$4,000');
+  assert.equal(p.d.querySelector('.resume'), null);
+  await p.tab('Amber');
+  assert.equal(p.text('k-inc'), '$3,000', 'Amber has no default: her working copy shows');
+  p.close();
+});
+
+test('tagging another version default takes it off the old one, on Shared and on personal tabs', async () => {
+  const p = await openBudget('#shared');
+  p.type('#v-name', 'Plan B'); p.click('#v-save'); await wait(50);
+  const planB = table.keys().find((k) => k.startsWith('DOC#shared#VERSION#') && !k.endsWith('#v1')).split('#')[3];
+  p.click(`[data-vedit="${planB}"]`); p.type('#ve-tag', 'default'); p.click(`[data-vaddtag="${planB}"]`); await wait(50);
+  assert.equal(tag('default'), planB);
+  const chips = (id) => [...p.d.querySelectorAll('.v-item')].find((li) => li.querySelector(`[data-vedit="${id}"]`))?.querySelector('.v-tags')?.textContent ?? '';
+  p.click('[data-vdone]');
+  assert.match(chips(planB), /default/);
+  assert.doesNotMatch(chips('v1'), /default/, 'old version loses the chip');
+
+  await p.tab('Luke');
+  p.type('#v-name', 'A'); p.type('#v-tag', 'default'); p.click('#v-save'); await wait(50);
+  p.type('#v-name', 'B'); p.type('#v-tag', 'default'); p.click('#v-save'); await wait(50);
+  const ids = table.keys().filter((k) => k.startsWith('DOC#Luke#VERSION#')).map((k) => k.split('#')[3]);
+  const b = ids.find((id) => JSON.parse(JSON.stringify(table.get(PK, `DOC#Luke#VERSION#${id}`))).name === 'B');
+  assert.equal(tag('default', 'Luke'), b);
+  assert.equal(table.keys().filter((k) => k.startsWith('TAG#Luke#')).length, 1, 'one default row, not two');
+  assert.equal(p.d.querySelectorAll('.v-item .v-tags').length, 1, 'only one version shows the default chip');
   p.close();
 });
