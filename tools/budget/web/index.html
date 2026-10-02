@@ -248,7 +248,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
 <script id="app-js">
 (function () {
   // Paid by: Shared items are pooled and divided by the global split; Split items say how much Luke
-  // pays (in the item's own period) and Amber pays the rest
+  // pays per month and Amber pays the rest
   var WHO = ["Shared", "Split"];
   var PEOPLE = ["Luke", "Amber"];
   // Common budgeting rule of thumb: homeowners insurance runs about 0.5% of home value per year
@@ -285,9 +285,12 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     // Homeowners insurance and property tax follow the home value
     d.categories.forEach(function (c) { c.items.forEach(function (it) {
       delete it.split;
-      if (it.who === "Luke" || it.who === "Amber") { it.luke = it.who === "Luke" ? itemTotal(it, m.price) : 0; it.who = "Split"; }
-      if (it.who !== "Split") { it.who = "Shared"; delete it.luke; }
-      else if (typeof it.luke !== "number") it.luke = Math.round(itemTotal(it, m.price) * d.split / 100);
+      // Luke's part of a Split item is per month (lukeMonthly). Briefly it was in the item's own period (luke).
+      if (typeof it.luke === "number" && typeof it.lukeMonthly !== "number") it.lukeMonthly = cents(it.freq === "yr" ? it.luke / 12 : it.luke);
+      delete it.luke;
+      if (it.who === "Luke" || it.who === "Amber") { it.lukeMonthly = it.who === "Luke" ? cents(itemMonthly(it, m.price)) : 0; it.who = "Split"; }
+      if (it.who !== "Split") { it.who = "Shared"; delete it.lukeMonthly; }
+      else if (typeof it.lukeMonthly !== "number") it.lukeMonthly = Math.round(itemMonthly(it, m.price) * d.split / 100);
       // 0.383 was the earlier conversion of $2,300; move it to the standard default
       if (it.calc === "pctHome" && Math.abs(it.rate - 0.383) < 0.0005) it.rate = INSURANCE_PCT;
       if (it.calc) return;
@@ -328,10 +331,11 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
   function uid() { return "x" + Math.random().toString(36).slice(2, 9); }
   // Standard amortized principal & interest payment
-  // An item's amount in its own period (per month or per year), including calculated ones
-  function itemTotal(it, price) { return it.calc === "pctHome" ? (price || 0) * (Number(it.rate) || 0) / 100 : Number(it.amount) || 0; }
+  function cents(x) { return Math.round(x * 100) / 100; }
+  // An item's monthly amount, including calculated ones (same as monthly(), without a full ctx)
+  function itemMonthly(it, price) { return monthly(it, { price: price || 0, shares: {} }); }
   // Luke's part of a Split item, per month, never more than the item itself
-  function lukeMonthly(it, v) { var l = Math.max(0, Number(it.luke) || 0); if (it.freq === "yr") l /= 12; return Math.min(v, l); }
+  function lukePart(it, v) { return Math.min(v, Math.max(0, Number(it.lukeMonthly) || 0)); }
   function downTotal(m) { return m.downItems.reduce(function (t, it) { return t + (Number(it.amount) || 0); }, 0); }
   function loanOf(m) { return Math.max(0, (m.price || 0) - (m.down || 0)); }
   function payment(loan, rate, years) {
@@ -358,7 +362,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       c.items.forEach(function (it) {
         var v = monthly(it, ctx);
         if (it.who !== "Split") { by.Shared += v; return; }
-        var lk = lukeMonthly(it, v);
+        var lk = lukePart(it, v);
         by.Luke += lk; by.Amber += v - lk;
       });
       var t = sum(c.items, ctx); total += t;
@@ -415,7 +419,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   function rowHtml(it) {
     var opts = WHO.map(function (w) { return '<option' + (it.who === w ? " selected" : "") + ">" + w + "</option>"; }).join("");
     var who = '<div class="who-cell"><select id="w-' + it.id + '" data-f="who" aria-label="Paid by">' + opts + "</select>" +
-      (it.who === "Split" ? '<label class="who-pct">Luke $<input id="sp-' + it.id + '" class="amt" data-f="luke" inputmode="decimal" value="' + (it.luke || 0) + '" aria-label="Luke pays, of ' + esc(it.name || "this item") + '"></label><span class="who-rest" id="sr-' + it.id + '"></span>' : "") +
+      (it.who === "Split" ? '<label class="who-pct">Luke $<input id="sp-' + it.id + '" class="amt" data-f="lukeMonthly" inputmode="decimal" value="' + (it.lukeMonthly || 0) + '" aria-label="Luke pays per month, of ' + esc(it.name || "this item") + '"></label><span class="who-rest" id="sr-' + it.id + '"></span>' : "") +
       "</div>";
     if (it.calc === "pctHome") return '<div class="row calc" data-id="' + it.id + '">' + nameCell(it, true) +
       '<input id="a-' + it.id + '" class="amt" data-f="rate" inputmode="decimal" aria-label="Percent of home value per year" value="' + (it.rate || 0) + '">' +
@@ -756,8 +760,8 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
         x.c.items.forEach(function (it) {
           var v = monthly(it, ctx); set("m-" + it.id, money.format(v));
           if (it.who === "Split") {
-            var whole = itemTotal(it, m.price), lk = Math.max(0, Number(it.luke) || 0);
-            set("sr-" + it.id, lk > whole ? "More than the item: Amber $0" : "Amber " + money.format(whole - lk));
+            var lk = Math.max(0, Number(it.lukeMonthly) || 0);
+            set("sr-" + it.id, lk > v + 0.005 ? "More than the item: Amber $0" : "Amber " + money.format(v - lk) + "/mo");
           }
           if (it.calc === "pctHome") set("nt-" + it.id, money.format(v * 12) + " / yr, from the " + money.format(m.price) + " home value" + (it.note ? ". " + it.note : ""));
         });
@@ -852,13 +856,13 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     }
     var row = t.closest(".row"); if (!row || !t.dataset.f) return;
     var it = findItem(row.dataset.id); if (!it) return;
-    if (t.dataset.f === "luke") {
-      it.luke = Math.max(0, parseFloat(t.value.replace(/[^0-9.\-]/g, "")) || 0); totals(); persist(); return;
+    if (t.dataset.f === "lukeMonthly") {
+      it.lukeMonthly = Math.max(0, parseFloat(t.value.replace(/[^0-9.\-]/g, "")) || 0); totals(); persist(); return;
     }
     it[t.dataset.f] = (t.dataset.f === "amount" || t.dataset.f === "rate") ? (parseFloat(t.value.replace(/[^0-9.\-]/g, "")) || 0) : t.value;
     if (t.dataset.f === "who") {
       // A new Split item starts at the global split; switching back to Shared drops its own split
-      if (it.who === "Split") { if (typeof it.luke !== "number") it.luke = Math.round(itemTotal(it, docs.shared.mortgage.price) * docs.shared.split / 100); } else delete it.luke;
+      if (it.who === "Split") { if (typeof it.lukeMonthly !== "number") it.lukeMonthly = Math.round(itemMonthly(it, docs.shared.mortgage.price) * docs.shared.split / 100); } else delete it.lukeMonthly;
       persist(); render();
       var sp = document.getElementById(it.who === "Split" ? "sp-" + it.id : "w-" + it.id); if (sp) sp.focus();
       return;
