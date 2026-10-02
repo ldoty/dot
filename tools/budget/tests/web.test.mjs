@@ -416,3 +416,67 @@ test('savings and left over show yearly totals', async () => {
   assert.equal(p.text('k-left-yr'), 'Over by $3,600 / yr');
   p.close();
 });
+
+// --- Down payment sources ------------------------------------------------------------------
+
+const house = (mortgage) => ({ categories: [], mortgage: { price: 600000, rate: 6, years: 30, ...mortgage }, split: 50 });
+
+test('an old single down payment becomes one source, with the same loan', async () => {
+  seed({ working: house({ down: 400000 }) });
+  const p = await openBudget('#shared');
+  assert.equal(p.text('m-down'), '$400,000');
+  assert.equal(p.text('m-loan'), '$200,000');
+  assert.equal(p.d.querySelectorAll('.dp-row').length, 1);
+  assert.equal(p.el('.dp-row [data-dpf="name"]').value, 'Down payment');
+  assert.equal(p.d.getElementById('m-down-r'), null, 'no slider');
+  p.type('.dp-row [data-dpf="name"]', 'Sale of current home'); await saved();
+  assert.deepEqual(doc('shared').mortgage.downItems.map((i) => [i.name, i.amount]), [['Sale of current home', 400000]]);
+  p.close();
+});
+
+test('down payment is the sum of its sources: add, edit, remove', async () => {
+  seed({ working: house({ down: 0 }) });
+  const p = await openBudget('#shared');
+  assert.equal(p.text('m-loan'), '$600,000');
+  assert.ok(p.d.querySelector('.dp-empty'));
+
+  p.click('#dp-add'); await wait();
+  assert.equal(p.d.activeElement.dataset.dpf, 'name', 'new source is focused');
+  p.type(p.d.activeElement, 'Savings');
+  p.type('.dp-row:last-of-type [data-dpf="amount"]', '150,000');
+  p.click('#dp-add'); await wait();
+  p.type(p.d.activeElement, 'Gift from parents');
+  p.type([...p.d.querySelectorAll('.dp-row [data-dpf="amount"]')].at(-1), '50000');
+  assert.equal(p.text('m-down'), '$200,000');
+  assert.equal(p.text('m-loan'), '$400,000');
+  assert.equal(p.text('m-down-pct'), '(33%)');
+  await saved();
+  const m = doc('shared').mortgage;
+  assert.equal(m.down, 200000);
+  assert.deepEqual(m.downItems.map((i) => i.name), ['Savings', 'Gift from parents']);
+
+  p.click(`[data-dpdel="${m.downItems[0].id}"]`); await saved();
+  assert.equal(p.text('m-down'), '$50,000');
+  assert.equal(doc('shared').mortgage.down, 50000);
+  p.close();
+});
+
+test('sources above the home value mean no loan, and the leftover is noted', async () => {
+  seed({ working: house({ downItems: [{ id: 's1', name: 'Sale', amount: 650000 }] }) });
+  const p = await openBudget('#shared');
+  assert.equal(p.text('m-loan'), '$0');
+  assert.equal(p.text('t-mort'), '$0');
+  assert.match(p.text('m-fine'), /\$50,000 of the down payment left over/);
+  p.close();
+});
+
+test('an older saved version (single down payment) still loads and shows the same loan', async () => {
+  seed({ working: house({ downItems: [{ id: 's1', name: 'Sale', amount: 100000 }] }) });
+  table.put({ pk: PK, sk: 'DOC#shared#VERSION#old', name: 'Old plan', savedAt: 3, state: JSON.stringify(house({ down: 300000 })) });
+  const p = await openBudget('#shared');
+  assert.match(p.d.querySelector('[data-vload="old"]').closest('.v-item').textContent, /borrow \$300,000/);
+  p.click('[data-vload="old"]'); await saved();
+  assert.equal(p.text('m-loan'), '$300,000');
+  assert.equal(p.el('.dp-row [data-dpf="name"]').value, 'Down payment');
+  p.close();
+});

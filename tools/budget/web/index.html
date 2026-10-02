@@ -148,17 +148,17 @@ input.amt { font-family: var(--mono); text-align: right; font-variant-numeric: t
 .lbl-sm { font-size: 13px; color: var(--muted); margin-bottom: 4px }
 .lbl-sm strong { color: var(--ink); font: 500 14px var(--mono) }
 .fld label { display: block; font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin-bottom: 4px }
-.loan-line { display: flex; gap: 10px; align-items: center }
-.loan-line input[type=number] { width: 120px; flex: none }
+.dp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px }
+.dp-head strong { font: 500 15px var(--mono); font-variant-numeric: tabular-nums }
+.dp-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px 30px; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--line) }
+.dp-add { margin-top: 8px }
+@media (max-width: 640px) { .dp-row { grid-template-columns: minmax(0, 1fr) 100px 30px } }
+.dp-empty { font-size: 13px; color: var(--muted); margin: 6px 0 0 }
 input[type=range] { accent-color: var(--pool); padding: 0; background: none; border: none; flex: 1 }
 .mort-out { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line) }
 .mort-out .big { font: 400 30px/1.1 var(--serif); font-variant-numeric: tabular-nums }
 .mort-out .big small { font: 13px var(--body); color: var(--muted) }
 .mort-out .fine { font-size: 12.5px; color: var(--muted); margin-top: 4px }
-.presets { display: flex; flex-wrap: wrap; gap: 6px }
-.presets button { font: 12.5px var(--mono); padding: 6px 14px; border-radius: var(--r-md); display: grid; text-align: left; line-height: 1.3 }
-.presets button span { color: var(--muted); font-size: 11.5px }
-.presets button.on { border-color: var(--pool); background: var(--accent-soft) }
 .split-range { display: grid; gap: 10px }
 .split-range .ends { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600 }
 .split-range input { width: 100% }
@@ -245,7 +245,6 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
 (function () {
   var WHO = ["Shared", "Luke", "Amber"];
   var PEOPLE = ["Luke", "Amber"];
-  var PRESETS = [0, 100000, 200000, 300000];
   // Common budgeting rule of thumb: homeowners insurance runs about 0.5% of home value per year
   var INSURANCE_PCT = 0.5;
   var TKEY = "luke-amber-budget-tab";
@@ -273,6 +272,9 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     if (typeof m.rate !== "number") m.rate = 6.25;
     if (typeof m.years !== "number") m.years = 30;
     delete m.loan;
+    // The down payment is the sum of its sources. Older budgets had one number: it becomes one source.
+    if (!Array.isArray(m.downItems)) m.downItems = m.down > 0 ? [{ id: "dp1", name: "Down payment", amount: m.down }] : [];
+    m.down = downTotal(m);
     if (typeof d.split !== "number") d.split = 50;
     // Homeowners insurance and property tax follow the home value
     d.categories.forEach(function (c) { c.items.forEach(function (it) {
@@ -316,6 +318,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
   function uid() { return "x" + Math.random().toString(36).slice(2, 9); }
   // Standard amortized principal & interest payment
+  function downTotal(m) { return m.downItems.reduce(function (t, it) { return t + (Number(it.amount) || 0); }, 0); }
   function loanOf(m) { return Math.max(0, (m.price || 0) - (m.down || 0)); }
   function payment(loan, rate, years) {
     var n = years * 12, r = rate / 1200;
@@ -433,12 +436,17 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       '<div class="fld"><label for="m-price">Home value</label><input type="number" id="m-price" class="amt" data-m="price" min="0" step="5000" value="' + m.price + '"></div>' +
       '<div class="fld"><label for="m-rate">Interest rate %</label><input type="number" id="m-rate" class="amt" data-m="rate" min="0" max="15" step="0.125" value="' + m.rate + '"></div>' +
       '<div class="fld"><label for="m-years">Term</label><select id="m-years" data-m="years">' + terms + "</select></div>" +
-      '<div class="fld loan wide"><label for="m-down-n">Down payment <span id="m-down-pct"></span></label><div class="loan-line">' +
-      '<input type="range" id="m-down-r" data-m="down" min="0" max="' + m.price + '" step="5000" value="' + m.down + '" aria-label="Down payment slider">' +
-      '<input type="number" id="m-down-n" class="amt" data-m="down" min="0" step="5000" value="' + m.down + '"></div></div></div>' +
+      '<div class="fld wide"><div class="dp-head"><label>Down payment <span id="m-down-pct"></span></label><strong id="m-down"></strong></div>' +
+      m.downItems.map(function (it) {
+        return '<div class="dp-row" data-dp="' + it.id + '"><input data-dpf="name" aria-label="Down payment source" placeholder="Where it comes from" value="' + esc(it.name) + '">' +
+          '<input class="amt" data-dpf="amount" inputmode="decimal" aria-label="Amount" value="' + (it.amount || 0) + '">' +
+          '<button class="del" data-dpdel="' + it.id + '" aria-label="Remove ' + esc(it.name || "source") + '" title="Remove">&times;</button></div>';
+      }).join("") +
+      (m.downItems.length ? "" : '<p class="dp-empty">No down payment yet: the whole price is borrowed.</p>') +
+      '<button class="add dp-add" id="dp-add">+ Add to down payment</button></div></div>' +
       '<div class="mort-out"><div><div class="lbl-sm">Loan amount <strong id="m-loan"></strong></div>' +
       '<div class="big"><span id="m-pay"></span> <small>/ mo principal &amp; interest</small></div>' +
-      '<div class="fine" id="m-fine"></div></div><div class="presets" id="m-presets"></div></div></section>';
+      '<div class="fine" id="m-fine"></div></div></div></section>';
   }
   function tile(lbl, id) { return '<div class="tile"><div class="lbl">' + lbl + '</div><div class="val" id="' + id + '"></div><div class="per" id="' + id + '-yr"></div></div>'; }
   // Each tab saves its own versions. Shared versions can also be tagged in the same step.
@@ -730,13 +738,11 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       });
       set("t-mort", money.format(S.mort)); set("m-pay", money.format(S.mort));
       var pct = m.price ? Math.round(m.down / m.price * 100) : 0;
-      set("m-loan", money.format(S.loan)); set("m-down-pct", "(" + pct + "%)");
+      set("m-loan", money.format(S.loan)); set("m-down-pct", "(" + pct + "%)"); set("m-down", money.format(m.down));
       set("m-fine", S.loan ? money.format(S.mort * m.years * 12 - S.loan) + " total interest over " + m.years + " years." +
         (pct < 20 ? " Under 20% down usually adds mortgage insurance (PMI), which isn’t included here." : "") +
-        " Taxes and insurance are in Home & property." : "Paid in cash, no mortgage. Taxes and insurance are in Home & property.");
-      document.getElementById("m-presets").innerHTML = PRESETS.filter(function (L) { return L <= m.price; }).map(function (L) {
-        return '<button data-preset="' + L + '"' + (L === S.loan ? ' class="on"' : "") + ">" + (L ? "Borrow $" + L / 1000 + "k" : "All cash") + "<span>" + money.format(payment(L, m.rate, m.years)) + "/mo</span></button>";
-      }).join("");
+        " Taxes and insurance are in Home & property." : "Paid in cash, no mortgage" +
+        (m.down > m.price ? ", with " + money.format(m.down - m.price) + " of the down payment left over" : "") + ". Taxes and insurance are in Home & property.");
       set("s-luke-pct", "Luke " + split + "%"); set("s-amber-pct", "Amber " + (100 - split) + "%");
       set("s-luke", money.format(S.luke)); set("s-luke-yr", money.format(S.luke * 12) + " / yr");
       set("s-amber", money.format(S.amber)); set("s-amber-yr", money.format(S.amber * 12) + " / yr");
@@ -804,15 +810,14 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     if (t.dataset.m) {
       var v = parseFloat(t.value) || 0;
       var mm = docs.shared.mortgage;
-      if (t.dataset.m === "down") {
-        v = Math.min(Math.max(0, v), mm.price); mm.down = v;
-        var other = document.getElementById(t.id === "m-down-r" ? "m-down-n" : "m-down-r"); if (other) other.value = v;
-      } else if (t.dataset.m === "price") {
-        mm.price = Math.max(0, v);
-        if (mm.down > mm.price) { mm.down = mm.price; document.getElementById("m-down-n").value = mm.down; }
-        var rng = document.getElementById("m-down-r"); rng.max = mm.price; rng.value = mm.down;
-      } else mm[t.dataset.m] = v;
+      if (t.dataset.m === "price") mm.price = Math.max(0, v); else mm[t.dataset.m] = v;
       totals(); persist(); return;
+    }
+    if (t.dataset.dpf) {
+      var dm = docs.shared.mortgage, dpRow = t.closest("[data-dp]");
+      var src = dm.downItems.filter(function (x) { return x.id === dpRow.dataset.dp; })[0]; if (!src) return;
+      src[t.dataset.dpf] = t.dataset.dpf === "amount" ? (parseFloat(t.value.replace(/[^0-9.\-]/g, "")) || 0) : t.value;
+      dm.down = downTotal(dm); totals(); persist(); return;
     }
     if (t.dataset.cname) {
       var cc = tabCats()[catIndex(t.dataset.cname)]; if (!cc) return;
@@ -827,10 +832,14 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     var t = e.target.closest("button"); if (!t) return;
     if (t.dataset.tab) {
       setTab(t.dataset.tab);
-    } else if (t.dataset.preset != null) {
-      var mp = docs.shared.mortgage; mp.down = Math.max(0, mp.price - Number(t.dataset.preset));
-      document.getElementById("m-down-r").value = mp.down; document.getElementById("m-down-n").value = mp.down;
-      totals(); persist();
+    } else if (t.id === "dp-add") {
+      var am = docs.shared.mortgage, src2 = { id: uid(), name: "", amount: 0 };
+      am.downItems.push(src2); persist(); render();
+      var ni = app.querySelector('[data-dp="' + src2.id + '"] [data-dpf="name"]'); if (ni) ni.focus();
+    } else if (t.dataset.dpdel) {
+      var rm = docs.shared.mortgage;
+      rm.downItems = rm.downItems.filter(function (x) { return x.id !== t.dataset.dpdel; });
+      rm.down = downTotal(rm); persist(); render();
     } else if (t.dataset.del) {
       var id = t.dataset.del;
       allLists().forEach(function (list) { for (var i = list.length - 1; i >= 0; i--) if (list[i].id === id) list.splice(i, 1); });
