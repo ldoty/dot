@@ -188,8 +188,9 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
 .v-empty { font-size: 13px; color: var(--muted); margin: 10px 0 0 }
 .v-save.with-tag { display: grid; grid-template-columns: minmax(0, 1fr) auto }
 .v-save.with-tag #v-name { grid-column: 1 / -1 }
-.v-tags { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: 1px }
-.tagchip { font: 600 10.5px var(--mono); color: var(--pool); background: var(--accent-soft); border-radius: 99px; padding: 1px 7px }
+/* Tags sit on their own line under the version name and never break mid-word */
+.v-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px }
+.tagchip { white-space: nowrap; overflow-wrap: normal; font: 600 10.5px var(--mono); color: var(--pool); background: var(--accent-soft); border-radius: 99px; padding: 1px 7px }
 .t-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px }
 .t-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 8px; align-items: center }
 .t-item select { background: var(--field) }
