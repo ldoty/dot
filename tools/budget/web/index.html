@@ -215,8 +215,6 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
 .resume button { padding: 5px 12px; font-size: 13px }
 .resume button.arm { color: var(--bad); border-color: var(--bad) }
 .cur .v-update { margin-left: 6px; padding: 3px 10px; font-size: 12px }
-.follow { display: grid; gap: 4px; width: 100%; font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted) }
-.follow select { text-transform: none; letter-spacing: 0; font: 14px var(--body); color: var(--ink) }
 .cur { font-size: 12.5px; color: var(--muted); margin: 8px 0 0 }
 .cur strong { color: var(--ink) }
 .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); margin: 20px 0 24px; overflow-x: auto }
@@ -230,8 +228,6 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
 .amt-ro { font: 500 14px var(--mono); text-align: right; padding: 6px 8px; font-variant-numeric: tabular-nums }
 .calc-note { color: var(--pool) !important }
 .empty { font-size: 13.5px; color: var(--muted); margin: 10px 0 0 }
-.from-shared { display: grid; gap: 8px; justify-items: start }
-.big-sm { font: 400 26px/1.1 var(--serif) }
 .gate { max-width: 460px; margin: 12vh auto 0; display: grid; gap: 14px; justify-items: start }
 .gate .note { margin: 0 }
 .home-link { font-size: 13px; color: var(--muted); text-decoration: none }
@@ -473,7 +469,6 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   }
   function personBody(p) {
     var pp = docs[p];
-    var opts = tagOptions(pp.follows);
     return '<div class="tiles">' + tile("Take-home income", "k-inc") + tile("Spending", "k-out") + tile("Saving & investing", "k-save") + tile("Left over", "k-left") + "</div>" +
       '<div class="layout"><div>' +
       '<section class="cat" data-cat="inc-' + p + '"><div class="cat-head"><h2>Income</h2><div class="tot"><span id="t-inc"></span> <small>/ mo</small></div></div>' +
@@ -481,11 +476,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       (pp.income.length ? "" : '<p class="empty">Add take-home pay to see what’s left over each month.</p>') +
       '<button class="add" data-add="inc-' + p + '">+ Add income</button></section>' +
       pp.categories.map(function (c, i, a) { return catHtml(c, true, i, a.length); }).join("") + addCatBtn + "</div>" +
-      '<aside class="rail">' + versionsPanel(false) + tagsPanel(p) +
-      '<div class="panel"><h3>From the shared budget</h3><div class="from-shared">' +
-      '<label class="follow">Following tag<select id="follow">' + (opts || "<option>default</option>") + "</select></label>" +
-      '<p class="split-foot" id="p-follow"></p><span class="big-sm" id="p-share"></span><p class="split-foot" id="p-share-note"></p>' +
-      '<button data-tab="shared">Open Shared tab</button></div></div>' + barsPanel + "</aside></div>";
+      '<aside class="rail">' + versionsPanel(false) + tagsPanel(p) + barsPanel + "</aside></div>";
   }
 
   function render() {
@@ -511,9 +502,14 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     var doc = tab, d = docs[doc], list = versions[doc], ul = document.getElementById("v-list"); if (!ul) return;
     var cur = document.getElementById("v-cur");
     var loaded = d.version && list.filter(function (v) { return v.name === d.version; })[0];
-    cur.innerHTML = d.version ? "Working from <strong>" + esc(d.version) + "</strong>" + (d.edited ? ", with unsaved changes" : "") +
+    var fol = "";
+    if (doc !== "shared") {
+      var fv = followed(d), ft = tagFor("shared", d.follows) ? d.follows : "default";
+      fol = " · follows <strong>" + esc(ft) + "</strong>" + (fv ? " → “" + esc(fv.name) + "”" : " (nothing tagged yet)");
+    }
+    cur.innerHTML = d.version ? "Working from <strong>" + esc(d.version) + "</strong>" + fol + (d.edited ? ", with unsaved changes" : "") +
       (d.edited && loaded ? '<button class="v-update" id="v-update" data-vid="' + esc(loaded.id) + '">Update “' + esc(d.version) + '”</button>' : "") :
-      doc === "shared" ? "Save a version, then tag it to update Luke’s and Amber’s tabs." : "Save versions of " + doc + "’s budget to compare later.";
+      doc === "shared" ? "Save a version, then tag it to update Luke’s and Amber’s tabs." : "Not saved as a version yet" + fol + ". Save one to choose which Shared tag it follows.";
     ul.innerHTML = list.map(function (v) {
       if (v.id === editing) return versionEditor(v, doc);
       var meta;
@@ -588,8 +584,12 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     if (name === old.name && !followsChanged) { editing = null; renderVersions(); return; }
     var v = { id: id, name: name, savedAt: old.savedAt, state: state };
     return putVersion(doc, v).then(function () {
-      if (docs[doc].version === old.name && name !== old.name) { docs[doc].version = name; persist(true, doc); }
-      editing = null; renderVersions();
+      var d = docs[doc], loaded = d.version === old.name;
+      if (loaded && name !== old.name) d.version = name;
+      // The loaded version's follow choice takes effect on screen right away
+      if (loaded && followsChanged) d.follows = state.follows;
+      if (loaded && (name !== old.name || followsChanged)) persist(true, doc);
+      editing = null; renderVersions(); totals();
       setStatus("Saved “" + name + "”" + (followsChanged ? ", now following " + state.follows : ""));
     }).catch(function () { setStatus("Couldn’t save the version. Try again."); });
   }
@@ -755,7 +755,6 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     var FS = fs ? sharedSummary(fs) : null, pctx = FS ? FS.ctx : { price: 0, shares: {} };
     var P = personSummary(pd, pctx), tagName = tagFor("shared", pd.follows) ? pd.follows : "default";
     var shareNote = FS ? (p === "Luke" ? fs.split : 100 - fs.split) + "% of " + money.format(FS.by.Shared) + " shared costs" + (FS.by[p] ? " plus " + money.format(FS.by[p]) + " marked " + p : "") : "No Shared version is tagged yet";
-    set("p-follow", fv ? tagName + " → “" + fv.name + "”, saved " + dateFmt.format(fv.savedAt) : "Nothing is tagged " + tagName + " yet. Save a Shared version with that tag.");
     var ctx = pctx;
     pd.income.forEach(function (it) { set("m-" + it.id, money.format(monthly(it, ctx))); });
     P.cats.forEach(function (x) {
@@ -771,8 +770,6 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     set("k-save", money.format(P.save)); set("k-save-yr", P.income ? Math.round(P.save / P.income * 100) + "% of income" : "—");
     set("k-left", money.format(P.left)); set("k-left-yr", P.income ? (P.left >= 0 ? "Room to spare" : "Over by " + money.format(-P.left)) : "Add income to see this");
     var lv = document.getElementById("k-left"); if (lv) lv.className = "val" + (P.income ? (P.left >= 0 ? " pos" : " neg") : "");
-    set("p-share", money.format(ctx.shares[p]) + " / mo");
-    set("p-share-note", FS ? shareNote + ". This changes when the " + tagName + " tag moves to another Shared version." : "");
     drawBars(P.cats.map(function (x) { return { name: x.c.name || "Untitled", t: x.t }; }));
   }
   function set(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
@@ -1027,11 +1024,6 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   app.addEventListener("change", function (e) {
     if (e.target.id === "m-years") { docs.shared.mortgage.years = Number(e.target.value); totals(); persist(); return; }
     if (e.target.id === "ve-follow") { var fh = document.getElementById("ve-follow-hint"); if (fh) fh.textContent = followHint(e.target.value); return; }
-    if (e.target.id === "follow") {
-      docs[tab].follows = e.target.value; persist(); totals(); renderVersions();
-      setStatus(tab + " now follows " + e.target.value);
-      return;
-    }
     if (e.target.dataset.tagsel) {
       var tn = e.target.dataset.tagsel, vid = e.target.value, sdoc = tab, vv = versionIn(sdoc, vid);
       setTag(sdoc, tn, vid).then(function () {

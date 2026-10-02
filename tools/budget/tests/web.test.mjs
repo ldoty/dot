@@ -19,7 +19,9 @@ test('the page holds no budget figures until it loads them from the API', async 
 test('personal share comes from the tagged Shared version, not the working copy', async () => {
   const p = await openBudget('#luke');
   assert.equal(p.text('ro-Lukes'), '$500'); // 50% of the tagged $1,000, not the working $2,000
-  assert.match(p.text('p-follow'), /default → “Starting point”/);
+  assert.match(p.text('v-cur'), /follows default → “Starting point”/);
+  assert.match(p.text('nt-Lukes'), /From Shared \(default\): 50% of \$1,000/);
+  assert.equal(p.d.getElementById('follow'), null, 'no separate follow panel');
   p.close();
 });
 
@@ -54,8 +56,10 @@ test('new tags are cleaned up, followable, and deletable (followers fall back to
   assert.equal(tag('default'), 'v1');
 
   await p.tab('Amber');
-  p.type('#follow', 'stretch-goal', 'change'); await saved();
-  assert.equal(doc('Amber').follows, 'stretch-goal');
+  p.type('#v-name', 'Mine'); p.click('#v-save'); await wait(50);
+  const av = table.keys().find((k) => k.startsWith('DOC#Amber#VERSION#')).split('#')[3];
+  p.click(`[data-vedit="${av}"]`); p.type('#ve-follow', 'stretch-goal', 'change'); p.click(`[data-vsave="${av}"]`); await saved();
+  assert.equal(doc('Amber').follows, 'stretch-goal', 'editing the loaded version applies its tag');
   assert.equal(doc('Luke').follows, 'default');
   assert.equal(p.text('ro-Ambers'), '$1,000'); // 50% of the $2,000 working copy saved as Lean
 
@@ -249,7 +253,7 @@ test('personal versions can be renamed and updated', async () => {
   p.close();
 });
 
-test('a personal version’s tag can be changed in its editor, and loading it applies that tag', async () => {
+test('a personal version’s tag is set in its editor and takes effect when it’s the loaded version', async () => {
   const p = await openBudget('#shared');
   p.type('#v-name', 'Plan B'); p.type('#v-tag', 'stretch'); p.click('#v-save'); await wait(50);
   await p.tab('Luke');
@@ -261,14 +265,11 @@ test('a personal version’s tag can be changed in its editor, and loading it ap
   assert.match(p.text('ve-follow-hint'), /“Starting point”/);
   p.type('#ve-follow', 'stretch', 'change');
   assert.match(p.text('ve-follow-hint'), /“Plan B”/, 'hint updates before saving');
-  p.click(`[data-vsave="${id}"]`); await wait(50);
+  p.click(`[data-vsave="${id}"]`); await saved();
   assert.equal(version('Luke', id).state.follows, 'stretch');
-  assert.equal(doc('Luke').follows, 'default', 'editing a saved version doesn’t change the working copy');
+  assert.equal(doc('Luke').follows, 'stretch', 'it’s the loaded version, so the tab follows stretch right away');
+  assert.match(p.text('v-cur'), /follows stretch → “Plan B”/);
   assert.match(p.d.querySelector('.v-item .v-meta').textContent, /follows stretch/);
-
-  p.click(`[data-vload="${id}"]`); await saved();
-  assert.equal(doc('Luke').follows, 'stretch');
-  assert.equal(p.el('#follow').value, 'stretch');
   p.close();
 });
 
@@ -385,5 +386,22 @@ test('tagging another version default takes it off the old one, on Shared and on
   assert.equal(tag('default', 'Luke'), b);
   assert.equal(table.keys().filter((k) => k.startsWith('TAG#Luke#')).length, 1, 'one default row, not two');
   assert.equal(p.d.querySelectorAll('.v-item .v-tags').length, 1, 'only one version shows the default chip');
+  p.close();
+});
+
+test('editing the tag of a version that isn’t loaded leaves the screen alone until it’s loaded', async () => {
+  const p = await openBudget('#shared');
+  p.type('#v-name', 'Plan B'); p.type('#v-tag', 'stretch'); p.click('#v-save'); await wait(50);
+  await p.tab('Luke');
+  p.type('#v-name', 'Other'); p.click('#v-save'); await wait(50);
+  p.type('#v-name', 'Current'); p.click('#v-save'); await wait(50);
+  const other = table.keys().map((k) => k.split('#')).filter((k) => k[1] === 'Luke' && k[2] === 'VERSION')
+    .map((k) => k[3]).find((id) => version('Luke', id).name === 'Other');
+  p.click(`[data-vedit="${other}"]`); p.type('#ve-follow', 'stretch', 'change'); p.click(`[data-vsave="${other}"]`); await saved();
+  assert.equal(doc('Luke').follows, 'default');
+  assert.equal(p.text('ro-Lukes'), '$500');
+  p.click(`[data-vload="${other}"]`); await saved();
+  assert.equal(doc('Luke').follows, 'stretch');
+  assert.equal(p.text('ro-Lukes'), '$1,000'); // 50% of Plan B's $2,000
   p.close();
 });
