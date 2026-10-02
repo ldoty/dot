@@ -169,3 +169,84 @@ test('property tax and insurance follow the home value; flat items don’t', asy
   assert.deepEqual([tax.calc, tax.rate, 'amount' in tax], ['pctHome', 0.5, false]);
   p.close();
 });
+
+// --- Editing saved versions --------------------------------------------------------------
+
+const version = (d, id) => { const r = table.get(PK, `DOC#${d}#VERSION#${id}`); return r && { ...r, state: JSON.parse(r.state) }; };
+
+test('rename a version; its tags stay, and the working copy follows the new name', async () => {
+  const p = await openBudget('#shared');
+  p.click('[data-vload="v1"]'); await saved();
+  p.click('[data-vedit="v1"]');
+  assert.equal(p.d.activeElement.id, 've-name');
+  p.type('#ve-name', 'Baseline'); p.click('[data-vrename="v1"]'); await saved();
+  assert.equal(version('shared', 'v1').name, 'Baseline');
+  assert.equal(tag('default'), 'v1');
+  assert.equal(doc('shared').version, 'Baseline');
+  assert.equal(p.d.querySelector('[data-veditor]'), null, 'editor closes');
+  p.close();
+});
+
+test('renaming to another version’s name is refused', async () => {
+  const p = await openBudget('#shared');
+  p.type('#v-name', 'Plan B'); p.click('#v-save'); await wait(50);
+  p.click('[data-vedit="v1"]'); p.type('#ve-name', 'plan b'); p.click('[data-vrename="v1"]'); await wait(50);
+  assert.equal(version('shared', 'v1').name, 'Starting point');
+  assert.match(p.text('status'), /already called/);
+  p.close();
+});
+
+test('add and remove tags from the editor; default can’t be removed', async () => {
+  const p = await openBudget('#shared');
+  p.click('[data-vedit="v1"]');
+  assert.equal(p.d.querySelector('[data-vuntag="default"]'), null);
+  p.type('#ve-tag', 'All Cash'); p.click('[data-vaddtag="v1"]'); await wait(50);
+  assert.equal(tag('all-cash'), 'v1');
+  assert.ok(p.d.querySelector('[data-vuntag="all-cash"]'), 'editor stays open showing the new tag');
+  p.click('[data-vuntag="all-cash"]'); await wait(50);
+  assert.equal(tag('all-cash'), undefined);
+  p.close();
+});
+
+test('replace with current numbers: two clicks, warns who follows it, and they get the new numbers', async () => {
+  const p = await openBudget('#shared');
+  p.type('#split-r', '70'); await saved();
+  p.click('[data-vedit="v1"]');
+  p.click('[data-vreplace="v1"]');
+  assert.match(p.el('[data-vreplace="v1"]').textContent, /Luke & Amber follow it/);
+  assert.equal(version('shared', 'v1').state.split, 50, 'first click changes nothing');
+  p.click('[data-vreplace="v1"]'); await saved();
+  assert.equal(version('shared', 'v1').state.split, 70);
+  assert.equal(version('shared', 'v1').name, 'Starting point');
+  assert.equal(doc('shared').version, 'Starting point');
+  await p.tab('Luke');
+  assert.equal(p.text('ro-Lukes'), '$1,400');
+  p.close();
+});
+
+test('load, change, then Update: the button appears only with unsaved changes and saves into that version', async () => {
+  const p = await openBudget('#shared');
+  p.click('[data-vload="v1"]'); await saved();
+  assert.equal(p.d.getElementById('v-update'), null);
+  p.type('#split-r', '60'); await wait();
+  assert.equal(p.el('#v-update').textContent, 'Update “Starting point”');
+  p.click('#v-update'); await saved();
+  assert.equal(version('shared', 'v1').state.split, 60);
+  assert.equal(p.d.getElementById('v-update'), null);
+  assert.equal(doc('shared').edited, false);
+  p.close();
+});
+
+test('personal versions can be renamed and updated, with no tag controls', async () => {
+  const p = await openBudget('#luke');
+  p.type('#v-name', 'Lean'); p.click('#v-save'); await wait(50);
+  const id = table.keys().find((k) => k.startsWith('DOC#Luke#VERSION#')).split('#')[3];
+  p.click(`[data-vedit="${id}"]`);
+  assert.equal(p.d.getElementById('ve-tag'), null);
+  p.type('#ve-name', 'Lean month'); p.click(`[data-vrename="${id}"]`); await saved();
+  assert.equal(version('Luke', id).name, 'Lean month');
+  p.type('#a-Lukei', '3500'); await wait();
+  p.click('#v-update'); await saved();
+  assert.equal(version('Luke', id).state.income[0].amount, 3500);
+  p.close();
+});

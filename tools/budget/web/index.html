@@ -192,6 +192,18 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
 .t-item .v-meta { grid-column: 1 / -1 }
 .t-item .t-del { padding: 4px 9px; font-size: 12px; color: var(--muted) }
 .t-item .t-del.arm { color: var(--bad); border-color: var(--bad) }
+.v-edit { display: grid; gap: 10px; border-color: var(--pool) }
+.v-edit .v-lbl { display: grid; gap: 4px; font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted) }
+.v-edit input { text-transform: none; letter-spacing: 0; font: 14px var(--body); background: var(--field); border-color: var(--line) }
+.ve-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center }
+.ve-tags .tagchip { display: inline-flex; align-items: center; gap: 2px }
+.ve-tags .tagchip button { border: 0; background: none; padding: 0 2px; font-size: 13px; line-height: 1; color: inherit }
+.ve-add { display: flex; gap: 6px }
+.ve-add input { flex: 1; min-width: 0 }
+.ve-acts { display: flex; flex-wrap: wrap; gap: 6px }
+.ve-acts button, .ve-add button { padding: 5px 11px; font-size: 12.5px }
+.ve-acts .arm { color: var(--bad); border-color: var(--bad) }
+.cur .v-update { margin-left: 6px; padding: 3px 10px; font-size: 12px }
 .follow { display: grid; gap: 4px; width: 100%; font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted) }
 .follow select { text-transform: none; letter-spacing: 0; font: 14px var(--body); color: var(--ink) }
 .cur { font-size: 12.5px; color: var(--muted); margin: 8px 0 0 }
@@ -478,9 +490,12 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   function renderVersions() {
     var doc = tab, d = docs[doc], list = versions[doc], ul = document.getElementById("v-list"); if (!ul) return;
     var cur = document.getElementById("v-cur");
-    cur.innerHTML = d.version ? "Working from <strong>" + esc(d.version) + "</strong>" + (d.edited ? ", with unsaved changes" : "") :
+    var loaded = d.version && list.filter(function (v) { return v.name === d.version; })[0];
+    cur.innerHTML = d.version ? "Working from <strong>" + esc(d.version) + "</strong>" + (d.edited ? ", with unsaved changes" : "") +
+      (d.edited && loaded ? '<button class="v-update" id="v-update" data-vid="' + esc(loaded.id) + '">Update “' + esc(d.version) + '”</button>' : "") :
       doc === "shared" ? "Save a version, then tag it to update Luke’s and Amber’s tabs." : "Save versions of " + doc + "’s budget to compare later.";
     ul.innerHTML = list.map(function (v) {
+      if (v.id === editing) return versionEditor(v, doc);
       var meta;
       if (doc === "shared") {
         var sm = sharedSummary(normalizeShared(clone(v.state)));
@@ -494,11 +509,80 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       var vt = doc === "shared" ? tagsOn(v.id) : [];
       return '<li class="v-item' + (v.name === d.version ? " on" : "") + '"><span class="v-name">' + esc(v.name) +
         (vt.length ? '<span class="v-tags">' + vt.map(function (n) { return '<span class="tagchip">' + esc(n) + "</span>"; }).join("") + "</span>" : "") + "</span>" +
-        '<span class="v-acts"><button data-vload="' + esc(v.id) + '">Load</button><button class="v-del" data-vdel="' + esc(v.id) + '" aria-label="Delete ' + esc(v.name) + '">Delete</button></span>' +
+        '<span class="v-acts"><button data-vload="' + esc(v.id) + '">Load</button><button data-vedit="' + esc(v.id) + '" aria-label="Edit ' + esc(v.name) + '">Edit</button><button class="v-del" data-vdel="' + esc(v.id) + '" aria-label="Delete ' + esc(v.name) + '">Delete</button></span>' +
         meta + "</li>";
     }).join("");
     ul.hidden = !list.length;
     renderTags();
+  }
+  // Inline editor for one saved version: rename, tags (Shared), replace its numbers with the working copy
+  var editing = null;
+  function versionEditor(v, doc) {
+    var vt = doc === "shared" ? tagsOn(v.id) : [];
+    return '<li class="v-item v-edit" data-veditor="' + esc(v.id) + '">' +
+      '<label class="v-lbl">Name<input id="ve-name" value="' + esc(v.name) + '" maxlength="60"></label>' +
+      (doc === "shared" ? '<div class="v-lbl">Tags<div class="ve-tags">' + vt.map(function (n) {
+        return '<span class="tagchip">' + esc(n) + (n === "default" ? "" : '<button data-vuntag="' + esc(n) + '" aria-label="Remove tag ' + esc(n) + '">&times;</button>') + "</span>";
+      }).join("") + "</div>" +
+      '<div class="ve-add"><input id="ve-tag" list="tag-names" placeholder="Add a tag" aria-label="Add a tag" maxlength="30"><button data-vaddtag="' + esc(v.id) + '">Add</button></div></div>' : "") +
+      '<div class="ve-acts"><button class="primary" data-vrename="' + esc(v.id) + '">Save name</button>' +
+      '<button data-vreplace="' + esc(v.id) + '">Replace with current numbers</button>' +
+      '<button data-vdone>Done</button></div></li>';
+  }
+  function putVersion(doc, v) {
+    return api("PUT", "/docs/" + doc + "/versions/" + v.id, v).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      versions[doc] = [v].concat(versions[doc].filter(function (x) { return x.id !== v.id; }))
+        .sort(function (a, b) { return b.savedAt - a.savedAt; });
+    });
+  }
+  // Who would see different numbers if this Shared version changed
+  function followersOf(versionId) {
+    return PEOPLE.filter(function (p) { var f = followed(docs[p]); return f && f.id === versionId; });
+  }
+  function renameVersion(doc, id, name) {
+    var old = versions[doc].filter(function (x) { return x.id === id; })[0]; if (!old) return;
+    name = name.trim();
+    if (!name) { setStatus("Give the version a name."); return; }
+    if (name === old.name) { editing = null; renderVersions(); return; }
+    if (versions[doc].some(function (x) { return x.id !== id && x.name.toLowerCase() === name.toLowerCase(); })) { setStatus("Another version is already called “" + name + "”."); return; }
+    var v = { id: id, name: name, savedAt: old.savedAt, state: old.state };
+    return putVersion(doc, v).then(function () {
+      if (docs[doc].version === old.name) { docs[doc].version = name; persist(true, doc); }
+      editing = null; renderVersions(); setStatus("Renamed “" + old.name + "” to “" + name + "”");
+    }).catch(function () { setStatus("Couldn’t rename the version. Try again."); });
+  }
+  function replaceNumbers(doc, id) {
+    var old = versions[doc].filter(function (x) { return x.id === id; })[0]; if (!old) return;
+    var snap = clone(docs[doc]);
+    delete snap.version; delete snap.edited; delete snap.updated;
+    var v = { id: id, name: old.name, savedAt: Date.now(), state: snap };
+    return putVersion(doc, v).then(function () {
+      docs[doc].version = old.name; docs[doc].edited = false; persist(true, doc);
+      var fans = doc === "shared" ? followersOf(id) : [];
+      editing = null; renderVersions(); totals();
+      setStatus("Updated “" + old.name + "” with the current numbers" + (fans.length ? ". " + fans.join(" & ") + (fans.length > 1 ? " follow it." : " follows it.") : ""));
+    }).catch(function () { setStatus("Couldn’t update the version. Try again."); });
+  }
+  function deleteTag(tn) {
+    return api("DELETE", "/tags/" + tn).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      tags = tags.filter(function (x) { return x.name !== tn; });
+      // Anyone following it falls back to default
+      var moved = PEOPLE.filter(function (p) { return docs[p].follows === tn; });
+      moved.forEach(function (p) { docs[p].follows = "default"; persist(false, p); });
+      renderVersions(); setStatus("Deleted tag " + tn + (moved.length ? ". " + moved.join(" & ") + " now follow" + (moved.length > 1 ? "" : "s") + " default." : ""));
+    }).catch(function () { setStatus("Couldn’t delete the tag. Try again."); });
+  }
+  function addTag(id) {
+    var inp = document.getElementById("ve-tag"), tn = cleanTag(inp.value);
+    if (!tn) { inp.focus(); return; }
+    if (!/^[a-z0-9][a-z0-9_-]{0,29}$/.test(tn)) { inp.focus(); setStatus("Tags use letters, numbers, - and _."); return; }
+    var prev = tagFor(tn), v = sharedVersion(id);
+    setTag(tn, id).then(function () {
+      renderVersions(); var again = document.getElementById("ve-tag"); if (again) again.focus();
+      setStatus((prev && prev.versionId !== id ? "Moved " + tn + " to “" : "Tagged “") + (v ? v.name : "") + "”" + (prev && prev.versionId !== id ? "" : " " + tn) + followNote(tn));
+    }).catch(function () { setStatus("Couldn’t add the tag. Try again."); });
   }
   function renderTags() {
     var tl = document.getElementById("t-list"); if (!tl) return;
@@ -632,7 +716,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     if (c && doc === tab && d.version && d.edited && c.textContent.indexOf("unsaved") < 0) renderVersions();
   }
   function setTab(t) {
-    tab = t;
+    tab = t; editing = null;
     try { localStorage.setItem(TKEY, t); } catch (e) {}
     if (history.replaceState) history.replaceState(null, "", "#" + t.toLowerCase());
     render(); window.scrollTo(0, 0);
@@ -737,6 +821,28 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       fetchDefaults().then(function (d) {
         docs[rdoc] = d[rdoc]; persist(true, rdoc); render(); setStatus("Reset " + label(rdoc) + " to its starting numbers");
       }).catch(function () { setStatus("Couldn’t load the starting numbers. Try again."); });
+    } else if (t.dataset.vedit) {
+      editing = t.dataset.vedit; renderVersions();
+      var ne = document.getElementById("ve-name"); if (ne) { ne.focus(); ne.select(); }
+    } else if (t.dataset.vdone != null) {
+      editing = null; renderVersions();
+    } else if (t.dataset.vrename) {
+      renameVersion(tab, t.dataset.vrename, document.getElementById("ve-name").value);
+    } else if (t.dataset.vaddtag) {
+      addTag(t.dataset.vaddtag);
+    } else if (t.dataset.vuntag) {
+      deleteTag(t.dataset.vuntag);
+    } else if (t.dataset.vreplace) {
+      var rid = t.dataset.vreplace, fans = tab === "shared" ? followersOf(rid) : [];
+      if (armedDel !== "replace:" + rid) {
+        armedDel = "replace:" + rid; t.classList.add("arm");
+        t.textContent = fans.length ? "Replace? " + fans.join(" & ") + (fans.length > 1 ? " follow it" : " follows it") : "Click again to replace";
+        setTimeout(function () { if (armedDel === "replace:" + rid) { armedDel = null; t.textContent = "Replace with current numbers"; t.classList.remove("arm"); } }, 3000);
+        return;
+      }
+      armedDel = null; replaceNumbers(tab, rid);
+    } else if (t.id === "v-update") {
+      replaceNumbers(tab, t.dataset.vid);
     } else if (t.dataset.tagdel) {
       var tn = t.dataset.tagdel;
       if (armedDel !== "tag:" + tn) {
@@ -745,14 +851,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
         return;
       }
       armedDel = null;
-      api("DELETE", "/tags/" + tn).then(function (res) {
-        if (!res.ok) throw new Error(res.status);
-        tags = tags.filter(function (x) { return x.name !== tn; });
-        // Anyone following it falls back to default
-        var moved = PEOPLE.filter(function (p) { return docs[p].follows === tn; });
-        moved.forEach(function (p) { docs[p].follows = "default"; persist(false, p); });
-        renderVersions(); setStatus("Deleted tag " + tn + (moved.length ? ". " + moved.join(" & ") + " now follow" + (moved.length > 1 ? "" : "s") + " default." : ""));
-      }).catch(function () { setStatus("Couldn’t delete the tag. Try again."); });
+      deleteTag(tn);
     } else if (t.id === "signout") {
       flush(); FamilyAuth.logout();
     }
@@ -826,6 +925,9 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       return;
     }
     if (e.target.id === "v-name" && e.key === "Enter") { e.preventDefault(); saveVersion(); }
+    if (e.target.id === "ve-name" && e.key === "Enter") { e.preventDefault(); renameVersion(tab, e.target.closest("[data-veditor]").dataset.veditor, e.target.value); }
+    if (e.target.id === "ve-tag" && e.key === "Enter") { e.preventDefault(); addTag(e.target.closest("[data-veditor]").dataset.veditor); }
+    if (editing && e.key === "Escape" && e.target.closest && e.target.closest("[data-veditor]")) { editing = null; renderVersions(); }
     if (e.target.dataset && e.target.dataset.cname && e.key === "Enter") { e.preventDefault(); e.target.blur(); }
     if (e.target.getAttribute("role") === "tab" && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
       var order = ["shared", "Luke", "Amber"], i = order.indexOf(tab);
