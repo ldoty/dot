@@ -1,0 +1,10 @@
+# Real household data and other local-only files. Never commit.
+private/
+
+node_modules/
+.terraform/
+.build/
+*.tfplan
+*.tfstate
+*.tfstate.backup
+.DS_Store

@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<title>Luke &amp; Amber Budget</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&amp;family=Karla:ital,wght@0,400;0,500;0,600;1,400&amp;family=Young+Serif&amp;family=DM+Mono:wght@400;500&amp;display=swap">
+<style id="budget-css">
+/* Layout: summary band up top, category ledgers below in one column, breakdown rail beside them on wide screens.
+   Colors and type follow the Daylight & Evening house style (style-guide.html). */
+:root {
+  /* Daylight (Luke) */
+  --bg: #fbf9f3; --surface: #ffffff; --raised: #f3efe4; --ink: #1e2a24; --muted: #5d6a62; --line: #e4ddcd;
+  --leaf: #2f9e5b; --pool: #0b7b7e; --sun: #e9a41a; --ember: #e8612c; --bloom: #e0607e; --wood: #a5622d;
+  --on-accent: #ffffff; --on-sun: #1e2a24;
+  --texture: none;
+  --display: "Jost", "Futura", "Avenir Next", system-ui, sans-serif;
+  --body: "Karla", "Helvetica Neue", system-ui, sans-serif;
+  --serif: "Young Serif", Georgia, serif;
+  --mono: "DM Mono", ui-monospace, Menlo, monospace;
+  --r-sm: 8px; --r-md: 14px; --r-pill: 999px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  /* Evening (Amber) */
+  --bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;
+  --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;
+  --on-accent: #1a1613; --on-sun: #1a1613;
+  --texture: radial-gradient(rgba(241,231,216,.035) 1px, transparent 1.2px);
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;
+  --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;
+  --on-accent: #1a1613; --on-sun: #1a1613;
+  --texture: radial-gradient(rgba(241,231,216,.035) 1px, transparent 1.2px);
+  color-scheme: dark }
+:root[data-theme="light"] { color-scheme: light }
+/* Working aliases used by the components below */
+:root, :root[data-theme] {
+  --accent: var(--pool);
+  --accent-soft: color-mix(in srgb, var(--pool) 14%, var(--surface));
+  --good: color-mix(in srgb, var(--leaf) 60%, var(--ink));
+  --bad: color-mix(in srgb, var(--ember) 60%, var(--ink));
+  --field: var(--raised);
+}
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+body { margin: 0; background: var(--bg); background-image: var(--texture); background-size: 6px 6px; color: var(--ink); font: 15px/1.55 var(--body) }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 32px 20px 64px }
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 8px }
+h1 { font: 500 clamp(30px, 4.5vw, 46px)/1.05 var(--display); margin: 0; letter-spacing: -0.02em; text-wrap: balance; display: flex; align-items: center; gap: 12px }
+h1 em { font: 400 1em var(--serif); font-style: normal; color: var(--wood) }
+h1 svg { width: .9em; height: .9em; flex: none }
+.mode { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); background: var(--raised) }
+.mode button { border: 0; background: none; padding: 5px 12px; font-size: 13px }
+.mode button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.12) }
+.sub { color: var(--muted); margin: 6px 0 0; max-width: 62ch }
+.savebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
+.status { font-size: 13px; color: var(--muted) }
+.status.dirty { color: var(--accent); font-weight: 600 }
+button { font: 600 14px var(--body); border-radius: var(--r-pill); padding: 8px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink) }
+button.primary { background: var(--pool); border-color: var(--pool); color: var(--on-accent) }
+button:disabled { opacity: .45; cursor: default }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.note { background: color-mix(in srgb, var(--sun) 16%, var(--surface)); border-radius: var(--r-sm); padding: 10px 14px; font-size: 13.5px; margin: 18px 0 24px }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 28px }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 16px }
+.tile .lbl { font: 600 11.5px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted) }
+.tile .val { font: 400 30px/1.2 var(--serif); font-variant-numeric: tabular-nums; margin-top: 4px }
+.tile .per { font-size: 12.5px; color: var(--muted); font-family: var(--mono) }
+.val.pos { color: var(--good) } .val.neg { color: var(--bad) }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr) } }
+.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); display: grid; gap: 16px }
+@media (max-width: 900px) { .rail { position: static } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px }
+.panel h3 { font: 600 16px var(--display); margin: 0 0 12px }
+
+section.cat { margin-bottom: 26px }
+.cat-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 12px; border-bottom: 2px solid var(--wood); padding-bottom: 6px }
+.cat-head h2 { font: 500 21px var(--display); margin: 0; flex: 1 1 200px; min-width: 0; display: flex; align-items: center }
+.cat-head .tot { margin-left: auto }
+/* Category names edit in place: they read as headings until hovered or focused */
+.cat-name { font: inherit; letter-spacing: inherit; color: inherit; background: none; border-color: transparent; padding: 2px 6px; margin-left: -6px }
+.cat-name:hover { background: var(--field) }
+.cat-name::placeholder { color: var(--muted) }
+.cat-tools { display: flex; gap: 4px; align-items: center }
+.cat-tools button { padding: 3px 10px; font-size: 12px; font-weight: 600; color: var(--muted); background: none }
+.cat-tools button:hover:not(:disabled) { color: var(--ink); border-color: var(--muted) }
+.cat-tools .kind[aria-pressed="true"] { color: var(--good); border-color: color-mix(in srgb, var(--leaf) 50%, var(--line)) }
+.cat-tools .cdel.arm { color: var(--bad); border-color: var(--bad) }
+@media (hover: hover) {
+  .cat-tools { opacity: 0; transition: opacity .15s }
+  .cat-head:hover .cat-tools, .cat-head:focus-within .cat-tools, .cat-tools:has(.arm) { opacity: 1 }
+}
+.add-cat { display: block; margin: -8px 0 26px }
+.cat-head .tot { font: 500 15px var(--mono); font-variant-numeric: tabular-nums }
+.cat-head .tot small { color: var(--muted); font-size: 12px }
+.chip { font: 600 10.5px var(--body); text-transform: uppercase; letter-spacing: .06em; color: var(--good); background: color-mix(in srgb, var(--leaf) 18%, transparent); border-radius: 99px; padding: 2px 8px; margin-left: 8px; vertical-align: 2px }
+
+.row { display: grid; grid-template-columns: minmax(0, 1fr) 112px 78px 92px 96px 30px; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line) }
+.row.labels { font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); padding: 6px 0 4px }
+.row.labels span:nth-child(5) { text-align: right }
+.name-cell { min-width: 0; display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 4px; align-items: center }
+.name-cell small { grid-column: 2 }
+.grip { cursor: grab; color: var(--muted); opacity: .45; font-size: 15px; line-height: 1; text-align: center; user-select: none; -webkit-user-select: none; border-radius: 4px; padding: 4px 0 }
+.row:hover .grip, .grip:focus-visible { opacity: 1; color: var(--pool) }
+.grip:active { cursor: grabbing }
+.row.dragging { opacity: .35 }
+.row.drop-before { box-shadow: inset 0 3px 0 var(--pool) }
+.row.drop-after { box-shadow: inset 0 -3px 0 var(--pool) }
+section.cat.drop-into { outline: 2px dashed var(--pool); outline-offset: 6px; border-radius: var(--r-sm) }
+.row.labels span:first-child { padding-left: 22px }
+.name-cell small { display: block; color: var(--muted); font-size: 12px; padding-left: 8px; line-height: 1.3 }
+input, select { font: 14px var(--body); color: var(--ink); background: var(--field); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 6px 8px; width: 100%; min-width: 0 }
+input:hover, select:hover { border-color: var(--line) }
+input:focus, select:focus { border-color: var(--pool); outline: none }
+input.amt { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums }
+.per-fixed { font-size: 12px; color: var(--muted); line-height: 1.25 }
+.row.calc .name-cell small { color: var(--pool) }
+.mo { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums }
+.del { border: none; background: none; color: var(--muted); padding: 4px; font-size: 18px; line-height: 1 }
+.del:hover { color: var(--bad) }
+.add { margin-top: 10px; border-style: dashed; font-weight: 500; color: var(--muted); font-size: 13px; padding: 6px 12px }
+@media (max-width: 640px) {
+  .row { grid-template-columns: 1fr 1fr 1fr 30px; row-gap: 6px }
+  .row .name-cell { grid-column: 1 / -1 }
+  .row .mo { grid-column: 1 / -2; text-align: left; font-size: 13px; color: var(--muted) }
+  .row .mo::before { content: "Monthly: " }
+  .row.labels { display: none }
+}
+
+.bars { display: grid; gap: 9px }
+.bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; font-size: 13px }
+.bar-row .amt { font-family: var(--mono); font-variant-numeric: tabular-nums }
+.track { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--raised); overflow: hidden }
+.fill { height: 100%; background: var(--leaf); border-radius: 3px }
+.split { display: grid; gap: 8px; font-size: 14px }
+.split div { display: flex; justify-content: space-between }
+.split span:last-child { font-family: var(--mono); font-variant-numeric: tabular-nums }
+@media (prefers-reduced-motion: no-preference) { .fill { transition: width .3s ease } }
+.mort { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 18px; margin-bottom: 26px }
+.mort-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 14px; margin-top: 12px }
+.mort-grid .wide { grid-column: 1 / -1 }
+@media (max-width: 640px) { .mort-grid { grid-template-columns: 1fr 1fr } .mort-grid .fld:first-child { grid-column: 1 / -1 } }
+.lbl-sm { font-size: 13px; color: var(--muted); margin-bottom: 4px }
+.lbl-sm strong { color: var(--ink); font: 500 14px var(--mono) }
+.fld label { display: block; font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin-bottom: 4px }
+.loan-line { display: flex; gap: 10px; align-items: center }
+.loan-line input[type=number] { width: 120px; flex: none }
+input[type=range] { accent-color: var(--pool); padding: 0; background: none; border: none; flex: 1 }
+.mort-out { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line) }
+.mort-out .big { font: 400 30px/1.1 var(--serif); font-variant-numeric: tabular-nums }
+.mort-out .big small { font: 13px var(--body); color: var(--muted) }
+.mort-out .fine { font-size: 12.5px; color: var(--muted); margin-top: 4px }
+.presets { display: flex; flex-wrap: wrap; gap: 6px }
+.presets button { font: 12.5px var(--mono); padding: 6px 14px; border-radius: var(--r-md); display: grid; text-align: left; line-height: 1.3 }
+.presets button span { color: var(--muted); font-size: 11.5px }
+.presets button.on { border-color: var(--pool); background: var(--accent-soft) }
+.split-range { display: grid; gap: 10px }
+.split-range .ends { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600 }
+.split-range input { width: 100% }
+.split-who { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px }
+.split-who > div { background: var(--field); border-radius: var(--r-sm); padding: 10px 12px }
+.split-who .nm { font: 600 11px var(--display); color: var(--muted); text-transform: uppercase; letter-spacing: .12em }
+.split-who > div:first-child { box-shadow: inset 3px 0 0 var(--pool) } .split-who > div:last-child { box-shadow: inset 3px 0 0 var(--bloom) }
+.split-who .amt { font: 400 19px var(--serif); font-variant-numeric: tabular-nums }
+.split-who .yr { font: 12px var(--mono); color: var(--muted) }
+.split-foot { font-size: 12.5px; color: var(--muted); margin: 6px 0 0 }
+.v-save { display: flex; gap: 8px }
+.v-save input { background: var(--field); border-color: var(--line) }
+.v-save button { flex: none }
+.v-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px }
+.v-item { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center }
+.v-item.on { border-color: var(--pool); background: var(--accent-soft) }
+.v-name { font-weight: 600; overflow-wrap: anywhere }
+.v-meta { grid-column: 1; font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums }
+.v-acts { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 4px }
+.v-acts button { padding: 5px 9px; font-size: 12.5px }
+.v-acts .v-del { color: var(--muted) }
+.v-acts .v-del.arm { color: var(--bad); border-color: var(--bad) }
+.v-empty { font-size: 13px; color: var(--muted); margin: 10px 0 0 }
+.v-save.with-tag { display: grid; grid-template-columns: minmax(0, 1fr) auto }
+.v-save.with-tag #v-name { grid-column: 1 / -1 }
+.v-tags { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: 1px }
+.tagchip { font: 600 10.5px var(--mono); color: var(--pool); background: var(--accent-soft); border-radius: 99px; padding: 1px 7px }
+.t-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px }
+.t-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 8px; align-items: center }
+.t-item select { background: var(--field) }
+.t-item .v-meta { grid-column: 1 / -1 }
+.t-item .t-del { padding: 4px 9px; font-size: 12px; color: var(--muted) }
+.t-item .t-del.arm { color: var(--bad); border-color: var(--bad) }
+.follow { display: grid; gap: 4px; width: 100%; font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted) }
+.follow select { text-transform: none; letter-spacing: 0; font: 14px var(--body); color: var(--ink) }
+.cur { font-size: 12.5px; color: var(--muted); margin: 8px 0 0 }
+.cur strong { color: var(--ink) }
+.tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); margin: 20px 0 24px; overflow-x: auto }
+.tab { border: 0; border-radius: 0; background: none; padding: 10px 18px 12px; font: 500 17px var(--display); color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px }
+.tab:hover { color: var(--ink) }
+.tab[aria-selected="true"] { color: var(--ink) }
+.tab-shared[aria-selected="true"] { border-bottom-color: var(--leaf) }
+.tab-luke[aria-selected="true"] { border-bottom-color: var(--pool) }
+.tab-amber[aria-selected="true"] { border-bottom-color: var(--bloom) }
+.row.prow { grid-template-columns: minmax(0, 1fr) 112px 78px 96px 30px }
+.amt-ro { font: 500 14px var(--mono); text-align: right; padding: 6px 8px; font-variant-numeric: tabular-nums }
+.calc-note { color: var(--pool) !important }
+.empty { font-size: 13.5px; color: var(--muted); margin: 10px 0 0 }
+.from-shared { display: grid; gap: 8px; justify-items: start }
+.big-sm { font: 400 26px/1.1 var(--serif) }
+.gate { max-width: 460px; margin: 12vh auto 0; display: grid; gap: 14px; justify-items: start }
+.gate .note { margin: 0 }
+.home-link { font-size: 13px; color: var(--muted); text-decoration: none }
+.home-link:hover { color: var(--pool) }
+@media (max-width: 640px) {
+  .row.prow { grid-template-columns: 1fr 1fr 30px }
+  .row.prow .mo { grid-column: 1 / -2 }
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="family-auth.js"></script>
+<script id="app-js">
+(function () {
+  var WHO = ["Shared", "Luke", "Amber"];
+  var PEOPLE = ["Luke", "Amber"];
+  var PRESETS = [0, 100000, 200000, 300000];
+  // Common budgeting rule of thumb: homeowners insurance runs about 0.5% of home value per year
+  var INSURANCE_PCT = 0.5;
+  var TKEY = "luke-amber-budget-tab";
+  var confirmReset = false, armedDel = null;
+
+  // Three independent budgets ("docs"), each saved on its own: the open tab's name is its doc key.
+  // revs guard against overwriting someone else's edit. tags name saved Shared versions; each
+  // personal doc follows a tag, and its share of costs comes from the version that tag points to.
+  var DOCS = ["shared", "Luke", "Amber"];
+  var cfg, docs = {}, revs = {}, versions = { shared: [], Luke: [], Amber: [] }, tags = [];
+  function label(doc) { return doc === "shared" ? "Shared" : doc + "’s budget"; }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  var app = document.getElementById("app");
+  var money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  var tab = "shared";
+
+  function normalizeShared(d) {
+    delete d.income; delete d.people;
+    d.categories = d.categories || [];
+    var m = d.mortgage = d.mortgage || {};
+    if (typeof m.price !== "number") m.price = 0;
+    if (typeof m.down !== "number") m.down = typeof m.loan === "number" ? Math.max(0, m.price - m.loan) : 0;
+    if (typeof m.rate !== "number") m.rate = 6.25;
+    if (typeof m.years !== "number") m.years = 30;
+    delete m.loan;
+    if (typeof d.split !== "number") d.split = 50;
+    // Homeowners insurance and property tax follow the home value
+    d.categories.forEach(function (c) { c.items.forEach(function (it) {
+      // 0.383 was the earlier conversion of $2,300; move it to the standard default
+      if (it.calc === "pctHome" && Math.abs(it.rate - 0.383) < 0.0005) it.rate = INSURANCE_PCT;
+      if (it.calc) return;
+      if (it.id === "a1" || /homeowners insurance/i.test(it.name)) {
+        it.calc = "pctHome"; it.rate = INSURANCE_PCT;
+      } else if ((it.id === "a2" || /property tax/i.test(it.name)) && m.price > 0) {
+        // Keep today's figure: turn the flat amount into the same % of the current home value
+        var yearly = (Number(it.amount) || 0) * (it.freq === "yr" ? 1 : 12);
+        it.calc = "pctHome"; it.rate = Math.round(yearly / m.price * 100 * 1000) / 1000;
+      } else return;
+      it.freq = "yr"; delete it.amount; it.note = "";
+    }); });
+    return d;
+  }
+  function normalizePerson(d) {
+    d.income = d.income || []; d.categories = d.categories || [];
+    d.follows = d.follows || "default";
+    return d;
+  }
+  function normalizeDoc(doc, d) { return doc === "shared" ? normalizeShared(d) : normalizePerson(d); }
+  // The starting numbers are stored as one combined budget; split them into the three docs
+  function splitCombined(d) {
+    var out = { shared: normalizeShared({ categories: d.categories, mortgage: d.mortgage, split: d.split }) };
+    PEOPLE.forEach(function (p) { out[p] = normalizePerson(clone((d.people || {})[p] || {})); });
+    return out;
+  }
+
+  // Tags
+  function tagFor(name) { return tags.filter(function (t) { return t.name === name; })[0]; }
+  function tagsOn(versionId) { return tags.filter(function (t) { return t.versionId === versionId; }).map(function (t) { return t.name; }).sort(); }
+  function sharedVersion(id) { return versions.shared.filter(function (v) { return v.id === id; })[0]; }
+  // The Shared version a personal doc follows, or null if its tag points nowhere yet
+  function followed(pd) { var t = tagFor(pd.follows) || tagFor("default"); return t ? sharedVersion(t.versionId) || null : null; }
+  function cleanTag(s) { return s.trim().toLowerCase().replace(/\s+/g, "-"); }
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function uid() { return "x" + Math.random().toString(36).slice(2, 9); }
+  // Standard amortized principal & interest payment
+  function loanOf(m) { return Math.max(0, (m.price || 0) - (m.down || 0)); }
+  function payment(loan, rate, years) {
+    var n = years * 12, r = rate / 1200;
+    if (!loan || !n) return 0;
+    if (!r) return loan / n;
+    return loan * r / (1 - Math.pow(1 + r, -n));
+  }
+
+  // ctx carries what calculated lines depend on: the home value and each person's share of the shared budget
+  function monthly(it, ctx) {
+    if (it.calc === "pctHome") return ctx.price * (Number(it.rate) || 0) / 100 / 12;
+    if (it.calc === "share") return ctx.shares[it.person] || 0;
+    var a = Number(it.amount) || 0; return it.freq === "yr" ? a / 12 : a;
+  }
+  function sum(items, ctx) { return items.reduce(function (s, it) { return s + monthly(it, ctx); }, 0); }
+
+  function sharedSummary(st) {
+    var m = st.mortgage, loan = loanOf(m), mort = payment(loan, m.rate, m.years);
+    var ctx = { price: m.price, shares: {} }, by = { Shared: mort, Luke: 0, Amber: 0 }, total = mort;
+    var cats = st.categories.map(function (c) {
+      c.items.forEach(function (it) { var v = monthly(it, ctx); by[it.who] = (by[it.who] || 0) + v; });
+      var t = sum(c.items, ctx); total += t;
+      return { c: c, t: t };
+    });
+    var lp = st.split / 100;
+    ctx.shares = { Luke: by.Luke + by.Shared * lp, Amber: by.Amber + by.Shared * (1 - lp) };
+    return { m: m, loan: loan, mort: mort, total: total, by: by, cats: cats, ctx: ctx, luke: ctx.shares.Luke, amber: ctx.shares.Amber };
+  }
+  function personSummary(pp, ctx) {
+    var income = sum(pp.income, ctx), out = 0, save = 0;
+    var cats = pp.categories.map(function (c) {
+      var t = sum(c.items, ctx);
+      if (c.kind === "save") save += t; else out += t;
+      return { c: c, t: t };
+    });
+    return { income: income, out: out, save: save, left: income - out - save, cats: cats };
+  }
+
+  function allLists() {
+    var lists = docs.shared.categories.map(function (c) { return c.items; });
+    PEOPLE.forEach(function (p) {
+      lists.push(docs[p].income);
+      docs[p].categories.forEach(function (c) { lists.push(c.items); });
+    });
+    return lists;
+  }
+  function findItem(id) {
+    var lists = allLists();
+    for (var i = 0; i < lists.length; i++) for (var j = 0; j < lists[i].length; j++) if (lists[i][j].id === id) return lists[i][j];
+  }
+  function tabCats() { return docs[tab].categories; }
+  function catIndex(id) { var cs = tabCats(); for (var i = 0; i < cs.length; i++) if (cs[i].id === id) return i; return -1; }
+  function focusCat(id) { var el = document.getElementById("cn-" + id); if (el) el.focus(); }
+  function findList(key) {
+    if (key.indexOf("inc-") === 0) return docs[key.slice(4)].income;
+    var all = docs.shared.categories.slice();
+    PEOPLE.forEach(function (p) { all = all.concat(docs[p].categories); });
+    var c = all.filter(function (x) { return x.id === key; })[0];
+    return c && c.items;
+  }
+
+  function nameCell(it, noteId) {
+    return '<div class="name-cell"><span class="grip" draggable="true" tabindex="0" role="button" data-grip="' + it.id + '" aria-label="Move ' + esc(it.name || "item") + '. Drag, or use the arrow keys." title="Drag to move">⠿</span><input id="n-' + it.id + '" data-f="name" aria-label="Item name" value="' + esc(it.name) + '">' +
+      (noteId ? '<small class="calc-note" id="nt-' + it.id + '"></small>' : it.note ? "<small>" + esc(it.note) + "</small>" : "") + "</div>";
+  }
+  function freqSel(it) {
+    return '<select id="f-' + it.id + '" data-f="freq" aria-label="Frequency"><option value="mo"' + (it.freq !== "yr" ? " selected" : "") + '>/ mo</option><option value="yr"' + (it.freq === "yr" ? " selected" : "") + ">/ yr</option></select>";
+  }
+  function tail(it) {
+    return '<div class="mo" id="m-' + it.id + '"></div>' +
+      '<button class="del" data-del="' + it.id + '" aria-label="Remove ' + esc(it.name || "item") + '" title="Remove">&times;</button></div>';
+  }
+  function rowHtml(it) {
+    var opts = WHO.map(function (w) { return '<option' + (it.who === w ? " selected" : "") + ">" + w + "</option>"; }).join("");
+    var who = '<select id="w-' + it.id + '" data-f="who" aria-label="Paid by">' + opts + "</select>";
+    if (it.calc === "pctHome") return '<div class="row calc" data-id="' + it.id + '">' + nameCell(it, true) +
+      '<input id="a-' + it.id + '" class="amt" data-f="rate" inputmode="decimal" aria-label="Percent of home value per year" value="' + (it.rate || 0) + '">' +
+      '<span class="per-fixed">% of value / yr</span>' + who + tail(it);
+    return '<div class="row" data-id="' + it.id + '">' + nameCell(it) +
+      '<input id="a-' + it.id + '" class="amt" data-f="amount" inputmode="decimal" aria-label="Amount" value="' + (it.amount || 0) + '">' +
+      freqSel(it) + who + tail(it);
+  }
+  function prowHtml(it) {
+    if (it.calc === "share") return '<div class="row prow calc" data-id="' + it.id + '">' + nameCell(it, true) +
+      '<span class="amt-ro" id="ro-' + it.id + '"></span><span class="per-fixed">from Shared</span>' + tail(it);
+    return '<div class="row prow" data-id="' + it.id + '">' + nameCell(it) +
+      '<input id="a-' + it.id + '" class="amt" data-f="amount" inputmode="decimal" aria-label="Amount" value="' + (it.amount || 0) + '">' +
+      freqSel(it) + tail(it);
+  }
+  var addCatBtn = '<button class="add add-cat" id="add-cat">+ Add category</button>';
+  var LABELS = '<div class="row labels"><span>Item</span><span>Amount</span><span>Per</span><span>Paid by</span><span>Monthly</span><span></span></div>';
+  var PLABELS = '<div class="row prow labels"><span>Item</span><span>Amount</span><span>Per</span><span>Monthly</span><span></span></div>';
+
+  // Header controls: rename in place, reorder, delete, and on personal tabs spending vs savings
+  function catHtml(c, personal, i, n) {
+    var save = c.kind === "save";
+    return '<section class="cat" data-cat="' + c.id + '"><div class="cat-head"><h2>' +
+      '<input class="cat-name" id="cn-' + c.id + '" data-cname="' + c.id + '" aria-label="Category name" placeholder="Name this category" maxlength="60" value="' + esc(c.name) + '">' +
+      (!personal && save ? '<span class="chip">Savings</span>' : "") + "</h2>" +
+      '<div class="cat-tools">' +
+      (personal ? '<button class="kind" data-ckind="' + c.id + '" aria-pressed="' + save + '" title="Savings count toward Saving & investing instead of Spending">' + (save ? "Savings" : "Spending") + "</button>" : "") +
+      '<button data-cmove="' + c.id + '" data-dir="-1" aria-label="Move ' + esc(c.name || "category") + ' up"' + (i ? "" : " disabled") + ">↑</button>" +
+      '<button data-cmove="' + c.id + '" data-dir="1" aria-label="Move ' + esc(c.name || "category") + ' down"' + (i < n - 1 ? "" : " disabled") + ">↓</button>" +
+      '<button class="cdel" data-cdel="' + c.id + '">Delete</button></div>' +
+      '<div class="tot"><span id="t-' + c.id + '"></span> <small>/ mo</small></div></div>' +
+      (personal ? PLABELS + c.items.map(prowHtml).join("") : LABELS + c.items.map(rowHtml).join("")) +
+      '<button class="add" data-add="' + c.id + '">+ Add item</button></section>';
+  }
+
+  function mortgageHtml() {
+    var m = docs.shared.mortgage;
+    var terms = [15, 20, 30].map(function (y) { return "<option value=\"" + y + "\"" + (m.years === y ? " selected" : "") + ">" + y + " years</option>"; }).join("");
+    return '<section class="mort"><div class="cat-head"><h2>Mortgage</h2><div class="tot"><span id="t-mort"></span> <small>/ mo</small></div></div>' +
+      '<div class="mort-grid">' +
+      '<div class="fld"><label for="m-price">Home value</label><input type="number" id="m-price" class="amt" data-m="price" min="0" step="5000" value="' + m.price + '"></div>' +
+      '<div class="fld"><label for="m-rate">Interest rate %</label><input type="number" id="m-rate" class="amt" data-m="rate" min="0" max="15" step="0.125" value="' + m.rate + '"></div>' +
+      '<div class="fld"><label for="m-years">Term</label><select id="m-years" data-m="years">' + terms + "</select></div>" +
+      '<div class="fld loan wide"><label for="m-down-n">Down payment <span id="m-down-pct"></span></label><div class="loan-line">' +
+      '<input type="range" id="m-down-r" data-m="down" min="0" max="' + m.price + '" step="5000" value="' + m.down + '" aria-label="Down payment slider">' +
+      '<input type="number" id="m-down-n" class="amt" data-m="down" min="0" step="5000" value="' + m.down + '"></div></div></div>' +
+      '<div class="mort-out"><div><div class="lbl-sm">Loan amount <strong id="m-loan"></strong></div>' +
+      '<div class="big"><span id="m-pay"></span> <small>/ mo principal &amp; interest</small></div>' +
+      '<div class="fine" id="m-fine"></div></div><div class="presets" id="m-presets"></div></div></section>';
+  }
+  function tile(lbl, id) { return '<div class="tile"><div class="lbl">' + lbl + '</div><div class="val" id="' + id + '"></div><div class="per" id="' + id + '-yr"></div></div>'; }
+  // Each tab saves its own versions. Shared versions can also be tagged in the same step.
+  function versionsPanel(shared) {
+    return '<div class="panel"><h3>' + (shared ? "Shared versions" : "Saved versions") + "</h3>" +
+      '<div class="v-save' + (shared ? " with-tag" : "") + '"><input id="v-name" placeholder="Name this version" aria-label="Version name" maxlength="60">' +
+      (shared ? '<input id="v-tag" list="tag-names" placeholder="Tag it (optional)" aria-label="Tag this version" maxlength="30"><datalist id="tag-names"></datalist>' : "") +
+      '<button class="primary" id="v-save">Save</button></div>' +
+      '<p class="cur" id="v-cur"></p><ul class="v-list" id="v-list"></ul></div>';
+  }
+  var tagsPanel = '<div class="panel"><h3>Tags</h3><ul class="t-list" id="t-list"></ul>' +
+    '<p class="split-foot">Luke’s and Amber’s tabs use the Shared version their tag points to. Edits here reach them only once saved and tagged.</p></div>';
+  var barsPanel = '<div class="panel"><h3>Where the money goes</h3><div class="bars" id="bars"></div></div>';
+
+  function sharedBody() {
+    return '<div class="tiles">' + tile("Monthly total", "k-total") + tile("Mortgage payment", "k-mort") + tile("Luke pays", "k-luke") + tile("Amber pays", "k-amber") + "</div>" +
+      '<div class="layout"><div>' + mortgageHtml() + docs.shared.categories.map(function (c, i, a) { return catHtml(c, false, i, a.length); }).join("") + addCatBtn + "</div>" +
+      '<aside class="rail">' + versionsPanel(true) + tagsPanel +
+      '<div class="panel"><h3>Split</h3><div class="split-range">' +
+      '<div class="ends"><span id="s-luke-pct"></span><span id="s-amber-pct"></span></div>' +
+      '<input type="range" id="split-r" min="0" max="100" step="5" value="' + docs.shared.split + '" aria-label="Luke’s share of shared costs">' +
+      '<div class="split-who"><div><div class="nm">Luke</div><div class="amt" id="s-luke"></div><div class="yr" id="s-luke-yr"></div></div>' +
+      '<div><div class="nm">Amber</div><div class="amt" id="s-amber"></div><div class="yr" id="s-amber-yr"></div></div></div>' +
+      '<p class="split-foot" id="s-foot"></p></div></div>' + barsPanel + "</aside></div>";
+  }
+  function personBody(p) {
+    var pp = docs[p];
+    var opts = tags.map(function (t) { return t.name; }).sort().map(function (n) { return "<option" + (n === pp.follows ? " selected" : "") + ">" + esc(n) + "</option>"; }).join("");
+    return '<div class="tiles">' + tile("Take-home income", "k-inc") + tile("Spending", "k-out") + tile("Saving & investing", "k-save") + tile("Left over", "k-left") + "</div>" +
+      '<div class="layout"><div>' +
+      '<section class="cat" data-cat="inc-' + p + '"><div class="cat-head"><h2>Income</h2><div class="tot"><span id="t-inc"></span> <small>/ mo</small></div></div>' +
+      PLABELS + pp.income.map(prowHtml).join("") +
+      (pp.income.length ? "" : '<p class="empty">Add take-home pay to see what’s left over each month.</p>') +
+      '<button class="add" data-add="inc-' + p + '">+ Add income</button></section>' +
+      pp.categories.map(function (c, i, a) { return catHtml(c, true, i, a.length); }).join("") + addCatBtn + "</div>" +
+      '<aside class="rail">' + versionsPanel(false) +
+      '<div class="panel"><h3>From the shared budget</h3><div class="from-shared">' +
+      '<label class="follow">Following tag<select id="follow">' + (opts || "<option>default</option>") + "</select></label>" +
+      '<p class="split-foot" id="p-follow"></p><span class="big-sm" id="p-share"></span><p class="split-foot" id="p-share-note"></p>' +
+      '<button data-tab="shared">Open Shared tab</button></div></div>' + barsPanel + "</aside></div>";
+  }
+
+  function render() {
+    var tabs = [["shared", "Shared"], ["Luke", "Luke"], ["Amber", "Amber"]].map(function (t) {
+      return '<button role="tab" class="tab tab-' + t[0].toLowerCase() + '" data-tab="' + t[0] + '" aria-selected="' + (tab === t[0]) + '">' + t[1] + "</button>";
+    }).join("");
+    app.innerHTML = '<div class="wrap">' +
+      '<header class="top"><div><h1><svg viewBox="0 0 44 44" aria-hidden="true"><path d="M6 38 C6 18 20 8 38 6 C38 26 26 38 6 38 Z" fill="var(--leaf)"/><path d="M6 38 C16 26 26 16 38 6" stroke="var(--bg)" stroke-width="2.5" fill="none"/></svg><span>Luke <em>&amp;</em> Amber’s Budget</span></h1><a class="home-link" href="https://dot-y.co/">← dot-y.co</a></div>' +
+      '<div class="savebar"><span class="status" id="status"></span>' +
+      '<div class="mode" role="group" aria-label="Theme"><button data-mode="light">Daylight</button><button data-mode="dark">Evening</button><button data-mode="auto">Auto</button></div>' +
+      '<button id="reset">Reset</button><button id="signout">Sign out</button></div></header>' +
+      '<nav class="tabs" role="tablist" aria-label="Budgets">' + tabs + "</nav>" +
+      (tab === "shared" ? sharedBody() : personBody(tab)) + "</div>";
+    totals();
+    renderVersions();
+    setStatus();
+    document.querySelectorAll(".mode button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.mode === mode)); });
+  }
+
+  var dateFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+  function renderVersions() {
+    var doc = tab, d = docs[doc], list = versions[doc], ul = document.getElementById("v-list"); if (!ul) return;
+    var cur = document.getElementById("v-cur");
+    cur.innerHTML = d.version ? "Working from <strong>" + esc(d.version) + "</strong>" + (d.edited ? ", with unsaved changes" : "") :
+      doc === "shared" ? "Save a version, then tag it to update Luke’s and Amber’s tabs." : "Save versions of " + doc + "’s budget to compare later.";
+    ul.innerHTML = list.map(function (v) {
+      var meta;
+      if (doc === "shared") {
+        var sm = sharedSummary(normalizeShared(clone(v.state)));
+        meta = '<span class="v-meta">' + money.format(sm.total) + "/mo · " + (sm.loan ? "borrow " + money.format(sm.loan) : "all cash") + "</span>" +
+          '<span class="v-meta">Luke ' + money.format(sm.luke) + " · Amber " + money.format(sm.amber) + "</span>";
+      } else {
+        var pv = normalizePerson(clone(v.state)), fv = followed(pv);
+        var P = personSummary(pv, fv ? sharedSummary(normalizeShared(clone(fv.state))).ctx : { price: 0, shares: {} });
+        meta = '<span class="v-meta">Left over ' + money.format(P.left) + "/mo · follows " + esc(pv.follows) + "</span>";
+      }
+      var vt = doc === "shared" ? tagsOn(v.id) : [];
+      return '<li class="v-item' + (v.name === d.version ? " on" : "") + '"><span class="v-name">' + esc(v.name) +
+        (vt.length ? '<span class="v-tags">' + vt.map(function (n) { return '<span class="tagchip">' + esc(n) + "</span>"; }).join("") + "</span>" : "") + "</span>" +
+        '<span class="v-acts"><button data-vload="' + esc(v.id) + '">Load</button><button class="v-del" data-vdel="' + esc(v.id) + '" aria-label="Delete ' + esc(v.name) + '">Delete</button></span>' +
+        meta + "</li>";
+    }).join("");
+    ul.hidden = !list.length;
+    renderTags();
+  }
+  function renderTags() {
+    var tl = document.getElementById("t-list"); if (!tl) return;
+    var dl = document.getElementById("tag-names");
+    if (dl) dl.innerHTML = tags.map(function (t) { return '<option value="' + esc(t.name) + '">'; }).join("");
+    var names = tags.map(function (t) { return t.name; }).sort(function (a, b) { return a === "default" ? -1 : b === "default" ? 1 : a < b ? -1 : 1; });
+    tl.innerHTML = names.map(function (n) {
+      var t = tagFor(n), fans = PEOPLE.filter(function (p) { return docs[p].follows === n || (n === "default" && !tagFor(docs[p].follows)); });
+      var opts = versions.shared.map(function (v) { return '<option value="' + esc(v.id) + '"' + (v.id === t.versionId ? " selected" : "") + ">" + esc(v.name) + "</option>"; }).join("");
+      return '<li class="t-item"><span class="tagchip">' + esc(n) + "</span>" +
+        '<select data-tagsel="' + esc(n) + '" aria-label="Version tagged ' + esc(n) + '">' + opts + "</select>" +
+        (n === "default" ? "<span></span>" : '<button class="t-del" data-tagdel="' + esc(n) + '" aria-label="Delete tag ' + esc(n) + '">Delete</button>') +
+        '<span class="v-meta">' + (fans.length ? "Followed by " + fans.join(" & ") : "Not followed yet") + "</span></li>";
+    }).join("") || '<li class="v-empty">No tags yet. Save a version with the tag “default”.</li>';
+  }
+  function saveVersion() {
+    var doc = tab, d = docs[doc];
+    var inp = document.getElementById("v-name"), name = inp.value.trim() || d.version || "";
+    if (!name) { inp.focus(); setStatus("Give the version a name first."); return; }
+    var tinp = document.getElementById("v-tag"), tag = tinp ? cleanTag(tinp.value) : "";
+    if (tag && !/^[a-z0-9][a-z0-9_-]{0,29}$/.test(tag)) { tinp.focus(); setStatus("Tags use letters, numbers, - and _."); return; }
+    var snap = clone(d);
+    delete snap.version; delete snap.edited; delete snap.updated;
+    var existing = versions[doc].filter(function (v) { return v.name.toLowerCase() === name.toLowerCase(); })[0];
+    var v = { id: existing ? existing.id : uid(), name: name, savedAt: Date.now(), state: snap };
+    api("PUT", "/docs/" + doc + "/versions/" + v.id, v).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      versions[doc] = [v].concat(versions[doc].filter(function (x) { return x.id !== v.id; }));
+      d.version = name; d.edited = false; persist(true); inp.value = "";
+      if (!tag) { renderVersions(); setStatus((existing ? "Updated “" : "Saved “") + name + "”"); return; }
+      return setTag(tag, v.id).then(function () {
+        tinp.value = ""; renderVersions();
+        setStatus("Saved “" + name + "” and tagged it " + tag + followNote(tag));
+      });
+    }).catch(function () { setStatus("Couldn’t save the version. Try again."); });
+  }
+  function followNote(tag) {
+    var fans = PEOPLE.filter(function (p) { return docs[p].follows === tag; });
+    return fans.length ? ". " + fans.join(" & ") + (fans.length > 1 ? " follow it." : " follows it.") : ".";
+  }
+  function setTag(name, versionId) {
+    return api("PUT", "/tags/" + name, { versionId: versionId }).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      tags = tags.filter(function (t) { return t.name !== name; }).concat([{ name: name, versionId: versionId }]);
+    });
+  }
+
+  function drawBars(rows) {
+    var el = document.getElementById("bars"); if (!el) return;
+    rows = rows.filter(function (r) { return r.t > 0; }).sort(function (a, b) { return b.t - a.t; });
+    var max = rows.length ? rows[0].t : 1;
+    el.innerHTML = rows.map(function (r) {
+      return '<div class="bar-row"><span>' + esc(r.name) + '</span><span class="amt">' + money.format(r.t) + '</span><div class="track"><div class="fill" style="width:' + (r.t / max * 100).toFixed(1) + '%"></div></div></div>';
+    }).join("") || '<p class="split-foot">Nothing budgeted yet.</p>';
+  }
+
+  function totals() {
+    if (tab === "shared") {
+      var S = sharedSummary(docs.shared), m = S.m, ctx = S.ctx, split = docs.shared.split;
+      S.cats.forEach(function (x) {
+        x.c.items.forEach(function (it) {
+          var v = monthly(it, ctx); set("m-" + it.id, money.format(v));
+          if (it.calc === "pctHome") set("nt-" + it.id, money.format(v * 12) + " / yr, from the " + money.format(m.price) + " home value" + (it.note ? ". " + it.note : ""));
+        });
+        set("t-" + x.c.id, money.format(x.t));
+      });
+      set("t-mort", money.format(S.mort)); set("m-pay", money.format(S.mort));
+      var pct = m.price ? Math.round(m.down / m.price * 100) : 0;
+      set("m-loan", money.format(S.loan)); set("m-down-pct", "(" + pct + "%)");
+      set("m-fine", S.loan ? money.format(S.mort * m.years * 12 - S.loan) + " total interest over " + m.years + " years." +
+        (pct < 20 ? " Under 20% down usually adds mortgage insurance (PMI), which isn’t included here." : "") +
+        " Taxes and insurance are in Home & property." : "Paid in cash, no mortgage. Taxes and insurance are in Home & property.");
+      document.getElementById("m-presets").innerHTML = PRESETS.filter(function (L) { return L <= m.price; }).map(function (L) {
+        return '<button data-preset="' + L + '"' + (L === S.loan ? ' class="on"' : "") + ">" + (L ? "Borrow $" + L / 1000 + "k" : "All cash") + "<span>" + money.format(payment(L, m.rate, m.years)) + "/mo</span></button>";
+      }).join("");
+      set("s-luke-pct", "Luke " + split + "%"); set("s-amber-pct", "Amber " + (100 - split) + "%");
+      set("s-luke", money.format(S.luke)); set("s-luke-yr", money.format(S.luke * 12) + " / yr");
+      set("s-amber", money.format(S.amber)); set("s-amber-yr", money.format(S.amber * 12) + " / yr");
+      set("s-foot", "The split applies to " + money.format(S.by.Shared) + "/mo of shared costs, mortgage included. Lines marked Luke or Amber go entirely to that person. Personal tabs use the tagged version of this, not the working copy.");
+      set("k-total", money.format(S.total)); set("k-total-yr", money.format(S.total * 12) + " / yr");
+      set("k-mort", money.format(S.mort)); set("k-mort-yr", S.loan ? money.format(S.loan) + " at " + m.rate + "%, " + m.years + " yr" : "No loan");
+      set("k-luke", money.format(S.luke)); set("k-luke-yr", split + "% of shared");
+      set("k-amber", money.format(S.amber)); set("k-amber-yr", (100 - split) + "% of shared");
+      var rows = S.cats.map(function (x) { return { name: x.c.name || "Untitled", t: x.t }; });
+      if (S.mort) rows.push({ name: "Mortgage", t: S.mort });
+      drawBars(rows);
+      return;
+    }
+    // Personal tabs: the share line comes from the Shared version this tab's tag points to
+    var p = tab, pd = docs[p], fv = followed(pd), fs = fv ? normalizeShared(clone(fv.state)) : null;
+    var FS = fs ? sharedSummary(fs) : null, pctx = FS ? FS.ctx : { price: 0, shares: {} };
+    var P = personSummary(pd, pctx), tagName = tagFor(pd.follows) ? pd.follows : "default";
+    var shareNote = FS ? (p === "Luke" ? fs.split : 100 - fs.split) + "% of " + money.format(FS.by.Shared) + " shared costs" + (FS.by[p] ? " plus " + money.format(FS.by[p]) + " marked " + p : "") : "No Shared version is tagged yet";
+    set("p-follow", fv ? tagName + " → “" + fv.name + "”, saved " + dateFmt.format(fv.savedAt) : "Nothing is tagged " + tagName + " yet. Save a Shared version with that tag.");
+    var ctx = pctx;
+    pd.income.forEach(function (it) { set("m-" + it.id, money.format(monthly(it, ctx))); });
+    P.cats.forEach(function (x) {
+      x.c.items.forEach(function (it) {
+        var v = monthly(it, ctx); set("m-" + it.id, money.format(v));
+        if (it.calc === "share") { set("ro-" + it.id, money.format(v)); set("nt-" + it.id, "From Shared (" + tagName + "): " + shareNote); }
+      });
+      set("t-" + x.c.id, money.format(x.t));
+    });
+    set("t-inc", money.format(P.income));
+    set("k-inc", money.format(P.income)); set("k-inc-yr", money.format(P.income * 12) + " / yr");
+    set("k-out", money.format(P.out)); set("k-out-yr", "incl. " + money.format(ctx.shares[p]) + " to shared");
+    set("k-save", money.format(P.save)); set("k-save-yr", P.income ? Math.round(P.save / P.income * 100) + "% of income" : "—");
+    set("k-left", money.format(P.left)); set("k-left-yr", P.income ? (P.left >= 0 ? "Room to spare" : "Over by " + money.format(-P.left)) : "Add income to see this");
+    var lv = document.getElementById("k-left"); if (lv) lv.className = "val" + (P.income ? (P.left >= 0 ? " pos" : " neg") : "");
+    set("p-share", money.format(ctx.shares[p]) + " / mo");
+    set("p-share-note", FS ? shareNote + ". This changes when the " + tagName + " tag moves to another Shared version." : "");
+    drawBars(P.cats.map(function (x) { return { name: x.c.name || "Untitled", t: x.t }; }));
+  }
+  function set(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+
+  function setStatus(msg) {
+    var st = document.getElementById("status"); if (!st) return;
+    // Only confirmations and problems show here, and they fade after a few seconds
+    clearTimeout(setStatus.t);
+    st.textContent = msg || "";
+    if (msg) setStatus.t = setTimeout(function () { st.textContent = ""; }, 4000);
+  }
+  // Marks a doc (the open tab's by default) changed and queues its save
+  function persist(keepClean, doc) {
+    doc = doc || tab;
+    var d = docs[doc];
+    if (!keepClean && d.version) d.edited = true;
+    d.updated = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    scheduleSave(doc);
+    var c = document.getElementById("v-cur");
+    if (c && doc === tab && d.version && d.edited && c.textContent.indexOf("unsaved") < 0) renderVersions();
+  }
+  function setTab(t) {
+    tab = t;
+    try { localStorage.setItem(TKEY, t); } catch (e) {}
+    if (history.replaceState) history.replaceState(null, "", "#" + t.toLowerCase());
+    render(); window.scrollTo(0, 0);
+  }
+
+  app.addEventListener("input", function (e) {
+    var t = e.target;
+    if (t.id === "split-r") { docs.shared.split = Number(t.value); totals(); persist(); return; }
+    if (t.dataset.m) {
+      var v = parseFloat(t.value) || 0;
+      var mm = docs.shared.mortgage;
+      if (t.dataset.m === "down") {
+        v = Math.min(Math.max(0, v), mm.price); mm.down = v;
+        var other = document.getElementById(t.id === "m-down-r" ? "m-down-n" : "m-down-r"); if (other) other.value = v;
+      } else if (t.dataset.m === "price") {
+        mm.price = Math.max(0, v);
+        if (mm.down > mm.price) { mm.down = mm.price; document.getElementById("m-down-n").value = mm.down; }
+        var rng = document.getElementById("m-down-r"); rng.max = mm.price; rng.value = mm.down;
+      } else mm[t.dataset.m] = v;
+      totals(); persist(); return;
+    }
+    if (t.dataset.cname) {
+      var cc = tabCats()[catIndex(t.dataset.cname)]; if (!cc) return;
+      cc.name = t.value; totals(); persist(); return;
+    }
+    var row = t.closest(".row"); if (!row || !t.dataset.f) return;
+    var it = findItem(row.dataset.id); if (!it) return;
+    it[t.dataset.f] = (t.dataset.f === "amount" || t.dataset.f === "rate") ? (parseFloat(t.value.replace(/[^0-9.\-]/g, "")) || 0) : t.value;
+    totals(); persist();
+  });
+  app.addEventListener("click", function (e) {
+    var t = e.target.closest("button"); if (!t) return;
+    if (t.dataset.tab) {
+      setTab(t.dataset.tab);
+    } else if (t.dataset.preset != null) {
+      var mp = docs.shared.mortgage; mp.down = Math.max(0, mp.price - Number(t.dataset.preset));
+      document.getElementById("m-down-r").value = mp.down; document.getElementById("m-down-n").value = mp.down;
+      totals(); persist();
+    } else if (t.dataset.del) {
+      var id = t.dataset.del;
+      allLists().forEach(function (list) { for (var i = list.length - 1; i >= 0; i--) if (list[i].id === id) list.splice(i, 1); });
+      persist(); render();
+    } else if (t.dataset.add) {
+      var list = findList(t.dataset.add); if (!list) return;
+      var item = { id: uid(), name: "", amount: 0, freq: "mo", note: "" };
+      if (tab === "shared") item.who = "Shared";
+      list.push(item);
+      persist(); render();
+      var inp = document.getElementById("n-" + item.id); if (inp) inp.focus();
+    } else if (t.id === "add-cat") {
+      var nc = { id: uid(), name: "", kind: "spend", items: [] };
+      tabCats().push(nc); persist(); render(); focusCat(nc.id);
+    } else if (t.dataset.cmove) {
+      var cs = tabCats(), ci = catIndex(t.dataset.cmove), cj = ci + Number(t.dataset.dir);
+      if (ci < 0 || cj < 0 || cj >= cs.length) return;
+      cs.splice(cj, 0, cs.splice(ci, 1)[0]); persist(); render();
+      var mb = app.querySelector('[data-cmove="' + t.dataset.cmove + '"][data-dir="' + t.dataset.dir + '"]');
+      if (mb && !mb.disabled) mb.focus(); else focusCat(t.dataset.cmove);
+    } else if (t.dataset.ckind) {
+      var kc = tabCats()[catIndex(t.dataset.ckind)]; if (!kc) return;
+      kc.kind = kc.kind === "save" ? "spend" : "save"; persist(); render();
+      var kb = app.querySelector('[data-ckind="' + kc.id + '"]'); if (kb) kb.focus();
+    } else if (t.dataset.cdel) {
+      var dcs = tabCats(), di = catIndex(t.dataset.cdel); if (di < 0) return;
+      var dc = dcs[di], n = dc.items.length;
+      if (armedDel !== "cat:" + dc.id) {
+        armedDel = "cat:" + dc.id; t.textContent = n ? "Delete with " + n + " item" + (n > 1 ? "s" : "") + "?" : "Confirm"; t.classList.add("arm");
+        setTimeout(function () { if (armedDel === "cat:" + dc.id) { armedDel = null; t.textContent = "Delete"; t.classList.remove("arm"); } }, 3000);
+        return;
+      }
+      armedDel = null; dcs.splice(di, 1); persist(); render();
+      setStatus("Deleted “" + (dc.name || "Untitled") + "”" + (n ? " and its " + n + " item" + (n > 1 ? "s" : "") : ""));
+    } else if (t.dataset.mode) {
+      setMode(t.dataset.mode);
+    } else if (t.id === "v-save") {
+      saveVersion();
+    } else if (t.dataset.vload) {
+      var v = versions[tab].filter(function (x) { return x.id === t.dataset.vload; })[0]; if (!v) return;
+      docs[tab] = normalizeDoc(tab, clone(v.state)); docs[tab].version = v.name; docs[tab].edited = false;
+      persist(true); render(); setStatus("Loaded “" + v.name + "”");
+    } else if (t.dataset.vdel) {
+      var onIt = tab === "shared" ? tagsOn(t.dataset.vdel) : [];
+      if (onIt.length) { setStatus("That version is tagged " + onIt.join(", ") + ". Point the tag at another version first."); return; }
+      if (armedDel !== t.dataset.vdel) {
+        armedDel = t.dataset.vdel; t.textContent = "Confirm"; t.classList.add("arm");
+        setTimeout(function () { if (armedDel === t.dataset.vdel) { armedDel = null; t.textContent = "Delete"; t.classList.remove("arm"); } }, 3000);
+        return;
+      }
+      armedDel = null;
+      var gid = t.dataset.vdel, vdoc = tab, gone = versions[vdoc].filter(function (x) { return x.id === gid; })[0];
+      api("DELETE", "/docs/" + vdoc + "/versions/" + gid).then(function (res) {
+        if (res.status === 409) { setStatus("That version is tagged. Point the tag at another version first."); return; }
+        if (!res.ok) throw new Error(res.status);
+        versions[vdoc] = versions[vdoc].filter(function (x) { return x.id !== gid; });
+        if (gone && docs[vdoc].version === gone.name) { delete docs[vdoc].version; delete docs[vdoc].edited; persist(true, vdoc); }
+        renderVersions(); setStatus(gone ? "Deleted “" + gone.name + "”" : "");
+      }).catch(function () { setStatus("Couldn’t delete the version. Try again."); });
+    } else if (t.id === "reset") {
+      if (!confirmReset) { confirmReset = true; t.textContent = "Click again to reset"; setTimeout(function () { confirmReset = false; t.textContent = "Reset"; }, 3000); return; }
+      confirmReset = false;
+      var rdoc = tab;
+      fetchDefaults().then(function (d) {
+        docs[rdoc] = d[rdoc]; persist(true, rdoc); render(); setStatus("Reset " + label(rdoc) + " to its starting numbers");
+      }).catch(function () { setStatus("Couldn’t load the starting numbers. Try again."); });
+    } else if (t.dataset.tagdel) {
+      var tn = t.dataset.tagdel;
+      if (armedDel !== "tag:" + tn) {
+        armedDel = "tag:" + tn; t.textContent = "Confirm"; t.classList.add("arm");
+        setTimeout(function () { if (armedDel === "tag:" + tn) { armedDel = null; t.textContent = "Delete"; t.classList.remove("arm"); } }, 3000);
+        return;
+      }
+      armedDel = null;
+      api("DELETE", "/tags/" + tn).then(function (res) {
+        if (!res.ok) throw new Error(res.status);
+        tags = tags.filter(function (x) { return x.name !== tn; });
+        // Anyone following it falls back to default
+        var moved = PEOPLE.filter(function (p) { return docs[p].follows === tn; });
+        moved.forEach(function (p) { docs[p].follows = "default"; persist(false, p); });
+        renderVersions(); setStatus("Deleted tag " + tn + (moved.length ? ". " + moved.join(" & ") + " now follow" + (moved.length > 1 ? "" : "s") + " default." : ""));
+      }).catch(function () { setStatus("Couldn’t delete the tag. Try again."); });
+    } else if (t.id === "signout") {
+      flush(); FamilyAuth.logout();
+    }
+  });
+  // Drag and drop: rows move within or between the sections of the current tab
+  function locate(id) {
+    var lists = allLists();
+    for (var i = 0; i < lists.length; i++) for (var j = 0; j < lists[i].length; j++) if (lists[i][j].id === id) return { list: lists[i], index: j };
+  }
+  function tabKeys() { return tab === "shared" ? docs.shared.categories.map(function (c) { return c.id; }) : ["inc-" + tab].concat(docs[tab].categories.map(function (c) { return c.id; })); }
+  function moveItem(id, key, beforeId) {
+    var from = locate(id), to = findList(key); if (!from || !to) return false;
+    var it = from.list[from.index];
+    if (key.indexOf("inc-") === 0 && it.calc) return false;
+    from.list.splice(from.index, 1);
+    var at = beforeId ? to.findIndex(function (x) { return x.id === beforeId; }) : -1;
+    to.splice(at < 0 ? to.length : at, 0, it);
+    return true;
+  }
+  var dragId = null;
+  function clearMarks() { app.querySelectorAll(".drop-before,.drop-after,.drop-into,.dragging").forEach(function (el) { el.classList.remove("drop-before", "drop-after", "drop-into", "dragging"); }); }
+  function dropTarget(e) {
+    var sec = e.target.closest && e.target.closest("section.cat"); if (!sec) return null;
+    var row = e.target.closest(".row[data-id]");
+    if (row && row.dataset.id !== dragId) {
+      var r = row.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2;
+      var next = after ? row.nextElementSibling : row;
+      if (next && next.dataset && next.dataset.id === dragId) next = next.nextElementSibling;
+      if (next && !next.matches(".row[data-id]")) next = null;
+      return { sec: sec, row: row, after: after, key: sec.dataset.cat, beforeId: next ? next.dataset.id : null };
+    }
+    return { sec: sec, key: sec.dataset.cat, beforeId: null };
+  }
+  app.addEventListener("dragstart", function (e) {
+    var g = e.target.closest && e.target.closest(".grip"); if (!g) return;
+    dragId = g.dataset.grip;
+    var row = g.closest(".row");
+    e.dataTransfer.effectAllowed = "move";
+    try { e.dataTransfer.setData("text/plain", dragId); e.dataTransfer.setDragImage(row, 24, 20); } catch (err) {}
+    setTimeout(function () { row.classList.add("dragging"); }, 0);
+  });
+  app.addEventListener("dragover", function (e) {
+    if (!dragId) return;
+    var t = dropTarget(e); if (!t) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = "move";
+    app.querySelectorAll(".drop-before,.drop-after,.drop-into").forEach(function (el) { el.classList.remove("drop-before", "drop-after", "drop-into"); });
+    if (t.row) t.row.classList.add(t.after ? "drop-after" : "drop-before"); else t.sec.classList.add("drop-into");
+  });
+  app.addEventListener("drop", function (e) {
+    if (!dragId) return;
+    var t = dropTarget(e); e.preventDefault();
+    var id = dragId; dragId = null; clearMarks();
+    if (t && moveItem(id, t.key, t.beforeId)) { persist(); render(); }
+  });
+  app.addEventListener("dragend", function () { dragId = null; clearMarks(); });
+
+  app.addEventListener("keydown", function (e) {
+    var g = e.target.closest && e.target.closest(".grip");
+    if (g && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      var id = g.dataset.grip, loc = locate(id), keys = tabKeys(), up = e.key === "ArrowUp";
+      var key = keys.filter(function (k) { return findList(k) === loc.list; })[0], ki = keys.indexOf(key);
+      var moved = false;
+      if (up && loc.index > 0) moved = moveItem(id, key, loc.list[loc.index - 1].id);
+      else if (!up && loc.index < loc.list.length - 1) moved = moveItem(id, key, loc.list[loc.index + 2] ? loc.list[loc.index + 2].id : null);
+      else for (var k = ki + (up ? -1 : 1); k >= 0 && k < keys.length && !moved; k += up ? -1 : 1) {
+        var dest = findList(keys[k]);
+        moved = moveItem(id, keys[k], up ? null : (dest[0] ? dest[0].id : null));
+      }
+      if (moved) { persist(); render(); var ng = app.querySelector('[data-grip="' + id + '"]'); if (ng) { ng.focus(); ng.scrollIntoView({ block: "nearest" }); } }
+      return;
+    }
+    if (e.target.id === "v-name" && e.key === "Enter") { e.preventDefault(); saveVersion(); }
+    if (e.target.dataset && e.target.dataset.cname && e.key === "Enter") { e.preventDefault(); e.target.blur(); }
+    if (e.target.getAttribute("role") === "tab" && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+      var order = ["shared", "Luke", "Amber"], i = order.indexOf(tab);
+      setTab(order[(i + (e.key === "ArrowRight" ? 1 : 2)) % 3]);
+      var b = document.querySelector('[role="tab"][aria-selected="true"]'); if (b) b.focus();
+    }
+  });
+  app.addEventListener("change", function (e) {
+    if (e.target.id === "m-years") { docs.shared.mortgage.years = Number(e.target.value); totals(); persist(); return; }
+    if (e.target.id === "follow") {
+      docs[tab].follows = e.target.value; persist(); totals(); renderVersions();
+      setStatus(tab + " now follows " + e.target.value);
+      return;
+    }
+    if (e.target.dataset.tagsel) {
+      var tn = e.target.dataset.tagsel, vid = e.target.value, vv = sharedVersion(vid);
+      setTag(tn, vid).then(function () {
+        renderVersions(); setStatus(tn + " now points at “" + (vv ? vv.name : "") + "”" + followNote(tn));
+      }).catch(function () { setStatus("Couldn’t move the tag. Try again."); renderVersions(); });
+      return;
+    }
+  });
+
+  var mode = "auto";
+  function setMode(m) {
+    mode = m;
+    if (m === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", m);
+    document.querySelectorAll(".mode button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.mode === m)); });
+    try { localStorage.setItem("de-mode", m); } catch (e) {}
+  }
+  try { var storedMode = localStorage.getItem("de-mode"); if (storedMode) mode = storedMode; } catch (e) {}
+  var fromHash = { "#shared": "shared", "#luke": "Luke", "#amber": "Amber" }[location.hash.toLowerCase()];
+  try { tab = fromHash || localStorage.getItem(TKEY) || "shared"; } catch (e) { tab = fromHash || "shared"; }
+  if (["shared", "Luke", "Amber"].indexOf(tab) < 0) tab = "shared";
+  setMode(mode);
+
+  // --- API -------------------------------------------------------------------
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method, keepalive: method === "PUT" && /\/state$/.test(path),
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    });
+  }
+  // Starting numbers, already split into { shared, Luke, Amber }
+  function fetchDefaults() {
+    return api("GET", "/defaults").then(function (res) {
+      if (res.status === 404) return splitCombined({});
+      if (!res.ok) throw new Error(res.status);
+      return res.json().then(function (d) { return splitCombined(d.state); });
+    });
+  }
+
+  // Edits save about a second after the last change, per doc, so Shared, Luke and Amber never block
+  // each other. Only one request per doc is in flight; a newer edit made meanwhile goes out right after.
+  var sync = {};
+  DOCS.forEach(function (d) { sync[d] = { timer: null, saving: false, dirty: false }; });
+  function scheduleSave(doc) { var q = sync[doc]; q.dirty = true; clearTimeout(q.timer); q.timer = setTimeout(function () { flush(doc); }, 900); }
+  function flush(doc) {
+    if (!doc) { DOCS.forEach(function (d) { flush(d); }); return; }
+    var q = sync[doc];
+    clearTimeout(q.timer); q.timer = null;
+    if (!q.dirty || q.saving) return;
+    q.saving = true; q.dirty = false;
+    var retry = false;
+    api("PUT", "/docs/" + doc + "/state", { state: docs[doc], rev: revs[doc] }).then(function (res) {
+      if (res.status === 409) return res.json().then(function (c) {
+        revs[doc] = c.rev; docs[doc] = normalizeDoc(doc, c.state); q.dirty = false; render();
+        setStatus(label(doc) + " was just changed somewhere else, so that version is loaded now.");
+      });
+      if (!res.ok) throw new Error(res.status);
+      return res.json().then(function (r) { revs[doc] = r.rev; });
+    }).catch(function () {
+      q.dirty = retry = true;
+      setStatus("Couldn’t save. Retrying in a few seconds…");
+    }).then(function () {
+      q.saving = false;
+      if (retry) q.timer = setTimeout(function () { flush(doc); }, 5000); else if (q.dirty) scheduleSave(doc);
+    });
+  }
+  // Pull in what the other person changed: tags, versions, and any doc with no local edits pending
+  function refresh() {
+    return api("GET", "/all").then(function (res) { return res.ok ? res.json() : null; }).then(function (all) {
+      if (!all) return;
+      tags = all.tags; versions = all.versions;
+      DOCS.forEach(function (d) {
+        var srv = all.docs[d], q = sync[d];
+        if (srv && !q.dirty && !q.saving && srv.rev !== revs[d]) { docs[d] = normalizeDoc(d, srv.state); revs[d] = srv.rev; }
+      });
+      render();
+    });
+  }
+  window.addEventListener("pagehide", function () { flush(); });
+  window.addEventListener("focus", function () { if (docs.shared) refresh().catch(function () {}); });
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") flush(); });
+
+  function gate(msg, err) {
+    app.innerHTML = '<div class="wrap"><div class="gate"><h1><span>Luke <em>&amp;</em> Amber’s Budget</span></h1>' +
+      (err ? '<div class="note">' + esc(err) + "</div>" : '<p class="sub">' + msg + "</p>") +
+      '<button class="primary" id="signin">Sign in</button><a class="home-link" href="https://dot-y.co/">← dot-y.co</a></div></div>';
+    document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account to open the budget.");
+    return api("GET", "/all").then(function (res) {
+      if (res.status === 403) return gate("", "Your account doesn’t have access to the budget. Ask Luke to add you.");
+      if (!res.ok) throw new Error("Couldn’t load the budget (" + res.status + "). Reload to try again.");
+      return res.json().then(function (all) {
+        tags = all.tags; versions = all.versions;
+        var missing = DOCS.filter(function (d) { return !all.docs[d]; });
+        return (missing.length ? fetchDefaults() : Promise.resolve(null)).then(function (defs) {
+          DOCS.forEach(function (d) {
+            if (all.docs[d]) { docs[d] = normalizeDoc(d, all.docs[d].state); revs[d] = all.docs[d].rev; }
+            else { docs[d] = defs[d]; revs[d] = null; }
+          });
+          render();
+        });
+      });
+    });
+  }).catch(function (e) { gate("", e.message); });
+})();
+</script>
+</body>
+</html>

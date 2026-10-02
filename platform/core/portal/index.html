@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doty &amp; Co.</title>
+<link rel="icon" type="image/svg+xml" href="/style/favicon.svg">
+<link rel="stylesheet" href="/style/family.css">
+<script>try { var m = localStorage.getItem("de-mode"); if (m && m !== "auto") document.documentElement.setAttribute("data-theme", m); } catch (e) {}</script>
+<style>
+/* Layout: one centered column. Hero (title + arch illustration) on top, then the signed-in person's tool tiles. */
+.wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px }
+.topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 40px }
+.brand { font: 600 15px var(--display); letter-spacing: .02em; display: flex; align-items: center; gap: 8px }
+.brand img { width: 26px; height: 26px }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 32px; align-items: center; padding-bottom: 40px; border-bottom: 1px solid var(--line) }
+@media (max-width: 680px) { .hero { grid-template-columns: 1fr } .hero svg { max-width: 160px; order: -1 } }
+.hero svg { width: 100%; height: auto }
+.hero .lede { margin: 16px 0 24px }
+.tools { padding-top: 36px; display: grid; gap: 16px }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px }
+.tile { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 14px; align-items: start; color: inherit; text-decoration: none; transition: border-color .15s }
+.tile:hover { border-color: var(--pool) }
+.tile svg { width: 44px; height: 44px; grid-row: span 3 }
+.tile p { color: var(--muted); font-size: 14.5px }
+.tile .go { font: 600 14px var(--body); color: var(--pool) }
+.empty { color: var(--muted) }
+footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 14px }
+footer button { background: none; border: 0; color: var(--pool); cursor: pointer; padding: 0; font-weight: 600 }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <span class="brand"><img src="/style/favicon.svg" alt="">dot-y.co</span>
+    <div class="mode" role="group" aria-label="Theme">
+      <button data-mode="light">Daylight</button><button data-mode="dark">Evening</button><button data-mode="auto">Auto</button>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div>
+      <div class="eyebrow" id="eyebrow">Family tools</div>
+      <h1 id="title">Doty <em>&amp;</em> Co.</h1>
+      <p class="lede" id="lede">The household’s own corner of the internet. Sign in to get to your tools.</p>
+      <div id="action"><button class="btn primary" id="signin" hidden>Sign in</button></div>
+      <div class="note bad" id="error" hidden></div>
+    </div>
+    <svg viewBox="0 0 240 240" role="img" aria-label="A sun over a leaf, inside an arch">
+      <path d="M30 230 V130 A90 90 0 0 1 210 130 V230 Z" fill="var(--raised)"/>
+      <circle cx="120" cy="118" r="44" fill="var(--sun)"/>
+      <g stroke="var(--sun)" stroke-width="5" stroke-linecap="round">
+        <line x1="120" y1="50" x2="120" y2="36"/><line x1="168" y1="70" x2="178" y2="60"/><line x1="72" y1="70" x2="62" y2="60"/>
+        <line x1="188" y1="118" x2="202" y2="118"/><line x1="52" y1="118" x2="38" y2="118"/>
+      </g>
+      <path d="M84 230 C84 180 110 160 150 150 C150 196 126 222 84 230 Z" fill="var(--leaf)"/>
+      <path d="M84 230 C104 202 124 182 150 150" stroke="var(--bg)" stroke-width="3" fill="none"/>
+      <path d="M140 230 C150 205 172 192 196 190 C190 214 170 228 140 230 Z" fill="var(--pool)"/>
+      <ellipse cx="62" cy="208" rx="20" ry="8" fill="var(--bloom)" transform="rotate(-25 62 208)"/>
+    </svg>
+  </div>
+
+  <section class="tools" id="tools" hidden>
+    <h2>Your tools</h2>
+    <div class="tiles" id="tiles"></div>
+    <p class="empty" id="empty" hidden>No tools for you yet. Ask Luke to add you to one.</p>
+  </section>
+
+  <footer>
+    <span>Doty &amp; Co. · <a href="/style/style-guide.html">House style</a></span>
+    <button id="signout" hidden>Sign out</button>
+  </footer>
+</div>
+
+<script src="/family-auth.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var LEAF = '<svg viewBox="0 0 44 44" aria-hidden="true"><path d="M6 38 C6 18 20 8 38 6 C38 26 26 38 6 38 Z" fill="var(--leaf)"/><path d="M6 38 C16 26 26 16 38 6" stroke="var(--surface)" stroke-width="2.5" fill="none"/></svg>';
+
+  function setMode(m) {
+    if (m === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", m);
+    document.querySelectorAll(".mode button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.mode === m)); });
+    try { localStorage.setItem("de-mode", m); } catch (e) {}
+  }
+  document.querySelectorAll(".mode button").forEach(function (b) { b.addEventListener("click", function () { setMode(b.dataset.mode); }); });
+  var mode = "auto"; try { mode = localStorage.getItem("de-mode") || "auto"; } catch (e) {}
+  setMode(mode);
+
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function fail(msg) { var e = $("error"); e.textContent = msg; e.hidden = false; }
+
+  function showTools(claims, apps) {
+    var groups = claims["cognito:groups"] || [];
+    var mine = apps.filter(function (a) { return a.group === "*" || groups.indexOf(a.group) >= 0; });
+    $("eyebrow").textContent = "Signed in as " + claims.email;
+    $("title").innerHTML = "Welcome home, <em>" + esc(claims.given_name || "friend") + "</em>";
+    $("lede").hidden = true;
+    $("tiles").innerHTML = mine.map(function (a) {
+      return '<a class="card tile" href="' + esc(a.url) + '">' + LEAF + "<h3>" + esc(a.title) + "</h3><p>" + esc(a.description) + '</p><span class="go">Open →</span></a>';
+    }).join("");
+    $("empty").hidden = mine.length > 0;
+    $("tools").hidden = false;
+    $("signout").hidden = false;
+  }
+
+  fetch("/config.json").then(function (r) { return r.json(); }).then(function (cfg) {
+    $("signin").onclick = function () { FamilyAuth.login(); };
+    $("signout").onclick = function () { FamilyAuth.logout(); };
+    return FamilyAuth.init(cfg).then(function (claims) {
+      if (!claims) { $("signin").hidden = false; return; }
+      return fetch("/apps.json").then(function (r) { return r.ok ? r.json() : []; }).then(function (apps) { showTools(claims, apps); });
+    });
+  }).catch(function (e) { fail(e.message); $("signin").hidden = false; });
+})();
+</script>
+</body>
+</html>

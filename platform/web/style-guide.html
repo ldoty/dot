@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=&quot;http://www.w3.org/2000/svg&quot; viewBox=&quot;0 0 64 64&quot;%3E%3Cstyle%3E.bg%7Bfill:%23fbf9f3%7D.sun%7Bfill:%23e9a41a%7D.leaf%7Bfill:%232f9e5b%7D.vein%7Bstroke:%23fbf9f3%7D%40media (prefers-color-scheme:dark)%7B.bg%7Bfill:%231a1613%7D.sun%7Bfill:%23e2b04c%7D.leaf%7Bfill:%2393a861%7D.vein%7Bstroke:%231a1613%7D%7D%3C/style%3E%3Crect class=&quot;bg&quot; width=&quot;64&quot; height=&quot;64&quot; rx=&quot;14&quot;/%3E%3Ccircle class=&quot;sun&quot; cx=&quot;46&quot; cy=&quot;18&quot; r=&quot;11&quot;/%3E%3Cpath class=&quot;leaf&quot; d=&quot;M9 55 C9 33 25 18 50 14 C48 39 33 53 9 55 Z&quot;/%3E%3Cpath class=&quot;vein&quot; d=&quot;M9 55 C21 41 33 29 50 14&quot; stroke-width=&quot;2.2&quot; fill=&quot;none&quot; stroke-linecap=&quot;round&quot;/%3E%3C/svg%3E">
+<title>Daylight &amp; Evening</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&amp;family=Karla:ital,wght@0,400;0,500;0,600;1,400&amp;family=Young+Serif&amp;family=DM+Mono:wght@400;500&amp;display=swap">
+<style>
+/* Layout: a single reading column of specimen sections; light theme is Luke's Daylight, dark theme is Amber's Evening, same token names */
+:root {
+  /* Daylight (Luke): mid-century modern, biophilic, bright */
+  --bg: #fbf9f3; --surface: #ffffff; --raised: #f3efe4; --ink: #1e2a24; --muted: #5d6a62; --line: #e4ddcd;
+  --leaf: #2f9e5b; --pool: #0b7b7e; --sun: #e9a41a; --ember: #e8612c; --bloom: #e0607e; --wood: #a5622d;
+  --on-accent: #ffffff; --on-sun: #1e2a24;
+  --display: "Jost", "Futura", "Avenir Next", system-ui, sans-serif;
+  --body: "Karla", "Helvetica Neue", system-ui, sans-serif;
+  --serif: "Young Serif", Georgia, serif;
+  --mono: "DM Mono", ui-monospace, Menlo, monospace;
+  --r-sm: 8px; --r-md: 14px; --r-pill: 999px;
+  --texture: none;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;
+  --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;
+  --on-accent: #1a1613; --on-sun: #1a1613;
+  --texture: radial-gradient(rgba(241,231,216,.035) 1px, transparent 1.2px);
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;
+  --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;
+  --on-accent: #1a1613; --on-sun: #1a1613;
+  --texture: radial-gradient(rgba(241,231,216,.035) 1px, transparent 1.2px);
+  color-scheme: dark }
+:root[data-theme="light"] { color-scheme: light }
+
+* { box-sizing: border-box }
+html { color-scheme: light }
+@media (prefers-color-scheme: dark) { html:not([data-theme="light"]) { color-scheme: dark } }
+body { margin: 0; background: var(--bg); background-image: var(--texture); background-size: 6px 6px; color: var(--ink); font: 16px/1.6 var(--body) }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 40px 20px 80px }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0 }
+h1 { font-size: clamp(40px, 7vw, 72px); font-weight: 500; line-height: 1; letter-spacing: -0.02em }
+h1 em { font-family: var(--serif); font-style: normal; font-weight: 400; color: var(--wood) }
+h2 { font-size: 28px; font-weight: 500; letter-spacing: -0.01em }
+h3 { font-size: 17px; font-weight: 600 }
+p { margin: 0; max-width: 64ch }
+.eyebrow { font: 600 12px var(--display); text-transform: uppercase; letter-spacing: .14em; color: var(--muted) }
+section { padding-block: 44px; border-top: 1px solid var(--line); display: grid; gap: 20px }
+section > header { display: grid; gap: 6px }
+.lede { font-size: 19px; color: var(--muted); margin-top: 14px }
+code, pre { font-family: var(--mono); font-size: 13px }
+button, input, select { font: inherit }
+:focus-visible { outline: 2px solid var(--pool); outline-offset: 2px }
+
+/* Hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 32px; align-items: center; padding-bottom: 36px }
+@media (max-width: 720px) { .hero { grid-template-columns: 1fr } .hero svg { max-width: 200px } }
+.hero svg { width: 100%; height: auto }
+.mode { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: var(--r-pill); background: var(--raised); margin-top: 22px }
+.mode button { border: 0; background: none; color: var(--ink); padding: 7px 16px; border-radius: var(--r-pill); cursor: pointer; font-weight: 500 }
+.mode button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.12) }
+
+/* Principles */
+.principles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 24px }
+.principle { display: grid; gap: 8px; align-content: start }
+.principle .who { font: 500 12px var(--mono); color: var(--muted) }
+.principle svg { width: 44px; height: 44px }
+
+/* Palettes */
+.palettes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px }
+.pal { border-radius: var(--r-md); padding: 20px; display: grid; gap: 14px }
+.pal.day { background: #fbf9f3; color: #1e2a24; border: 1px solid #e4ddcd }
+.pal.eve { background: #1a1613; color: #f1e7d8; border: 1px solid #3b322a }
+.pal h3 { font-family: var(--display) }
+.pal .who { font: 12px var(--mono); opacity: .7 }
+.sw-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px }
+.sw { display: grid; gap: 6px }
+.sw i { display: block; aspect-ratio: 4 / 3; border-radius: var(--r-sm) }
+.sw b { font: 600 13px var(--body) }
+.sw span { font: 11.5px var(--mono); opacity: .75 }
+.neutrals { display: flex; height: 26px; border-radius: var(--r-sm); overflow: hidden }
+.neutrals i { flex: 1 }
+
+table.roles { width: 100%; border-collapse: collapse; font-size: 14.5px }
+.roles th { text-align: left; font: 600 12px var(--display); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line) }
+.roles td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top }
+.roles td:first-child { white-space: nowrap }
+.dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -1px; margin-right: 8px }
+.scroll { overflow-x: auto }
+.ratio { display: flex; height: 44px; border-radius: var(--r-sm); overflow: hidden; font: 500 12px var(--mono) }
+.ratio div { display: flex; align-items: center; padding: 0 12px }
+
+/* Type */
+.type-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: baseline; padding-block: 12px; border-bottom: 1px solid var(--line) }
+@media (max-width: 600px) { .type-row { grid-template-columns: 1fr; gap: 4px } }
+.type-row .spec { font: 12px var(--mono); color: var(--muted) }
+
+/* Shapes */
+.shapes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px }
+.shape { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px; display: grid; gap: 10px; justify-items: start }
+.shape svg { width: 72px; height: 72px }
+.shape p { font-size: 14px; color: var(--muted) }
+
+/* Components */
+.comp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; align-items: start }
+.demo { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 20px; display: grid; gap: 14px; min-width: 0 }
+.demo .label { font: 12px var(--mono); color: var(--muted) }
+.row-btn { display: flex; flex-wrap: wrap; gap: 10px }
+.btn { border-radius: var(--r-pill); padding: 9px 20px; font-weight: 600; cursor: pointer; border: 1.5px solid transparent }
+.btn.primary { background: var(--pool); color: var(--on-accent) }
+.btn.sun { background: var(--sun); color: var(--on-sun) }
+.btn.ghost { background: none; border-color: var(--line); color: var(--ink) }
+.field { display: grid; gap: 4px }
+.field label { font-size: 13px; color: var(--muted) }
+.field input, .field select { background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 9px 12px; color: var(--ink) }
+.field input:focus { border-color: var(--pool); outline: none }
+.chips { display: flex; flex-wrap: wrap; gap: 8px }
+.chip { font: 600 12px var(--body); padding: 4px 11px; border-radius: var(--r-pill) }
+.chip.leaf { background: color-mix(in srgb, var(--leaf) 18%, transparent); color: color-mix(in srgb, var(--leaf) 60%, var(--ink)) }
+.chip.sun { background: color-mix(in srgb, var(--sun) 22%, transparent); color: var(--ink) }
+.chip.ember { background: color-mix(in srgb, var(--ember) 18%, transparent); color: color-mix(in srgb, var(--ember) 60%, var(--ink)) }
+.chip.bloom { background: color-mix(in srgb, var(--bloom) 18%, transparent); color: color-mix(in srgb, var(--bloom) 60%, var(--ink)) }
+.stat { display: grid; gap: 2px }
+.stat .k { font: 600 11.5px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted) }
+.stat .v { font: 400 34px/1.1 var(--serif) }
+.stat .s { font: 12.5px var(--mono); color: color-mix(in srgb, var(--leaf) 60%, var(--ink)) }
+.arch { border-radius: 120px 120px var(--r-md) var(--r-md); background: var(--raised); padding: 48px 20px 20px; text-align: center; display: grid; gap: 6px; justify-items: center }
+.arch svg { width: 48px; height: 48px }
+.note { background: color-mix(in srgb, var(--sun) 16%, var(--surface)); border-radius: var(--r-sm); padding: 12px 14px; font-size: 14.5px }
+.line-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid var(--line) }
+.line-item .amt { font: 500 15px var(--mono); font-variant-numeric: tabular-nums }
+.line-item small { color: var(--muted); font-size: 12.5px }
+.bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--raised); overflow: hidden }
+.bar i { display: block; height: 100% }
+
+/* Do / don't */
+.dodont { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px }
+.dodont ul { margin: 0; padding-left: 20px; display: grid; gap: 8px }
+.dodont h3 { display: flex; gap: 8px; align-items: center }
+
+/* Tokens */
+.code-wrap { position: relative; background: var(--raised); border-radius: var(--r-md); overflow: hidden }
+.code-wrap pre { margin: 0; padding: 18px; overflow-x: auto; line-height: 1.55 }
+.code-wrap button { position: absolute; top: 10px; right: 10px }
+footer { color: var(--muted); font-size: 14px; padding-top: 24px; border-top: 1px solid var(--line) }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="hero">
+  <div>
+    <div class="eyebrow">Luke &amp; Amber · House style</div>
+    <h1>Daylight <em>&amp;</em> Evening</h1>
+    <p class="lede">One visual system for the household’s pages and documents. Daylight is Luke’s side: bright, mid-century, full of plants and morning light. Evening is Amber’s: dark wood, warm lamps, layered bohemian color. Every page carries both and switches with the time of day or the reader’s setting.</p>
+    <div class="mode" role="group" aria-label="Preview theme">
+      <button data-mode="light" aria-pressed="false">Daylight</button>
+      <button data-mode="dark" aria-pressed="false">Evening</button>
+      <button data-mode="auto" aria-pressed="true">Match device</button>
+    </div>
+  </div>
+  <svg viewBox="0 0 240 240" role="img" aria-label="A sun over a leaf and an arch">
+    <path d="M30 230 V130 A90 90 0 0 1 210 130 V230 Z" fill="var(--raised)"/>
+    <circle cx="120" cy="118" r="44" fill="var(--sun)"/>
+    <g stroke="var(--sun)" stroke-width="5" stroke-linecap="round">
+      <line x1="120" y1="50" x2="120" y2="36"/><line x1="168" y1="70" x2="178" y2="60"/><line x1="72" y1="70" x2="62" y2="60"/>
+      <line x1="188" y1="118" x2="202" y2="118"/><line x1="52" y1="118" x2="38" y2="118"/>
+    </g>
+    <path d="M84 230 C84 180 110 160 150 150 C150 196 126 222 84 230 Z" fill="var(--leaf)"/>
+    <path d="M84 230 C104 202 124 182 150 150" stroke="var(--bg)" stroke-width="3" fill="none"/>
+    <path d="M140 230 C150 205 172 192 196 190 C190 214 170 228 140 230 Z" fill="var(--pool)"/>
+    <ellipse cx="62" cy="208" rx="20" ry="8" fill="var(--bloom)" transform="rotate(-25 62 208)"/>
+  </svg>
+</div>
+
+<section>
+  <header><div class="eyebrow">Principles</div><h2>Where your tastes meet</h2></header>
+  <div class="principles">
+    <div class="principle">
+      <svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="11" fill="var(--sun)"/><g stroke="var(--sun)" stroke-width="3" stroke-linecap="round"><line x1="22" y1="3" x2="22" y2="7"/><line x1="22" y1="37" x2="22" y2="41"/><line x1="3" y1="22" x2="7" y2="22"/><line x1="37" y1="22" x2="41" y2="22"/></g></svg>
+      <h3>Lit from within</h3>
+      <p>Daylight pages feel like a sunny room. Evening pages feel like lamplight. Neither one is a gray office.</p>
+      <span class="who">Both</span>
+    </div>
+    <div class="principle">
+      <svg viewBox="0 0 44 44"><path d="M6 38 C6 18 20 8 38 6 C38 26 26 38 6 38 Z" fill="var(--leaf)"/></svg>
+      <h3>Grown, not built</h3>
+      <p>Leaf shapes, wood tones and greens anchor every palette. Use organic curves for illustration and keep the layout grid straight.</p>
+      <span class="who">Luke, biophilic</span>
+    </div>
+    <div class="principle">
+      <svg viewBox="0 0 44 44"><rect x="4" y="12" width="36" height="20" rx="10" fill="var(--pool)"/><circle cx="14" cy="22" r="4" fill="var(--bg)"/></svg>
+      <h3>Warm geometry</h3>
+      <p>Mid-century forms: pill buttons, round dots, starbursts, a geometric sans. Clean lines, never sterile.</p>
+      <span class="who">Luke, mid-century</span>
+    </div>
+    <div class="principle">
+      <svg viewBox="0 0 44 44"><path d="M8 40 V20 A14 14 0 0 1 36 20 V40 Z" fill="var(--bloom)"/><path d="M14 40 V22 A8 8 0 0 1 30 22 V40" fill="none" stroke="var(--bg)" stroke-width="2"/></svg>
+      <h3>Layered after dark</h3>
+      <p>Evening adds depth: arches, a soft woven texture on the ground, plum and rust, and a serif voice for the big numbers.</p>
+      <span class="who">Amber, bohemian</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <header><div class="eyebrow">Color</div><h2>Two palettes, one family</h2>
+  <p>Both palettes use the same six color roles. Luke’s versions are clear and saturated, Amber’s are earthy and low-lit, so a page can switch between them without changing its meaning.</p></header>
+  <div class="palettes">
+    <div class="pal day">
+      <div><h3>Daylight</h3><span class="who">Luke · light theme</span></div>
+      <div class="sw-grid">
+        <div class="sw"><i style="background:#2f9e5b"></i><b>Fern</b><span>leaf #2F9E5B</span></div>
+        <div class="sw"><i style="background:#0b7b7e"></i><b>Pool</b><span>pool #0B7B7E</span></div>
+        <div class="sw"><i style="background:#e9a41a"></i><b>Mustard</b><span>sun #E9A41A</span></div>
+        <div class="sw"><i style="background:#e8612c"></i><b>Tangerine</b><span>ember #E8612C</span></div>
+        <div class="sw"><i style="background:#e0607e"></i><b>Coral</b><span>bloom #E0607E</span></div>
+        <div class="sw"><i style="background:#a5622d"></i><b>Teak</b><span>wood #A5622D</span></div>
+      </div>
+      <div class="neutrals" aria-label="Daylight neutrals"><i style="background:#fbf9f3"></i><i style="background:#ffffff"></i><i style="background:#f3efe4"></i><i style="background:#e4ddcd"></i><i style="background:#5d6a62"></i><i style="background:#1e2a24"></i></div>
+    </div>
+    <div class="pal eve">
+      <div><h3>Evening</h3><span class="who">Amber · dark theme</span></div>
+      <div class="sw-grid">
+        <div class="sw"><i style="background:#93a861"></i><b>Moss</b><span>leaf #93A861</span></div>
+        <div class="sw"><i style="background:#4fa9a8"></i><b>Peacock</b><span>pool #4FA9A8</span></div>
+        <div class="sw"><i style="background:#e2b04c"></i><b>Saffron</b><span>sun #E2B04C</span></div>
+        <div class="sw"><i style="background:#d26a3c"></i><b>Rust</b><span>ember #D26A3C</span></div>
+        <div class="sw"><i style="background:#b46a8c"></i><b>Plum</b><span>bloom #B46A8C</span></div>
+        <div class="sw"><i style="background:#bf8d55"></i><b>Brass</b><span>wood #BF8D55</span></div>
+      </div>
+      <div class="neutrals" aria-label="Evening neutrals"><i style="background:#1a1613"></i><i style="background:#241e19"></i><i style="background:#2e2620"></i><i style="background:#3b322a"></i><i style="background:#b3a593"></i><i style="background:#f1e7d8"></i></div>
+    </div>
+  </div>
+
+  <div class="scroll">
+  <table class="roles">
+    <thead><tr><th>Role</th><th>Use it for</th><th>Avoid</th></tr></thead>
+    <tbody>
+      <tr><td><span class="dot" style="background:var(--pool)"></span>pool</td><td>Primary buttons, links, focus rings, selected states</td><td>Large background fills</td></tr>
+      <tr><td><span class="dot" style="background:var(--leaf)"></span>leaf</td><td>Good news: under budget, saved, complete. Charts’ main series</td><td>Decoration that could read as “success”</td></tr>
+      <tr><td><span class="dot" style="background:var(--sun)"></span>sun</td><td>Highlights, callouts, the one thing to look at. Mild warnings</td><td>Body text (too light on Daylight)</td></tr>
+      <tr><td><span class="dot" style="background:var(--ember)"></span>ember</td><td>Over budget, errors, destructive actions</td><td>Anything that isn’t a problem</td></tr>
+      <tr><td><span class="dot" style="background:var(--bloom)"></span>bloom</td><td>Personal touches: Amber’s or Luke’s tags, illustration, a second chart series</td><td>Status meaning</td></tr>
+      <tr><td><span class="dot" style="background:var(--wood)"></span>wood</td><td>Headline accents, dividers with character, the “&amp;” in titles</td><td>Buttons</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div>
+    <h3 style="margin-bottom:10px">Proportions</h3>
+    <div class="ratio" aria-label="60 percent ground, 30 percent surface and wood, 10 percent accent">
+      <div style="flex:6;background:var(--bg);border:1px solid var(--line);border-radius:8px 0 0 8px">60% ground</div>
+      <div style="flex:3;background:var(--raised)">30% surface &amp; wood</div>
+      <div style="flex:1;background:var(--sun);color:var(--on-sun)">10%</div>
+    </div>
+    <p style="margin-top:10px;color:var(--muted);font-size:14.5px">Mid-century rooms use color in confident blocks. Keep it to one or two accents per screen and let neutrals carry the rest.</p>
+  </div>
+</section>
+
+<section>
+  <header><div class="eyebrow">Type</div><h2>A geometric voice with a soft serif</h2>
+  <p>Jost carries the mid-century geometry for headings. Karla is the friendly, readable body face. Young Serif brings Amber’s warmth to big numbers and pull quotes. DM Mono lines up figures in tables.</p></header>
+  <div>
+    <div class="type-row"><span class="spec">Display · Jost 500 · 56</span><span style="font:500 clamp(36px,6vw,56px)/1.05 var(--display);letter-spacing:-.02em">Home, planned together</span></div>
+    <div class="type-row"><span class="spec">Heading · Jost 500 · 28</span><span style="font:500 28px var(--display)">Monthly budget</span></div>
+    <div class="type-row"><span class="spec">Subhead · Jost 600 · 17</span><span style="font:600 17px var(--display)">Utilities &amp; connectivity</span></div>
+    <div class="type-row"><span class="spec">Figure · Young Serif · 34</span><span style="font:400 34px var(--serif)">$5,560 <span style="font-size:16px;color:var(--muted)">/ mo</span></span></div>
+    <div class="type-row"><span class="spec">Body · Karla 400 · 16</span><span>Shared household costs, cars excluded. Enter bills at whatever cadence they arrive.</span></div>
+    <div class="type-row"><span class="spec">Label · Jost 600 · 12 caps</span><span class="eyebrow" style="color:var(--ink)">Who pays</span></div>
+    <div class="type-row"><span class="spec">Data · DM Mono 400 · 14</span><span style="font:14px var(--mono)">$2,300 / yr &nbsp; $192 / mo</span></div>
+  </div>
+</section>
+
+<section>
+  <header><div class="eyebrow">Shapes &amp; motifs</div><h2>Use one per page</h2>
+  <p>Draw every motif from the color tokens so it works in both themes. One motif per page keeps it from turning into wallpaper.</p></header>
+  <div class="shapes">
+    <div class="shape"><svg viewBox="0 0 72 72"><g stroke="var(--sun)" stroke-width="3" stroke-linecap="round"><line x1="36" y1="6" x2="36" y2="66"/><line x1="6" y1="36" x2="66" y2="36"/><line x1="15" y1="15" x2="57" y2="57"/><line x1="57" y1="15" x2="15" y2="57"/></g><circle cx="36" cy="36" r="6" fill="var(--sun)"/></svg><h3>Starburst</h3><p>Small badges, “new”, celebration.</p></div>
+    <div class="shape"><svg viewBox="0 0 72 72"><path d="M8 52 Q36 4 64 52 Q36 34 8 52 Z" fill="var(--pool)"/></svg><h3>Boomerang</h3><p>Section markers, empty states.</p></div>
+    <div class="shape"><svg viewBox="0 0 72 72"><path d="M10 64 C10 32 32 12 64 8 C62 40 42 62 10 64 Z" fill="var(--leaf)"/><path d="M10 64 C28 42 44 26 64 8" stroke="var(--surface)" stroke-width="2.5" fill="none"/></svg><h3>Leaf</h3><p>Savings, growth, anything living.</p></div>
+    <div class="shape"><svg viewBox="0 0 72 72"><path d="M12 68 V34 A24 24 0 0 1 60 34 V68 Z" fill="var(--bloom)"/></svg><h3>Arch</h3><p>Feature cards and headers in Evening.</p></div>
+    <div class="shape"><svg viewBox="0 0 72 72"><circle cx="26" cy="36" r="18" fill="var(--ember)"/><circle cx="46" cy="36" r="18" fill="var(--sun)" style="mix-blend-mode:multiply"/></svg><h3>Overlap</h3><p>Two of anything: Luke &amp; Amber, A vs B.</p></div>
+  </div>
+  <p style="color:var(--muted);font-size:14.5px">Corners: 8px on fields, 14px on cards, fully round on buttons and chips. Arches only on one hero or feature card per page.</p>
+</section>
+
+<section>
+  <header><div class="eyebrow">Components</div><h2>The pieces, in both moods</h2>
+  <p>Use the switch at the top to see each one in Daylight and Evening.</p></header>
+  <div class="comp-grid">
+    <div class="demo">
+      <span class="label">Buttons</span>
+      <div class="row-btn"><button class="btn primary">Save version</button><button class="btn sun">Compare</button><button class="btn ghost">Export</button></div>
+    </div>
+    <div class="demo">
+      <span class="label">Fields</span>
+      <div class="field"><label for="d-price">House price</label><input id="d-price" value="$600,000"></div>
+      <div class="field"><label for="d-term">Term</label><select id="d-term"><option>30 years</option><option>15 years</option></select></div>
+    </div>
+    <div class="demo">
+      <span class="label">Status chips</span>
+      <div class="chips"><span class="chip leaf">Under budget</span><span class="chip sun">Needs a quote</span><span class="chip ember">Over budget</span><span class="chip bloom">Amber</span></div>
+    </div>
+    <div class="demo">
+      <span class="label">Stat</span>
+      <div class="stat"><span class="k">Monthly total</span><span class="v">$5,560</span><span class="s">$410 under last version</span></div>
+    </div>
+    <div class="demo">
+      <span class="label">Line items</span>
+      <div>
+        <div class="line-item"><span>Groceries <small>· Shared</small></span><span class="amt">$1,500</span><div class="bar"><i style="width:100%;background:var(--leaf)"></i></div></div>
+        <div class="line-item"><span>Electric <small>· Shared</small></span><span class="amt">$260</span><div class="bar"><i style="width:17%;background:var(--leaf)"></i></div></div>
+        <div class="line-item"><span>Pet care <small>· Shared</small></span><span class="amt">$150</span><div class="bar"><i style="width:10%;background:var(--leaf)"></i></div></div>
+      </div>
+    </div>
+    <div class="demo">
+      <span class="label">Feature card (arch) &amp; callout</span>
+      <div class="arch"><svg viewBox="0 0 48 48"><path d="M6 42 C6 20 20 8 42 6 C40 28 28 42 6 42 Z" fill="var(--leaf)"/></svg><h3>Down payment fund</h3><span style="font:400 26px var(--serif)">$450,000</span></div>
+      <div class="note">Property tax is an estimate. Check the county bill before you lock this in.</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <header><div class="eyebrow">Usage</div><h2>Do and don’t</h2></header>
+  <div class="dodont">
+    <div><h3><span class="dot" style="background:var(--leaf)"></span>Do</h3>
+      <ul>
+        <li>Build every page from the tokens below so both themes work automatically.</li>
+        <li>Make Daylight the default for planning and numbers. Evening takes over at night or on a dark device.</li>
+        <li>Pick one hero accent per page: sun for highlights, pool for actions.</li>
+        <li>Use real photos of plants, wood and natural light when you need imagery.</li>
+        <li>Set figures in DM Mono in tables and Young Serif when one number is the headline.</li>
+      </ul>
+    </div>
+    <div><h3><span class="dot" style="background:var(--ember)"></span>Don’t</h3>
+      <ul>
+        <li>Use every accent on one screen. It reads as a toy, not a room.</li>
+        <li>Put sun-colored text on the Daylight ground. It’s too light to read.</li>
+        <li>Add texture to Daylight. The woven dot ground belongs to Evening only.</li>
+        <li>Use ember or leaf for decoration. They mean bad and good.</li>
+        <li>Swap in other fonts. The four faces cover every need.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <header><div class="eyebrow">Tokens</div><h2>Copy into any page</h2>
+  <p>Paste this at the top of a page’s stylesheet. Light values are Daylight, and the dark blocks switch to Evening.</p></header>
+  <div class="code-wrap"><button class="btn ghost" id="copy">Copy</button><pre id="tokens"></pre></div>
+</section>
+
+<footer>Daylight &amp; Evening · Luke &amp; Amber’s house style · v1, October 2026</footer>
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var btns = document.querySelectorAll(".mode button");
+  function setMode(m) {
+    if (m === "auto") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", m);
+    btns.forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.mode === m)); });
+    try { localStorage.setItem("de-mode", m); } catch (e) {}
+  }
+  btns.forEach(function (b) { b.addEventListener("click", function () { setMode(b.dataset.mode); }); });
+  try { var saved = localStorage.getItem("de-mode"); if (saved) setMode(saved); } catch (e) {}
+
+  var day = "--bg: #fbf9f3; --surface: #ffffff; --raised: #f3efe4; --ink: #1e2a24; --muted: #5d6a62; --line: #e4ddcd;\n  --leaf: #2f9e5b; --pool: #0b7b7e; --sun: #e9a41a; --ember: #e8612c; --bloom: #e0607e; --wood: #a5622d;\n  --on-accent: #ffffff; --on-sun: #1e2a24;";
+  var eve = "--bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;\n  --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;\n  --on-accent: #1a1613; --on-sun: #1a1613;\n  --texture: radial-gradient(rgba(241,231,216,.035) 1px, transparent 1.2px);\n  color-scheme: dark;";
+  var css =
+    '/* Fonts */\n@import url("https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&family=Karla:ital,wght@0,400;0,500;0,600;1,400&family=Young+Serif&family=DM+Mono:wght@400;500&display=swap");\n\n' +
+    "/* Daylight (Luke) */\n:root {\n  " + day + "\n  --texture: none;\n" +
+    '  --display: "Jost", "Futura", system-ui, sans-serif;\n  --body: "Karla", "Helvetica Neue", system-ui, sans-serif;\n  --serif: "Young Serif", Georgia, serif;\n  --mono: "DM Mono", ui-monospace, monospace;\n  --r-sm: 8px; --r-md: 14px; --r-pill: 999px;\n}\n\n' +
+    "/* Evening (Amber) */\n@media (prefers-color-scheme: dark) {\n  :root:not([data-theme=\"light\"]) {\n  " + eve + "\n  }\n}\n:root[data-theme=\"dark\"] {\n  " + eve + "\n}\n\n" +
+    "body { background: var(--bg); background-image: var(--texture); background-size: 6px 6px; color: var(--ink); font: 16px/1.6 var(--body); }";
+  document.getElementById("tokens").textContent = css;
+  var copy = document.getElementById("copy");
+  copy.addEventListener("click", function () {
+    var done = function () { copy.textContent = "Copied"; setTimeout(function () { copy.textContent = "Copy"; }, 1500); };
+    if (navigator.clipboard) navigator.clipboard.writeText(css).then(done, select); else select();
+    function select() { var r = document.createRange(); r.selectNodeContents(document.getElementById("tokens")); var s = getSelection(); s.removeAllRanges(); s.addRange(r); copy.textContent = "Press ⌘C"; }
+  });
+})();
+</script>
+</body>
+</html>

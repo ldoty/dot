@@ -1,0 +1,61 @@
+/* Daylight & Evening house style: tokens and base components.
+   Served at https://dot-y.co/style/family.css. The full guide is style-guide.html beside it.
+   Light theme is Luke's Daylight, dark theme is Amber's Evening; same token names in both.
+   Set <html data-theme="light|dark"> to force one, or leave it off to follow the device. */
+@import url("https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&family=Karla:ital,wght@0,400;0,500;0,600;1,400&family=Young+Serif&family=DM+Mono:wght@400;500&display=swap");
+
+:root {
+  /* Daylight (Luke) */
+  --bg: #fbf9f3; --surface: #ffffff; --raised: #f3efe4; --ink: #1e2a24; --muted: #5d6a62; --line: #e4ddcd;
+  --leaf: #2f9e5b; --pool: #0b7b7e; --sun: #e9a41a; --ember: #e8612c; --bloom: #e0607e; --wood: #a5622d;
+  --on-accent: #ffffff; --on-sun: #1e2a24;
+  --texture: none;
+  --display: "Jost", "Futura", "Avenir Next", system-ui, sans-serif;
+  --body: "Karla", "Helvetica Neue", system-ui, sans-serif;
+  --serif: "Young Serif", Georgia, serif;
+  --mono: "DM Mono", ui-monospace, Menlo, monospace;
+  --r-sm: 8px; --r-md: 14px; --r-pill: 999px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  /* Evening (Amber) */
+  --bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;
+  --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;
+  --on-accent: #1a1613; --on-sun: #1a1613;
+  --texture: radial-gradient(rgba(241,231,216,.035) 1px, transparent 1.2px);
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;
+  --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;
+  --on-accent: #1a1613; --on-sun: #1a1613;
+  --texture: radial-gradient(rgba(241,231,216,.035) 1px, transparent 1.2px);
+  color-scheme: dark }
+
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+body { margin: 0; background: var(--bg); background-image: var(--texture); background-size: 6px 6px; color: var(--ink); font: 16px/1.6 var(--body) }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0 }
+h1 { font-size: clamp(40px, 7vw, 72px); font-weight: 500; line-height: 1; letter-spacing: -0.02em }
+h1 em, h2 em { font-family: var(--serif); font-style: normal; font-weight: 400; color: var(--wood) }
+h2 { font-size: 28px; font-weight: 500; letter-spacing: -0.01em }
+h3 { font-size: 17px; font-weight: 600 }
+p { margin: 0; max-width: 64ch }
+a { color: var(--pool) }
+button, input, select { font: inherit }
+:focus-visible { outline: 2px solid var(--pool); outline-offset: 2px }
+
+.eyebrow { font: 600 12px var(--display); text-transform: uppercase; letter-spacing: .14em; color: var(--muted) }
+.lede { font-size: 19px; color: var(--muted) }
+
+.btn { display: inline-block; text-decoration: none; border-radius: var(--r-pill); padding: 9px 20px; font-weight: 600; cursor: pointer; border: 1.5px solid transparent }
+.btn.primary { background: var(--pool); color: var(--on-accent) }
+.btn.sun { background: var(--sun); color: var(--on-sun) }
+.btn.ghost { background: none; border-color: var(--line); color: var(--ink) }
+
+.mode { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: var(--r-pill); background: var(--raised) }
+.mode button { border: 0; background: none; color: var(--ink); padding: 6px 14px; border-radius: var(--r-pill); cursor: pointer; font-weight: 500; font-size: 14px }
+.mode button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.12) }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 20px }
+.note { background: color-mix(in srgb, var(--sun) 16%, var(--surface)); border-radius: var(--r-sm); padding: 12px 14px; font-size: 14.5px }
+.note.bad { background: color-mix(in srgb, var(--ember) 14%, var(--surface)) }

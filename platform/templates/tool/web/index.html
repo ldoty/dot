@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="family.css">
+<script>try { var m = localStorage.getItem("de-mode"); if (m && m !== "auto") document.documentElement.setAttribute("data-theme", m); } catch (e) {}</script>
+<style>
+/* Layout: one narrow column. Header with a link home, then the tool. */
+.wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 24px }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+.top a { color: var(--muted); text-decoration: none; font-size: 14px }
+h1 { font-size: clamp(32px, 6vw, 48px) }
+.add { display: flex; gap: 8px }
+.add input { flex: 1; min-width: 0; background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 9px 12px; color: var(--ink) }
+.add input:focus { border-color: var(--pool); outline: none }
+ul { list-style: none; margin: 0; padding: 0 }
+li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line) }
+li button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 18px }
+li button:hover { color: var(--ember) }
+.status { color: var(--muted); font-size: 14px; min-height: 1.4em }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
+  <h1>__TITLE__</h1>
+  <div id="main"><p class="status">Loading…</p></div>
+</div>
+<script src="family-auth.js"></script>
+<script>
+(function () {
+  var cfg, items = [];
+  var main = document.getElementById("main");
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function uid() { return "x" + Math.random().toString(36).slice(2, 9); }
+  function status(msg) { var s = document.getElementById("status"); if (s) s.textContent = msg || ""; }
+
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method,
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    });
+  }
+
+  function render() {
+    main.innerHTML = '<form class="add" id="add"><input id="name" placeholder="Add something" aria-label="New item" maxlength="200"><button class="btn primary">Add</button></form>' +
+      '<p class="status" id="status"></p><ul>' + items.map(function (it) {
+        return '<li><span>' + esc(it.name) + '</span><button data-del="' + esc(it.id) + '" aria-label="Remove ' + esc(it.name) + '">&times;</button></li>';
+      }).join("") + "</ul>";
+  }
+
+  main.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var inp = document.getElementById("name"), name = inp.value.trim(); if (!name) return;
+    var it = { id: uid(), name: name };
+    api("PUT", "/items/" + it.id, { name: name }).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      items.push(it); render(); document.getElementById("name").focus();
+    }).catch(function () { status("Couldn’t save. Try again."); });
+  });
+  main.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-del]"); if (!b) return;
+    api("DELETE", "/items/" + b.dataset.del).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      items = items.filter(function (x) { return x.id !== b.dataset.del; }); render();
+    }).catch(function () { status("Couldn’t remove that. Try again."); });
+  });
+
+  function gate(msg) {
+    main.innerHTML = '<p class="status">' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button>';
+    document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
+    document.getElementById("signout").hidden = false;
+    document.getElementById("signout").onclick = function () { FamilyAuth.logout(); };
+    return api("GET", "/items").then(function (res) {
+      if (res.status === 403) return gate("Your account doesn’t have access to __TITLE__ yet.");
+      if (!res.ok) throw new Error("Couldn’t load (" + res.status + "). Reload to try again.");
+      return res.json().then(function (list) { items = list; render(); });
+    });
+  }).catch(function (e) { gate(e.message); });
+})();
+</script>
+</body>
+</html>
