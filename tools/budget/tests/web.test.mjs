@@ -405,3 +405,14 @@ test('editing the tag of a version that isn’t loaded leaves the screen alone u
   assert.equal(p.text('ro-Lukes'), '$1,000'); // 50% of Plan B's $2,000
   p.close();
 });
+
+test('savings and left over show yearly totals', async () => {
+  const p = await openBudget('#luke'); // $3,000/mo pay, $500/mo to shared
+  assert.equal(p.text('k-left'), '$2,500');
+  assert.equal(p.text('k-left-yr'), '$30,000 / yr to spare');
+  p.click('[data-ckind="Lukec"]'); await wait(); // count "Needs" ($500) as saving instead
+  assert.equal(p.text('k-save-yr'), '$6,000 / yr · 17% of income');
+  p.type('#a-Lukei', '200'); await wait(); // income below costs
+  assert.equal(p.text('k-left-yr'), 'Over by $3,600 / yr');
+  p.close();
+});

@@ -767,8 +767,8 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     set("t-inc", money.format(P.income));
     set("k-inc", money.format(P.income)); set("k-inc-yr", money.format(P.income * 12) + " / yr");
     set("k-out", money.format(P.out)); set("k-out-yr", "incl. " + money.format(ctx.shares[p]) + " to shared");
-    set("k-save", money.format(P.save)); set("k-save-yr", P.income ? Math.round(P.save / P.income * 100) + "% of income" : "—");
-    set("k-left", money.format(P.left)); set("k-left-yr", P.income ? (P.left >= 0 ? "Room to spare" : "Over by " + money.format(-P.left)) : "Add income to see this");
+    set("k-save", money.format(P.save)); set("k-save-yr", money.format(P.save * 12) + " / yr" + (P.income ? " · " + Math.round(P.save / P.income * 100) + "% of income" : ""));
+    set("k-left", money.format(P.left)); set("k-left-yr", P.income ? (P.left >= 0 ? money.format(P.left * 12) + " / yr to spare" : "Over by " + money.format(-P.left * 12) + " / yr") : "Add income to see this");
     var lv = document.getElementById("k-left"); if (lv) lv.className = "val" + (P.income ? (P.left >= 0 ? " pos" : " neg") : "");
     drawBars(P.cats.map(function (x) { return { name: x.c.name || "Untitled", t: x.t }; }));
   }
