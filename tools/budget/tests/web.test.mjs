@@ -179,7 +179,7 @@ test('rename a version; its tags stay, and the working copy follows the new name
   p.click('[data-vload="v1"]'); await saved();
   p.click('[data-vedit="v1"]');
   assert.equal(p.d.activeElement.id, 've-name');
-  p.type('#ve-name', 'Baseline'); p.click('[data-vrename="v1"]'); await saved();
+  p.type('#ve-name', 'Baseline'); p.click('[data-vsave="v1"]'); await saved();
   assert.equal(version('shared', 'v1').name, 'Baseline');
   assert.equal(tag('default'), 'v1');
   assert.equal(doc('shared').version, 'Baseline');
@@ -190,7 +190,7 @@ test('rename a version; its tags stay, and the working copy follows the new name
 test('renaming to another version’s name is refused', async () => {
   const p = await openBudget('#shared');
   p.type('#v-name', 'Plan B'); p.click('#v-save'); await wait(50);
-  p.click('[data-vedit="v1"]'); p.type('#ve-name', 'plan b'); p.click('[data-vrename="v1"]'); await wait(50);
+  p.click('[data-vedit="v1"]'); p.type('#ve-name', 'plan b'); p.click('[data-vsave="v1"]'); await wait(50);
   assert.equal(version('shared', 'v1').name, 'Starting point');
   assert.match(p.text('status'), /already called/);
   p.close();
@@ -243,10 +243,43 @@ test('personal versions can be renamed and updated, with no tag controls', async
   const id = table.keys().find((k) => k.startsWith('DOC#Luke#VERSION#')).split('#')[3];
   p.click(`[data-vedit="${id}"]`);
   assert.equal(p.d.getElementById('ve-tag'), null);
-  p.type('#ve-name', 'Lean month'); p.click(`[data-vrename="${id}"]`); await saved();
+  p.type('#ve-name', 'Lean month'); p.click(`[data-vsave="${id}"]`); await saved();
   assert.equal(version('Luke', id).name, 'Lean month');
   p.type('#a-Lukei', '3500'); await wait();
   p.click('#v-update'); await saved();
   assert.equal(version('Luke', id).state.income[0].amount, 3500);
+  p.close();
+});
+
+test('a personal version’s tag can be changed in its editor, and loading it applies that tag', async () => {
+  const p = await openBudget('#shared');
+  p.type('#v-name', 'Plan B'); p.type('#v-tag', 'stretch'); p.click('#v-save'); await wait(50);
+  await p.tab('Luke');
+  p.type('#v-name', 'Lean'); p.click('#v-save'); await wait(50);
+  const id = table.keys().find((k) => k.startsWith('DOC#Luke#VERSION#')).split('#')[3];
+
+  p.click(`[data-vedit="${id}"]`);
+  assert.equal(p.el('#ve-follow').value, 'default');
+  assert.match(p.text('ve-follow-hint'), /“Starting point”/);
+  p.type('#ve-follow', 'stretch', 'change');
+  assert.match(p.text('ve-follow-hint'), /“Plan B”/, 'hint updates before saving');
+  p.click(`[data-vsave="${id}"]`); await wait(50);
+  assert.equal(version('Luke', id).state.follows, 'stretch');
+  assert.equal(doc('Luke').follows, 'default', 'editing a saved version doesn’t change the working copy');
+  assert.match(p.d.querySelector('.v-item .v-meta').textContent, /follows stretch/);
+
+  p.click(`[data-vload="${id}"]`); await saved();
+  assert.equal(doc('Luke').follows, 'stretch');
+  assert.equal(p.el('#follow').value, 'stretch');
+  p.close();
+});
+
+test('the editor has a tag picker only on personal tabs and tag chips only on Shared', async () => {
+  const p = await openBudget('#shared');
+  p.click('[data-vedit="v1"]');
+  assert.ok(p.d.getElementById('ve-tag'));
+  assert.equal(p.d.getElementById('ve-follow'), null);
+  p.click('[data-vdone]');
+  assert.equal(p.d.querySelector('[data-veditor]'), null, 'Cancel closes it');
   p.close();
 });

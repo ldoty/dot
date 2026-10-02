@@ -176,8 +176,8 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
 .v-item { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center }
 .v-item.on { border-color: var(--pool); background: var(--accent-soft) }
 .v-name { font-weight: 600; overflow-wrap: anywhere }
-.v-meta { grid-column: 1; font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums }
-.v-acts { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 4px }
+.v-meta { grid-column: 1 / -1; font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums }
+.v-acts { grid-column: 2; grid-row: 1; display: flex; gap: 4px }
 .v-acts button { padding: 5px 9px; font-size: 12.5px }
 .v-acts .v-del { color: var(--muted) }
 .v-acts .v-del.arm { color: var(--bad); border-color: var(--bad) }
@@ -192,17 +192,24 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
 .t-item .v-meta { grid-column: 1 / -1 }
 .t-item .t-del { padding: 4px 9px; font-size: 12px; color: var(--muted) }
 .t-item .t-del.arm { color: var(--bad); border-color: var(--bad) }
-.v-edit { display: grid; gap: 10px; border-color: var(--pool) }
-.v-edit .v-lbl { display: grid; gap: 4px; font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted) }
-.v-edit input { text-transform: none; letter-spacing: 0; font: 14px var(--body); background: var(--field); border-color: var(--line) }
-.ve-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center }
-.ve-tags .tagchip { display: inline-flex; align-items: center; gap: 2px }
+/* Version editor: one stacked column (it replaces the row's two-column layout) */
+.v-edit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; border-color: var(--pool); padding: 12px }
+.v-edit .v-lbl { font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin-top: 6px }
+.v-edit .v-lbl:first-child { margin-top: 0 }
+.v-edit input, .v-edit select { width: 100%; font: 14px var(--body); background: var(--field); border: 1.5px solid var(--line); border-radius: var(--r-sm); padding: 7px 10px }
+.v-edit button { white-space: nowrap }
+.ve-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 22px }
+.ve-tags .tagchip { display: inline-flex; align-items: center; gap: 2px; text-transform: none }
 .ve-tags .tagchip button { border: 0; background: none; padding: 0 2px; font-size: 13px; line-height: 1; color: inherit }
-.ve-add { display: flex; gap: 6px }
-.ve-add input { flex: 1; min-width: 0 }
-.ve-acts { display: flex; flex-wrap: wrap; gap: 6px }
-.ve-acts button, .ve-add button { padding: 5px 11px; font-size: 12.5px }
-.ve-acts .arm { color: var(--bad); border-color: var(--bad) }
+.ve-none { font-size: 12.5px; color: var(--muted) }
+.ve-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px }
+.ve-add button { padding: 5px 12px; font-size: 12.5px }
+.ve-hint { font-size: 12px; color: var(--muted); margin: 0 }
+.ve-acts { display: flex; gap: 6px; margin-top: 8px }
+.ve-acts button { padding: 6px 16px; font-size: 13px }
+.ve-replace { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; display: grid; gap: 2px; justify-items: start }
+.ve-replace button { border: 0; background: none; padding: 0; font-size: 13px; color: var(--pool); text-decoration: underline; text-underline-offset: 2px }
+.ve-replace button.arm { color: var(--bad); text-decoration: none; font-weight: 700 }
 .cur .v-update { margin-left: 6px; padding: 3px 10px; font-size: 12px }
 .follow { display: grid; gap: 4px; width: 100%; font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted) }
 .follow select { text-transform: none; letter-spacing: 0; font: 14px var(--body); color: var(--ink) }
@@ -518,16 +525,32 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   // Inline editor for one saved version: rename, tags (Shared), replace its numbers with the working copy
   var editing = null;
   function versionEditor(v, doc) {
-    var vt = doc === "shared" ? tagsOn(v.id) : [];
-    return '<li class="v-item v-edit" data-veditor="' + esc(v.id) + '">' +
-      '<label class="v-lbl">Name<input id="ve-name" value="' + esc(v.name) + '" maxlength="60"></label>' +
-      (doc === "shared" ? '<div class="v-lbl">Tags<div class="ve-tags">' + vt.map(function (n) {
+    var html = '<li class="v-item v-edit" data-veditor="' + esc(v.id) + '">' +
+      '<label class="v-lbl" for="ve-name">Name</label><input id="ve-name" value="' + esc(v.name) + '" maxlength="60">';
+    if (doc === "shared") {
+      var vt = tagsOn(v.id);
+      html += '<span class="v-lbl">Tags</span><div class="ve-tags">' + (vt.map(function (n) {
         return '<span class="tagchip">' + esc(n) + (n === "default" ? "" : '<button data-vuntag="' + esc(n) + '" aria-label="Remove tag ' + esc(n) + '">&times;</button>') + "</span>";
-      }).join("") + "</div>" +
-      '<div class="ve-add"><input id="ve-tag" list="tag-names" placeholder="Add a tag" aria-label="Add a tag" maxlength="30"><button data-vaddtag="' + esc(v.id) + '">Add</button></div></div>' : "") +
-      '<div class="ve-acts"><button class="primary" data-vrename="' + esc(v.id) + '">Save name</button>' +
-      '<button data-vreplace="' + esc(v.id) + '">Replace with current numbers</button>' +
-      '<button data-vdone>Done</button></div></li>';
+      }).join("") || '<span class="ve-none">No tags</span>') + "</div>" +
+        '<div class="ve-add"><input id="ve-tag" list="tag-names" placeholder="Tag name" aria-label="Add a tag" maxlength="30"><button data-vaddtag="' + esc(v.id) + '">Add tag</button></div>';
+    } else {
+      var follows = normalizePerson(clone(v.state)).follows;
+      html += '<label class="v-lbl" for="ve-follow">Follows tag</label><select id="ve-follow">' + tagOptions(follows) + "</select>" +
+        '<p class="ve-hint" id="ve-follow-hint">' + esc(followHint(follows)) + "</p>";
+    }
+    return html +
+      '<div class="ve-acts"><button class="primary" data-vsave="' + esc(v.id) + '">Save</button><button data-vdone>Cancel</button></div>' +
+      '<div class="ve-replace"><button data-vreplace="' + esc(v.id) + '">Replace with current numbers</button>' +
+      '<p class="ve-hint">Overwrites this version with what’s on screen now.</p></div></li>';
+  }
+  function tagOptions(selected) {
+    var names = tags.map(function (t) { return t.name; });
+    if (selected && names.indexOf(selected) < 0) names.push(selected);
+    return names.sort().map(function (n) { return "<option" + (n === selected ? " selected" : "") + ">" + esc(n) + "</option>"; }).join("");
+  }
+  function followHint(name) {
+    var t = tagFor(name), v = t && sharedVersion(t.versionId);
+    return v ? "Uses the Shared version “" + v.name + "”" : "No Shared version is tagged " + name + "; falls back to default";
   }
   function putVersion(doc, v) {
     return api("PUT", "/docs/" + doc + "/versions/" + v.id, v).then(function (res) {
@@ -540,17 +563,22 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   function followersOf(versionId) {
     return PEOPLE.filter(function (p) { var f = followed(docs[p]); return f && f.id === versionId; });
   }
-  function renameVersion(doc, id, name) {
+  // Saves the editor: the name, and on personal versions the tag that version follows
+  function saveVersionDetails(doc, id) {
     var old = versions[doc].filter(function (x) { return x.id === id; })[0]; if (!old) return;
-    name = name.trim();
+    var name = document.getElementById("ve-name").value.trim();
+    var fsel = document.getElementById("ve-follow");
     if (!name) { setStatus("Give the version a name."); return; }
-    if (name === old.name) { editing = null; renderVersions(); return; }
     if (versions[doc].some(function (x) { return x.id !== id && x.name.toLowerCase() === name.toLowerCase(); })) { setStatus("Another version is already called “" + name + "”."); return; }
-    var v = { id: id, name: name, savedAt: old.savedAt, state: old.state };
+    var state = clone(old.state), followsChanged = false;
+    if (fsel && fsel.value !== normalizePerson(clone(old.state)).follows) { state.follows = fsel.value; followsChanged = true; }
+    if (name === old.name && !followsChanged) { editing = null; renderVersions(); return; }
+    var v = { id: id, name: name, savedAt: old.savedAt, state: state };
     return putVersion(doc, v).then(function () {
-      if (docs[doc].version === old.name) { docs[doc].version = name; persist(true, doc); }
-      editing = null; renderVersions(); setStatus("Renamed “" + old.name + "” to “" + name + "”");
-    }).catch(function () { setStatus("Couldn’t rename the version. Try again."); });
+      if (docs[doc].version === old.name && name !== old.name) { docs[doc].version = name; persist(true, doc); }
+      editing = null; renderVersions();
+      setStatus("Saved “" + name + "”" + (followsChanged ? ", now following " + state.follows : ""));
+    }).catch(function () { setStatus("Couldn’t save the version. Try again."); });
   }
   function replaceNumbers(doc, id) {
     var old = versions[doc].filter(function (x) { return x.id === id; })[0]; if (!old) return;
@@ -826,8 +854,8 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       var ne = document.getElementById("ve-name"); if (ne) { ne.focus(); ne.select(); }
     } else if (t.dataset.vdone != null) {
       editing = null; renderVersions();
-    } else if (t.dataset.vrename) {
-      renameVersion(tab, t.dataset.vrename, document.getElementById("ve-name").value);
+    } else if (t.dataset.vsave) {
+      saveVersionDetails(tab, t.dataset.vsave);
     } else if (t.dataset.vaddtag) {
       addTag(t.dataset.vaddtag);
     } else if (t.dataset.vuntag) {
@@ -925,7 +953,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       return;
     }
     if (e.target.id === "v-name" && e.key === "Enter") { e.preventDefault(); saveVersion(); }
-    if (e.target.id === "ve-name" && e.key === "Enter") { e.preventDefault(); renameVersion(tab, e.target.closest("[data-veditor]").dataset.veditor, e.target.value); }
+    if (e.target.id === "ve-name" && e.key === "Enter") { e.preventDefault(); saveVersionDetails(tab, e.target.closest("[data-veditor]").dataset.veditor); }
     if (e.target.id === "ve-tag" && e.key === "Enter") { e.preventDefault(); addTag(e.target.closest("[data-veditor]").dataset.veditor); }
     if (editing && e.key === "Escape" && e.target.closest && e.target.closest("[data-veditor]")) { editing = null; renderVersions(); }
     if (e.target.dataset && e.target.dataset.cname && e.key === "Enter") { e.preventDefault(); e.target.blur(); }
@@ -937,6 +965,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   });
   app.addEventListener("change", function (e) {
     if (e.target.id === "m-years") { docs.shared.mortgage.years = Number(e.target.value); totals(); persist(); return; }
+    if (e.target.id === "ve-follow") { var fh = document.getElementById("ve-follow-hint"); if (fh) fh.textContent = followHint(e.target.value); return; }
     if (e.target.id === "follow") {
       docs[tab].follows = e.target.value; persist(); totals(); renderVersions();
       setStatus(tab + " now follows " + e.target.value);
