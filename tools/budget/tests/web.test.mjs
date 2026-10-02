@@ -480,3 +480,86 @@ test('an older saved version (single down payment) still loads and shows the sam
   assert.equal(p.el('.dp-row [data-dpf="name"]').value, 'Down payment');
   p.close();
 });
+
+// --- Paid by: Shared (global split) or Split (Luke pays $X, Amber the rest) ------------------
+
+const bills = (items, split = 50) => ({
+  categories: [{ id: 'c1', name: 'Bills', kind: 'spend', items }],
+  mortgage: { price: 0, rate: 6, years: 30 }, split,
+});
+const item = (id, amount, extra) => ({ id, name: id, amount, freq: 'mo', ...extra });
+
+test('old "Luke"/"Amber" items become Split with Luke paying all / none, same shares', async () => {
+  seed({ working: bills([item('a', 1000, { who: 'Shared' }), item('b', 300, { who: 'Luke' }), item('c', 200, { who: 'Amber' })]) });
+  const p = await openBudget('#shared');
+  assert.deepEqual([...p.el('#w-b').options].map((o) => o.value), ['Shared', 'Split']);
+  assert.equal(p.el('#w-b').value, 'Split');
+  assert.equal(p.el('#sp-b').value, '300');
+  assert.equal(p.text('sr-b'), 'Amber $0');
+  assert.equal(p.el('#sp-c').value, '0');
+  assert.equal(p.text('sr-c'), 'Amber $200');
+  assert.equal(p.d.getElementById('sp-a'), null, 'Shared items have no Luke $ field');
+  assert.equal(p.text('k-luke'), '$800'); // 50% of 1,000 + 300
+  assert.equal(p.text('k-amber'), '$700'); // 50% of 1,000 + 200
+  p.close();
+});
+
+test('the global split divides Shared items; Split items use Luke’s dollar amount', async () => {
+  seed({ working: bills([item('a', 1000, { who: 'Shared' }), item('car', 500, { who: 'Shared' })]) });
+  const p = await openBudget('#shared');
+  p.type('#w-car', 'Split'); await wait();
+  assert.equal(p.el('#sp-car').value, '250', 'starts at the global split, in dollars');
+  assert.equal(p.d.activeElement.id, 'sp-car', 'focus moves to Luke’s amount');
+  p.type('#sp-car', '$350');
+  assert.equal(p.text('sr-car'), 'Amber $150');
+  assert.equal(p.text('k-luke'), '$850'); // 50% of 1,000 + 350
+  assert.equal(p.text('k-amber'), '$650'); // 50% of 1,000 + 150
+  assert.equal(p.text('k-luke-yr'), '50% of shared + $350 split');
+  assert.equal(p.text('k-amber-yr'), '50% of shared + $150 split');
+  p.type('#split-r', '80');
+  assert.equal(p.text('k-luke'), '$1,150'); // 80% of 1,000 + 350; the car doesn’t move
+  assert.equal(p.text('k-amber'), '$350');
+  assert.match(p.text('s-foot'), /\$1,000\/mo of shared costs/);
+  await saved();
+  const car = doc('shared').categories[0].items[1];
+  assert.deepEqual([car.who, car.luke], ['Split', 350]);
+  p.close();
+});
+
+test('a yearly Split item: Luke’s dollars are per year too', async () => {
+  seed({ working: bills([item('ins', 1200, { freq: 'yr', who: 'Split', luke: 900 })]) });
+  const p = await openBudget('#shared');
+  assert.equal(p.text('sr-ins'), 'Amber $300');
+  assert.equal(p.text('k-luke'), '$75'); // 900 / 12
+  assert.equal(p.text('k-amber'), '$25');
+  p.close();
+});
+
+test('Luke’s part above the item is capped: Amber pays $0', async () => {
+  seed({ working: bills([item('car', 500, { who: 'Split', luke: 800 })]) });
+  const p = await openBudget('#shared');
+  assert.equal(p.text('sr-car'), 'More than the item: Amber $0');
+  assert.equal(p.text('k-luke'), '$500');
+  assert.equal(p.text('k-amber'), '$0');
+  p.close();
+});
+
+test('switching back to Shared drops Luke’s amount', async () => {
+  seed({ working: bills([item('car', 500, { who: 'Split', luke: 350 })]) });
+  const p = await openBudget('#shared');
+  p.type('#w-car', 'Shared'); await saved();
+  assert.equal(p.d.getElementById('sp-car'), null);
+  assert.equal(doc('shared').categories[0].items[0].luke, undefined);
+  assert.equal(p.text('k-luke'), '$250');
+  p.close();
+});
+
+test('personal share notes the Split items', async () => {
+  seed({ working: bills([]) });
+  table.put({ pk: PK, sk: 'DOC#shared#VERSION#v1', name: 'Starting point', savedAt: 1,
+    state: JSON.stringify(bills([item('a', 1000, { who: 'Shared' }), item('car', 500, { who: 'Split', luke: 350 })])) });
+  const p = await openBudget('#luke');
+  assert.equal(p.text('ro-Lukes'), '$850');
+  assert.match(p.text('nt-Lukes'), /50% of \$1,000 shared costs plus \$350 from items with their own split/);
+  p.close();
+});
