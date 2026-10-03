@@ -9,7 +9,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import Anthropic, { BetaFallbackState, betaRefusalFallbackMiddleware } from '@anthropic-ai/sdk';
-import { AnthropicBedrockMantle } from '@anthropic-ai/bedrock-sdk';
+import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
 import { verifyAccessToken } from './verify-token.mjs';
 import { makeStore } from './store.mjs';
 import { makeGoogleAuth } from './google.mjs';
@@ -37,10 +37,13 @@ export function liveDeps(env = process.env) {
   return {
     auth: { issuer: env.ISSUER, clientId: env.CLIENT_ID, group: env.GROUP },
     store: makeStore({ db: DynamoDBDocumentClient.from(new DynamoDBClient({})), table: env.TABLE }),
-    // Refusals retry on the fallback model (Bedrock has no server-side fallback)
-    client: new AnthropicBedrockMantle({
+    // Bedrock Runtime (InvokeModel). Opus 4.7+ needs per-account approval this account doesn't
+    // have yet; this client also serves those models, so upgrading is just the model setting.
+    // With FALLBACK_MODEL set, refusals retry on it (Bedrock has no server-side fallback). Off for
+    // Opus 4.6: the middleware's beta flag is rejected by Bedrock Runtime's older models.
+    client: new AnthropicBedrock({
       awsRegion: env.AWS_REGION,
-      middleware: [betaRefusalFallbackMiddleware([{ model: env.FALLBACK_MODEL }])],
+      middleware: env.FALLBACK_MODEL ? [betaRefusalFallbackMiddleware([{ model: env.FALLBACK_MODEL }])] : [],
     }),
     tools: makeTools({ calendar, calendarNames: Object.keys(calendars) }),
     model: env.MODEL,

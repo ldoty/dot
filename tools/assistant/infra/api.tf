@@ -5,13 +5,15 @@
 
 variable "model" {
   type    = string
-  default = "anthropic.claude-opus-5-5"
+  default = "us.anthropic.claude-opus-4-6-v1"
+  # Opus 5.5 (global.anthropic.claude-opus-5-5) answers "not available for this account" until
+  # AWS approves the account for Opus 4.7+; switch back here once it does.
 }
 
 variable "fallback_model" {
   type        = string
-  default     = "anthropic.claude-opus-4-8"
-  description = "Used when the main model declines a request (client-side, since Bedrock has no server-side fallback)"
+  default     = ""
+  description = "Retried when the main model declines (client-side; Bedrock has no server-side fallback). Empty = off; Opus 4.6 on Bedrock Runtime rejects the fallback's beta flag, so set this only with Opus 4.7+."
 }
 
 variable "calendars" {
@@ -72,9 +74,14 @@ resource "aws_iam_role_policy" "api" {
         Resource = "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter${local.google_key_param}"
       },
       {
-        Effect   = "Allow"
-        Action   = "bedrock-mantle:CreateInference"
-        Resource = "*"
+        # us.* inference profiles route to any US region, so allow the models there too
+        Effect = "Allow"
+        Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        Resource = [
+          "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/us.anthropic.*",
+          "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/global.anthropic.*",
+          "arn:aws:bedrock:*::foundation-model/anthropic.*",
+        ]
       },
     ]
   })

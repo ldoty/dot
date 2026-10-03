@@ -22,7 +22,7 @@ test('a plain question: new conversation, streamed reply, history saved', async 
   assert.deepEqual(msgs[0].content.map((b) => b.text), ['[Fri, Oct 2, 2026, 4:45 PM EDT]', 'Anything Saturday?']);
   assert.equal((await store.getConversation(USER, r.conversationId)).title, 'Anything Saturday?');
   const req = claude.calls[0].params;
-  assert.equal(req.model, 'anthropic.claude-opus-5-5');
+  assert.equal(req.model, 'us.anthropic.claude-opus-4-6-v1');
   assert.deepEqual(req.output_config, { effort: 'low' });
   assert.equal(req.system[0].text, SYSTEM_PROMPT);
   assert.deepEqual(req.system[0].cache_control, { type: 'ephemeral' });

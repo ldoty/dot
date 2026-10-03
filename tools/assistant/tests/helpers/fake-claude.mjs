@@ -18,7 +18,7 @@ export function fakeClaude(script) {
               for (const block of reply.content) {
                 if (block.type === 'text') for (const piece of block.text.match(/.{1,8}/gs) || []) listeners.forEach((fn) => fn(piece));
               }
-              return { model: 'anthropic.claude-opus-5-5', usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'end_turn', ...reply };
+              return { model: 'us.anthropic.claude-opus-4-6-v1', usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'end_turn', ...reply };
             },
           };
         },

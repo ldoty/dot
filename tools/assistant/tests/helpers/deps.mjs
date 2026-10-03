@@ -28,7 +28,7 @@ export function deps(script, calendar = fakeCalendar()) {
   return {
     claude, calendar,
     deps: {
-      client: claude.client, store, model: 'anthropic.claude-opus-5-5', timeZone: 'America/New_York',
+      client: claude.client, store, model: 'us.anthropic.claude-opus-4-6-v1', timeZone: 'America/New_York',
       tools: makeTools({ calendar, calendarNames: ['luke', 'shared'] }), now: () => NOW,
     },
   };

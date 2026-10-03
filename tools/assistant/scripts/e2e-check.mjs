@@ -6,8 +6,8 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
-import { BetaFallbackState, betaRefusalFallbackMiddleware } from '@anthropic-ai/sdk';
-import { AnthropicBedrockMantle } from '@anthropic-ai/bedrock-sdk';
+import { BetaFallbackState } from '@anthropic-ai/sdk';
+import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
 import { fakeTable } from '../../../platform/tests/helpers/fake-table.mjs';
 import { makeStore } from '../api/store.mjs';
 import { makeGoogleAuth } from '../api/google.mjs';
@@ -28,9 +28,9 @@ const store = makeStore({ db: DynamoDBDocumentClient.from(new DynamoDBClient({ r
 const tools = makeTools({ calendar, calendarNames: Object.keys(calendars) });
 const ran = [];
 const r = await runTurn({
-  client: new AnthropicBedrockMantle({ awsRegion: region, middleware: [betaRefusalFallbackMiddleware([{ model: 'anthropic.claude-opus-4-8' }])] }),
+  client: new AnthropicBedrock({ awsRegion: region }),
   store, tools: { ...tools, run: (b) => { ran.push(`${b.name}(${JSON.stringify(b.input)})`); return tools.run(b); } },
-  model: 'anthropic.claude-opus-5-5', timeZone: 'America/New_York', fallbackState: new BetaFallbackState(),
+  model: 'us.anthropic.claude-opus-4-6-v1', timeZone: 'America/New_York', fallbackState: new BetaFallbackState(),
   log: (e) => console.log('usage:', JSON.stringify(e.usage), 'model:', e.model, 'stop:', e.stop_reason),
   userId: 'e2e-check', text: question,
 });

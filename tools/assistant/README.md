@@ -2,7 +2,7 @@
 
 `https://assistant.dot-y.co/` · permission group **`lukes_assistant`** (Luke only) · table `lukes-assistant`
 
-Dot: a chat with Claude (Opus 5.5 on Amazon Bedrock) that can read and change Google calendars.
+Dot: a chat with Claude (Opus 4.6 on Amazon Bedrock) that can read and change Google calendars.
 
 | Folder | What |
 |---|---|
@@ -26,11 +26,13 @@ npm run test:live
 
 ## How it's built
 
-- **Model:** `anthropic.claude-opus-5-5` through Bedrock's Messages API (`AnthropicBedrockMantle`), signed with
-  the Lambda's IAM role: no API key. Effort `low` for chat. Requires the account's one-time Anthropic
-  use-case form in the Bedrock console.
-- **Refusals** retry on `anthropic.claude-opus-4-8` via the SDK's client-side fallback middleware
-  (Bedrock has no server-side fallback).
+- **Model:** `us.anthropic.claude-opus-4-6-v1` through Bedrock Runtime (`AnthropicBedrock`), signed with
+  the Lambda's IAM role: no API key. Effort `low` for chat. Opus 4.7 and newer need a per-account
+  approval from AWS (they answer "not available for this account" until then); once approved, set
+  `var.model` to `global.anthropic.claude-opus-5-5`. No code change needed.
+- **Refusals:** Dot says it declined. `var.fallback_model` turns on a retry through the SDK's client-side
+  fallback middleware (Bedrock has no server-side fallback), but only with Opus 4.7+: Bedrock Runtime
+  rejects the middleware's beta flag for Opus 4.6.
 - **Caching:** explicit breakpoints on the system prompt (with tools) and the latest message; Bedrock
   doesn't support the automatic mode. History is append-only so the cached prefix stays valid, and so
   thinking blocks are passed back unchanged.
