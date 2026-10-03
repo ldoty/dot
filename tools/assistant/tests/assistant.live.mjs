@@ -22,5 +22,5 @@ test('CORS allows only the assistant site', async () => {
 test('the page is served', async () => {
   const res = await fetch(`${SITE}/`);
   assert.equal(res.status, 200);
-  assert.match(await res.text(), /<title>Assistant<\/title>/);
+  assert.match(await res.text(), /<title>Dot<\/title>/);
 });

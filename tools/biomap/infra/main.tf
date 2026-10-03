@@ -1,4 +1,4 @@
-# Luke’s assistant at assistant.dot-y.co (Claude on Bedrock), for members of lukes_assistant.
+# Biomap at biomap.dot-y.co, for members of lukes_biomap.
 
 variable "domain_name" {
   type    = string
@@ -6,8 +6,8 @@ variable "domain_name" {
 }
 
 locals {
-  name    = "lukes_assistant"
-  host    = "assistant.${var.domain_name}"
+  name    = "lukes_biomap"
+  host    = "biomap.${var.domain_name}"
   app_url = "https://${local.host}/"
   dev_url = "http://localhost:5173/"
   pool_id = data.aws_ssm_parameter.user_pool_id.value
@@ -38,8 +38,8 @@ module "app" {
   user_pool_id  = local.pool_id
   callback_urls = [local.app_url, local.dev_url]
   tile = {
-    title       = "Dot"
-    description = "Your assistant: ask about your calendar, or have Dot add and move events."
+    title       = "Biomap"
+    description = "Field deck of the plants and fungi you’ve found: flashcards and your collection."
     url         = local.app_url
   }
 }

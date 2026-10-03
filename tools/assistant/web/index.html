@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
-<title>Assistant</title>
+<title>Dot</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="family.css">
 <style>
@@ -60,7 +60,7 @@ body { display: flex; flex-direction: column }
 </head>
 <body>
 <header class="top">
-  <h1>Assistant</h1>
+  <h1>Dot</h1>
   <button class="btn ghost" id="chats-toggle" hidden>Chats</button>
   <button class="btn ghost" id="new-chat" hidden>New chat</button>
   <a href="https://dot-y.co/">← dot-y.co</a>
@@ -134,7 +134,7 @@ body { display: flex; flex-direction: column }
     $("list").insertAdjacentHTML("beforeend", '<div class="list-foot"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" data-signout>Sign out</button></div>');
   }
   function intro() {
-    thread.innerHTML = '<div class="intro"><h2>What can I help with?</h2><p>Ask about your schedule, or have me add, move or remove calendar events.</p></div>';
+    thread.innerHTML = '<div class="intro"><h2>Hi, I’m Dot.</h2><p>Ask about your schedule, or have me add, move or remove calendar events.</p></div>';
   }
   function bubble(role) {
     var el = document.createElement("div");
@@ -206,7 +206,7 @@ body { display: flex; flex-direction: column }
       };
       return pump();
     }).catch(function () {
-      reply += (reply ? "\n\n" : "") + "⚠ Couldn’t reach the assistant. Try again.";
+      reply += (reply ? "\n\n" : "") + "⚠ Couldn’t reach Dot. Try again.";
       showAssistant(el, reply, tools);
     }).then(function () {
       busy = false; $("send").disabled = false;
@@ -241,7 +241,7 @@ body { display: flex; flex-direction: column }
     cfg = c;
     return FamilyAuth.init(c);
   }).then(function (user) {
-    if (!user) return FamilyAuth.autoLogin() || gate("Sign in to use your assistant.");
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in to talk with Dot.");
     ["signout", "new-chat", "chats-toggle"].forEach(function (id) { $(id).hidden = false; });
     $("signout").onclick = function () { FamilyAuth.logout(); };
     return apiJson("GET", "/conversations").then(function (list) {
@@ -250,7 +250,7 @@ body { display: flex; flex-direction: column }
       var m = /#c=([A-Za-z0-9_-]+)/.exec(location.hash);
       openConversation(m && list.some(function (c) { return c.id === m[1]; }) ? m[1] : null);
     });
-  }).catch(function (e) { gate(e.message === "forbidden" ? "Your account doesn’t have access to the assistant." : "Couldn’t load the assistant. Reload to try again."); });
+  }).catch(function (e) { gate(e.message === "forbidden" ? "Your account doesn’t have access to Dot." : "Couldn’t load Dot. Reload to try again."); });
 })();
 </script>
 </body>

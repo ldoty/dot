@@ -1,0 +1,1311 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Biomap Field Deck</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+/* ---------- tokens: light (herbarium sheet) ---------- */
+:root {
+  --sheet:      #EDEFEE;
+  --sheet-2:    #F6F7F6;
+  --sheet-3:    #E2E7E8;
+  --ink:        #0E1D27;
+  --ink-2:      #405564;
+  --ink-3:      #6E8492;
+  --rule:       #C9D3D8;
+  --rule-soft:  #DDE4E6;
+  --accent:     #17456B;
+  --accent-2:   #2E6D9E;
+  --accent-ink: #F6F7F6;
+  --halo:       rgba(23, 69, 107, .10);
+
+  --again:  #A83F36;
+  --hard:   #9C6B28;
+  --good:   #2A6E7C;
+  --easy:   #40763D;
+
+  --shadow: 0 1px 2px rgba(14,29,39,.05), 0 8px 24px -12px rgba(14,29,39,.22);
+
+  --display: "EB Garamond", "Iowan Old Style", Georgia, serif;
+  --ui: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --step--1: .78rem;
+  --step-0:  .95rem;
+  --step-1:  1.13rem;
+  --step-2:  1.45rem;
+  --step-3:  1.95rem;
+  --step-4:  2.6rem;
+}
+
+
+.home-link { font: 500 var(--step--1) var(--ui); color: var(--ink-3); text-decoration: none; margin-left: 8px }
+.home-link:hover { color: var(--accent) }
+
+/* ---------- base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  background: var(--sheet);
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: var(--step-0);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; }
+p { margin: 0; }
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; border-radius: 2px; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.eyebrow {
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.sci { font-family: var(--display); font-size: 1.14em; font-weight: 500; letter-spacing: .01em; }
+.sci.it { font-style: italic; }
+
+/* ---------- shell ---------- */
+.shell { max-width: 1180px; margin: 0 auto; padding: 0 28px 80px; }
+
+header.top {
+  display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap;
+  padding: 26px 0 18px;
+  border-bottom: 1px solid var(--rule);
+}
+.wordmark {
+  font-family: var(--mono); font-weight: 500;
+  letter-spacing: .3em; text-transform: uppercase;
+  font-size: var(--step-0);
+}
+.coord {
+  font-family: var(--mono); font-size: var(--step--1);
+  color: var(--ink-3); letter-spacing: .04em;
+}
+.top-spacer { flex: 1; }
+
+nav.tabs { display: flex; gap: 2px; }
+nav.tabs button {
+  padding: 7px 15px 8px;
+  font-size: var(--step--1); font-weight: 500;
+  letter-spacing: .09em; text-transform: uppercase;
+  font-family: var(--mono);
+  color: var(--ink-3);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -19px;
+}
+nav.tabs button:hover { color: var(--ink); }
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+.icon-btn {
+  width: 30px; height: 30px; display: grid; place-items: center;
+  border: 1px solid var(--rule); border-radius: 3px; color: var(--ink-2);
+}
+.icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+main { padding-top: 30px; }
+.view[hidden] { display: none !important; }
+
+/* ---------- study ---------- */
+.study-wrap { max-width: 720px; margin: 0 auto; }
+
+.session-bar {
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 22px;
+}
+.progress-track {
+  flex: 1; height: 3px; background: var(--rule-soft); border-radius: 2px; overflow: hidden;
+}
+.progress-fill { height: 100%; background: var(--accent); transition: width .35s ease; }
+.session-count { font-family: var(--mono); font-size: var(--step--1); color: var(--ink-3); }
+
+.card {
+  background: var(--sheet-2);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.card-head {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  padding: 13px 26px;
+  border-bottom: 1px solid var(--rule-soft);
+  background: var(--sheet-3);
+}
+.chip {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 2px;
+  background: var(--halo); color: var(--accent);
+}
+.chip.plain { background: none; color: var(--ink-3); padding-left: 0; }
+.card-head .spacer { flex: 1; }
+
+.card-body { padding: 34px 34px 30px; }
+.prompt { font-size: var(--step-2); line-height: 1.4; }
+.prompt em { font-style: italic; color: var(--ink-2); font-size: .82em; display: block; margin-top: 14px; line-height: 1.6; }
+.prompt .sci { font-size: 1.08em; }
+
+.specimen {
+  margin: 0 -34px 26px; background: var(--sheet-3);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.specimen img { display: block; width: 100%; max-height: 380px; object-fit: cover; }
+
+.divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 26px 0 22px;
+}
+.divider::before, .divider::after { content: ""; height: 1px; background: var(--rule); flex: 1; }
+.divider span { font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-3); }
+
+.answer { font-size: var(--step-1); line-height: 1.62; color: var(--ink); }
+.answer ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 13px; }
+.answer li { display: flex; gap: 13px; }
+.answer li::before {
+  content: ""; flex: none; width: 5px; height: 5px; margin-top: .62em;
+  background: var(--accent); border-radius: 50%;
+}
+.answer li.hi::before { width: 5px; height: 5px; box-shadow: 0 0 0 3px var(--halo); }
+
+ol.lineage { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+ol.lineage li {
+  display: flex; align-items: baseline; gap: 14px;
+  padding: 7px 0 7px 0;
+  border-bottom: 1px dotted var(--rule);
+}
+ol.lineage li:last-child { border-bottom: none; }
+ol.lineage .rk {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-3); width: 92px; flex: none;
+}
+ol.lineage .nm { font-family: var(--display); font-size: 1.2rem; }
+
+.card-foot { padding: 0 34px 30px; }
+.reveal {
+  width: 100%; padding: 14px;
+  background: var(--accent); color: var(--accent-ink);
+  border-radius: 3px; font-weight: 600;
+  font-size: var(--step-0); letter-spacing: .02em;
+}
+.reveal:hover { background: var(--accent-2); }
+.reveal .kbd { opacity: .6; font-family: var(--mono); font-size: 11px; margin-left: 8px; }
+
+.grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.grade {
+  padding: 11px 6px 10px;
+  border: 1px solid currentColor; border-radius: 3px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  transition: background .12s ease;
+}
+.grade:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+.grade b { font-size: var(--step-0); font-weight: 600; letter-spacing: .01em; }
+.grade span { font-family: var(--mono); font-size: 10.5px; opacity: .8; }
+.g-again { color: var(--again); }
+.g-hard  { color: var(--hard); }
+.g-good  { color: var(--good); }
+.g-easy  { color: var(--easy); }
+
+.empty {
+  text-align: center; padding: 70px 20px;
+  border: 1px dashed var(--rule); border-radius: 4px;
+}
+.empty h2 { font-family: var(--display); font-size: var(--step-3); font-weight: 500; margin-bottom: 10px; }
+.empty p { color: var(--ink-2); max-width: 44ch; margin: 0 auto 22px; }
+
+.btn {
+  padding: 9px 18px; border: 1px solid var(--rule); border-radius: 3px;
+  font-size: var(--step--1); font-weight: 500; letter-spacing: .06em;
+  text-transform: uppercase; font-family: var(--mono); color: var(--ink-2);
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.solid { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.solid:hover { background: var(--accent-2); border-color: var(--accent-2); color: var(--accent-ink); }
+
+/* ---------- filters ---------- */
+.filters {
+  display: flex; gap: 10px 26px; flex-wrap: wrap; align-items: center;
+  padding-bottom: 20px; margin-bottom: 24px; border-bottom: 1px solid var(--rule-soft);
+}
+.fgroup { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.filters .lbl {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-3); margin-right: 2px;
+}
+.pill {
+  padding: 5px 12px; border: 1px solid var(--rule); border-radius: 100px;
+  font-size: var(--step--1); color: var(--ink-2);
+}
+.pill:hover { border-color: var(--accent); }
+.pill[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+/* ---------- collection tree ---------- */
+.tree { display: flex; flex-direction: column; }
+.node {
+  display: grid;
+  grid-template-columns: 1fr 130px 62px;
+  align-items: center; gap: 16px;
+  padding: 11px 12px 11px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  text-align: left; width: 100%;
+}
+.node:hover { background: var(--sheet-2); }
+.node .label { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.node .twisty {
+  flex: none; width: 18px; align-self: center; margin-right: -4px;
+  display: grid; place-items: center; height: 22px; border-radius: 2px;
+  color: var(--ink-3); font-size: 10px; transition: transform .15s ease;
+}
+.node .twisty[data-toggle]:hover { color: var(--accent); background: var(--halo); }
+.node .twisty.shut { transform: rotate(-90deg); }
+.node .kids { font-family: var(--mono); font-size: 10px; color: var(--ink-3); flex: none; }
+.node .rank-tag {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-3); flex: none;
+}
+.node .nm { font-family: var(--display); font-size: 1.18rem; }
+.node .cn { color: var(--ink-3); font-size: var(--step--1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar { height: 4px; background: var(--rule-soft); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+.pct { font-family: var(--mono); font-size: var(--step--1); color: var(--ink-2); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- detail panel ---------- */
+dialog.detail {
+  border: 1px solid var(--rule); border-radius: 4px; padding: 0;
+  background: var(--sheet-2); color: var(--ink);
+  max-width: 720px; width: calc(100% - 40px); max-height: 86vh;
+  box-shadow: var(--shadow);
+}
+dialog.detail::backdrop { background: rgba(8, 26, 40, .55); backdrop-filter: blur(2px); }
+.detail-head {
+  padding: 22px 30px 18px; border-bottom: 1px solid var(--rule);
+  background: var(--sheet-3);
+  display: flex; align-items: flex-start; gap: 16px;
+}
+.detail-head h2 { font-family: var(--display); font-size: var(--step-3); font-weight: 500; line-height: 1.15; }
+.detail-body { padding: 26px 30px 34px; overflow-y: auto; }
+.detail-body section { margin-bottom: 28px; }
+.detail-body section:last-child { margin-bottom: 0; }
+.detail-body h3 {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--ink-3); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--rule-soft);
+}
+.detail-body ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 11px; }
+.detail-body li { display: flex; gap: 12px; line-height: 1.6; }
+.detail-body li::before { content: ""; flex: none; width: 4px; height: 4px; margin-top: .65em; background: var(--accent); border-radius: 50%; }
+.detail-body .plain li::before { display: none; }
+.detail-body img { border-radius: 3px; border: 1px solid var(--rule); }
+.kv { display: flex; gap: 10px; line-height: 1.6; }
+.kv b { font-weight: 600; flex: none; }
+
+/* ---------- progress ---------- */
+.stat-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px; background: var(--rule-soft);
+  border: 1px solid var(--rule-soft); border-radius: 4px; overflow: hidden;
+  margin-bottom: 36px;
+}
+.stat { background: var(--sheet-2); padding: 18px 20px 16px; }
+.stat .n { font-family: var(--mono); font-size: var(--step-3); line-height: 1.1;
+           font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stat .k { margin-top: 4px; }
+
+.panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+.panel h2 {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--ink-3); margin-bottom: 16px; padding-bottom: 9px; border-bottom: 1px solid var(--rule);
+}
+.rowlist { display: flex; flex-direction: column; }
+.rowlist .r {
+  display: grid; grid-template-columns: 1fr 110px 46px; gap: 14px; align-items: center;
+  padding: 9px 0; border-bottom: 1px solid var(--rule-soft);
+}
+.rowlist .r:last-child { border-bottom: none; }
+.rowlist .r .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.weak { display: flex; flex-direction: column; }
+.weak .w { padding: 11px 0; border-bottom: 1px solid var(--rule-soft); display: flex; gap: 12px; align-items: baseline; }
+.weak .w:last-child { border-bottom: none; }
+.weak .w .q { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+.weak .w .lap { font-family: var(--mono); font-size: var(--step--1); color: var(--again); flex: none; }
+
+.legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: baseline; }
+
+.data-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 36px; padding-top: 26px; border-top: 1px solid var(--rule); }
+
+@media (max-width: 760px) {
+  .shell { padding: 0 18px 60px; }
+  .panel-grid { grid-template-columns: 1fr; gap: 34px; }
+  .card-body, .card-foot { padding-left: 20px; padding-right: 20px; }
+  .specimen { margin-left: -20px; margin-right: -20px; }
+  .prompt { font-size: var(--step-1); }
+  .node { grid-template-columns: 1fr 76px 48px; gap: 10px; }
+  .node .cn { display: none; }
+  .grades { grid-template-columns: repeat(2, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+</style>
+
+<div class="shell">
+  <header class="top">
+    <span class="wordmark">Biomap</span>
+    <span class="coord" id="coord">34.8575, &minus;82.3945</span>
+    <span class="top-spacer"></span>
+    <nav class="tabs" role="tablist">
+      <button role="tab" id="tab-study" aria-selected="true">Study</button>
+      <button role="tab" id="tab-collection" aria-selected="false">Collection</button>
+      <button role="tab" id="tab-progress" aria-selected="false">Progress</button>
+    </nav>
+    <a class="home-link" href="https://dot-y.co/">dot-y.co</a>
+  </header>
+
+  <main>
+    <section class="view" id="view-study">
+      <div class="study-wrap">
+        <div class="filters" id="studyFilters"></div>
+        <div id="studyStage"></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-collection" hidden>
+      <div class="filters" id="collectionNote">
+        <span class="lbl">Specimen tree</span>
+        <span style="color:var(--ink-3);font-size:var(--step--1);flex:1;min-width:220px">Every folder in the repository, with how well you know it. Select a row for the full profile; use the arrow to fold a branch.</span>
+        <span class="fgroup">
+          <button class="pill" id="expandAll">Expand all</button>
+          <button class="pill" id="collapseAll">Collapse all</button>
+        </span>
+      </div>
+      <p id="inboxNote" style="color:var(--ink-3);font-size:var(--step--1);margin:-8px 0 18px"></p>
+      <div class="tree" id="tree"></div>
+    </section>
+
+    <section class="view" id="view-progress" hidden>
+      <div class="stat-row" id="stats"></div>
+      <div class="panel-grid">
+        <div class="panel">
+          <h2>Mastery by rank</h2>
+          <div class="rowlist" id="byRank"></div>
+          <div class="legend eyebrow" id="masteryLegend"></div>
+        </div>
+        <div class="panel">
+          <h2>Mastery by card type</h2>
+          <div class="rowlist" id="byType"></div>
+        </div>
+        <div class="panel">
+          <h2>Needs work</h2>
+          <div class="weak" id="weakList"></div>
+        </div>
+        <div class="panel">
+          <h2>Review forecast</h2>
+          <div class="rowlist" id="forecast"></div>
+        </div>
+      </div>
+      <div class="data-actions">
+        <button class="btn" id="exportBtn">Export progress</button>
+        <button class="btn" id="importBtn">Import progress</button>
+        <button class="btn" id="resetBtn">Reset all progress</button>
+        <input type="file" id="importFile" accept="application/json" hidden>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog class="detail" id="backup">
+  <div class="detail-head">
+    <div style="flex:1">
+      <div class="eyebrow" id="bMode"></div>
+      <h2 id="bTitle" style="font-size:var(--step-2)"></h2>
+      <div id="bHint" style="color:var(--ink-2);margin-top:4px;font-size:var(--step--1)"></div>
+    </div>
+    <button class="icon-btn" id="bClose" aria-label="Close">&times;</button>
+  </div>
+  <div class="detail-body">
+    <textarea id="bText" spellcheck="false" style="width:100%;height:230px;padding:12px;
+      font-family:var(--mono);font-size:11px;line-height:1.5;border:1px solid var(--rule);
+      border-radius:3px;background:var(--sheet);color:var(--ink);resize:vertical"></textarea>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px" id="bActions"></div>
+    <p id="bStatus" style="margin-top:12px;color:var(--ink-2);font-size:var(--step--1)"></p>
+  </div>
+</dialog>
+
+<dialog class="detail" id="detail">
+  <div class="detail-head">
+    <div style="flex:1">
+      <div class="eyebrow" id="dRank"></div>
+      <h2 id="dName"></h2>
+      <div id="dCommon" style="color:var(--ink-2);margin-top:4px"></div>
+    </div>
+    <button class="icon-btn" id="dClose" aria-label="Close">&times;</button>
+  </div>
+  <div class="detail-body" id="dBody"></div>
+</dialog>
+
+<script src="family-auth.js"></script>
+<script>
+/* Signs in, loads the deck and your saved progress from the API, then starts the app.
+   Progress syncs to your account after each save; if another device saved in the meantime,
+   the two histories are merged card by card (the copy with more reviews wins). */
+(function () {
+  var KEY = "biomap.progress.v1", cfg, rev = null, server = null, pending = null, timer = null, saving = false;
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method, keepalive: method === "PUT",
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    });
+  }
+  function better(a, b) {
+    if (!a) return b; if (!b) return a;
+    if ((b.reps || 0) !== (a.reps || 0)) return (b.reps || 0) > (a.reps || 0) ? b : a;
+    return (b.due || 0) >= (a.due || 0) ? b : a;
+  }
+  /* Card histories from both sides; settings (filters, folds) from `mine` */
+  function merge(theirs, mine) {
+    if (!theirs) return mine;
+    if (!mine) return theirs;
+    var out = JSON.parse(JSON.stringify(mine));
+    out.cards = {}; out.days = {};
+    var ids = Object.keys(theirs.cards || {}).concat(Object.keys(mine.cards || {}));
+    ids.forEach(function (id) { out.cards[id] = better((theirs.cards || {})[id], (mine.cards || {})[id]); });
+    var days = Object.keys(theirs.days || {}).concat(Object.keys(mine.days || {}));
+    days.forEach(function (d) { out.days[d] = Math.max((theirs.days || {})[d] || 0, (mine.days || {})[d] || 0); });
+    return out;
+  }
+  function push() {
+    clearTimeout(timer); timer = null;
+    if (saving || !pending) return;
+    var body = merge(server, pending); pending = null; saving = true;
+    var retry = false;
+    api("PUT", "/progress", { progress: body, rev: rev }).then(function (res) {
+      if (res.status === 409) return res.json().then(function (cur) { rev = cur.rev; server = cur.progress; pending = merge(cur.progress, body); });
+      if (!res.ok) throw new Error(res.status);
+      return res.json().then(function (r) { rev = r.rev; server = body; });
+    }).catch(function () { pending = merge(pending, body); retry = true; }).then(function () {
+      saving = false;
+      if (pending) timer = setTimeout(push, retry ? 5000 : 200);
+    });
+  }
+  window.biomapSync = function (state) {
+    pending = JSON.parse(JSON.stringify(state));
+    clearTimeout(timer); timer = setTimeout(push, 1500);
+  };
+  window.addEventListener("pagehide", push);
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") push(); });
+
+  function gate(msg, signIn) {
+    document.querySelector("main").innerHTML = '<div class="empty"><h2>Biomap</h2><p>' + msg + "</p>" +
+      (signIn ? '<p><button class="btn" id="signin">Sign in</button></p>' : "") + "</div>";
+    if (signIn) document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
+  }
+
+  window.addEventListener("DOMContentLoaded", function () {
+    fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+      cfg = c;
+      return FamilyAuth.init(c);
+    }).then(function (user) {
+      if (!user) return FamilyAuth.autoLogin() || gate("Sign in to open your field deck.", true);
+      return Promise.all([api("GET", "/deck"), api("GET", "/progress")]).then(function (r) {
+        if (r[0].status === 403) return gate("Your account doesn’t have access to Biomap.");
+        if (r[0].status === 404) return window.startBiomap();
+        if (!r[0].ok || !(r[1].ok || r[1].status === 404)) throw new Error("load failed");
+        return Promise.all([r[0].json(), r[1].status === 404 ? null : r[1].json()]).then(function (x) {
+          window.BIOMAP_DECK = x[0];
+          var local = null;
+          try { local = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+          if (x[1]) { server = x[1].progress; rev = x[1].rev; }
+          var start = merge(server, local);
+          try { if (start) localStorage.setItem(KEY, JSON.stringify(start)); } catch (e) {}
+          if (start && JSON.stringify(start) !== JSON.stringify(server)) window.biomapSync(start);
+          window.startBiomap();
+        });
+      });
+    }).catch(function () { gate("Couldn’t load Biomap. Reload to try again.", true); });
+  });
+})();
+</script>
+
+<script>
+window.startBiomap = function () {
+"use strict";
+
+var DECK = window.BIOMAP_DECK;
+if (!DECK) {
+  document.querySelector("main").innerHTML =
+    '<div class="empty"><h2>No deck found</h2><p>The collection hasn’t been published yet. ' +
+    'Run <span class="mono">tools/biomap/scripts/publish.sh</span>.</p></div>';
+  return;
+}
+
+var CARDS = DECK.cards;
+var IMAGES = DECK.images || {};
+
+/* Bundled builds swap photos for data URIs, held once in DECK.images and
+   referenced by path, so a taxon's photo is not repeated on all its cards. */
+function img(ref) { return ref ? (IMAGES[ref] || ref) : ref; }
+var TAXA  = DECK.taxa;
+var BY_ID = {};
+TAXA.forEach(function (t) { BY_ID[t.id] = t; });
+
+/* Names that botanical convention sets in italic: genus and below. */
+var ITALIC = {};
+TAXA.forEach(function (t) {
+  if (t.rank === "Genus" || t.rank === "Species") {
+    ITALIC[t.name] = true;
+    var last = t.name.split(" ").pop();
+    if (last) ITALIC[last] = true;
+  }
+});
+
+var TYPE_LABEL = {
+  defining: "Characteristics", common: "Common name", rank: "Rank",
+  lineage: "Full lineage", parent: "Placement", identify: "Identify",
+  contrast: "Tell apart", etymology: "Etymology", photo: "Specimen photo",
+  section: "Subgroup"
+};
+
+var DAY = 864e5;
+var MIN = 6e4;
+
+/* ------------------------------------------------------------------ state */
+
+var KEY = "biomap.progress.v1";
+var state = load();
+
+function load() {
+  try {
+    var raw = localStorage.getItem(KEY);
+    if (raw) {
+      var s = JSON.parse(raw);
+      s.cards = s.cards || {};
+      s.days = s.days || {};
+      s.filters = s.filters || {};
+      return s;
+    }
+  } catch (e) { /* private window, cleared storage: start fresh */ }
+  return { cards: {}, days: {}, filters: {}, newPerSession: 12 };
+}
+
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); }
+  catch (e) { /* storage unavailable; the session still works in memory */ }
+  if (window.biomapSync) window.biomapSync(state);
+}
+
+function cs(id) {
+  return state.cards[id] || null;
+}
+
+function today() {
+  var d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+/* ------------------------------------------------------- spaced repetition */
+
+/* SM-2, trimmed down. Grades: 0 again, 1 hard, 2 good, 3 easy. */
+function schedule(id, grade) {
+  var s = cs(id) || { ease: 2.5, interval: 0, reps: 0, lapses: 0, due: 0 };
+  var now = Date.now();
+
+  if (grade === 0) {
+    s.lapses += 1;
+    s.ease = Math.max(1.3, s.ease - 0.2);
+    s.interval = 0;
+    s.due = now + 1 * MIN;
+  } else if (s.reps === 0) {
+    s.interval = grade === 1 ? 10 / 1440 : grade === 2 ? 1 : 4;
+    s.due = now + s.interval * DAY;
+    if (grade === 3) s.ease += 0.1;
+  } else {
+    if (grade === 1) { s.ease = Math.max(1.3, s.ease - 0.15); s.interval = Math.max(1, s.interval * 1.2); }
+    else if (grade === 2) { s.interval = Math.max(1, s.interval * s.ease); }
+    else { s.ease += 0.15; s.interval = Math.max(1, s.interval * s.ease * 1.3); }
+    s.interval = Math.min(s.interval, 365);
+    s.due = now + s.interval * DAY;
+  }
+
+  s.reps += 1;
+  s.last = now;
+  state.cards[id] = s;
+
+  var t = today();
+  state.days[t] = (state.days[t] || 0) + 1;
+  save();
+  return s;
+}
+
+/* What the buttons promise, so the choice is informed. */
+function preview(id, grade) {
+  var s = cs(id);
+  if (grade === 0) return "<1m";
+  if (!s || s.reps === 0) return grade === 1 ? "10m" : grade === 2 ? "1d" : "4d";
+  var i;
+  if (grade === 1) i = Math.max(1, s.interval * 1.2);
+  else if (grade === 2) i = Math.max(1, s.interval * s.ease);
+  else i = Math.max(1, s.interval * s.ease * 1.3);
+  return fmtDays(Math.min(i, 365));
+}
+
+function fmtDays(d) {
+  if (d < 1) return Math.round(d * 1440) + "m";
+  if (d < 30) return Math.round(d) + "d";
+  if (d < 365) return Math.round(d / 30) + "mo";
+  return "1y";
+}
+
+/* Strength 0..1, from how far out the card is scheduled. */
+function strength(id) {
+  var s = cs(id);
+  if (!s || !s.reps) return 0;
+  var i = s.interval;
+  var base = i >= 30 ? 1 : i >= 10 ? 0.8 : i >= 3 ? 0.6 : i >= 1 ? 0.4 : 0.15;
+  return Math.max(0, base - Math.min(0.25, s.lapses * 0.05));
+}
+
+function meanStrength(cards) {
+  if (!cards.length) return 0;
+  var sum = 0;
+  cards.forEach(function (c) { sum += strength(c.id); });
+  return sum / cards.length;
+}
+
+function streak() {
+  var n = 0;
+  var d = new Date();
+  for (;;) {
+    var k = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    if (state.days[k]) { n += 1; d.setDate(d.getDate() - 1); }
+    else if (n === 0 && k === today()) { d.setDate(d.getDate() - 1); }  /* today not studied yet */
+    else break;
+  }
+  return n;
+}
+
+/* ------------------------------------------------------------ text render */
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+  });
+}
+
+/* **name** becomes a scientific name, italicised only where convention says so. */
+function rich(s) {
+  return esc(s)
+    .replace(/\*\*(.+?)\*\*/g, function (_, w) {
+      return '<span class="sci' + (ITALIC[w] ? " it" : "") + '">' + w + "</span>";
+    })
+    .replace(/_(.+?)_/g, "<em>$1</em>")
+    .replace(/\n\n/g, "<br><br>");
+}
+
+/* ------------------------------------------------------------ study view */
+
+var queue = [];
+var revealed = false;
+var session = { done: 0, total: 0, again: 0 };
+
+function filters() {
+  return {
+    branch: state.filters.branch || "all",
+    rank: state.filters.rank || "all",
+    mode: state.filters.mode || "due"
+  };
+}
+
+function pool() {
+  var f = filters();
+  return CARDS.filter(function (c) {
+    if (f.branch !== "all" && c.branch !== f.branch) return false;
+    if (f.rank !== "all" && c.rank !== f.rank) return false;
+    return true;
+  });
+}
+
+function buildQueue() {
+  var f = filters();
+  var p = pool();
+  var now = Date.now();
+  var due = [], fresh = [];
+
+  p.forEach(function (c) {
+    var s = cs(c.id);
+    if (!s || !s.reps) fresh.push(c);
+    else if (s.due <= now) due.push(c);
+  });
+
+  if (f.mode === "cram") {
+    queue = shuffle(p.slice());
+  } else {
+    due.sort(function (a, b) { return cs(a.id).due - cs(b.id).due; });
+    queue = due.concat(shuffle(fresh).slice(0, state.newPerSession || 12));
+    queue = shuffle(queue);
+  }
+
+  session = { done: 0, total: queue.length, again: 0 };
+  revealed = false;
+}
+
+function shuffle(a) {
+  for (var i = a.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+
+function renderFilters() {
+  var f = filters();
+  var branches = [];
+  TAXA.forEach(function (t) { if (t.branch && branches.indexOf(t.branch) < 0) branches.push(t.branch); });
+  var ranks = DECK.rank_order.filter(function (r) {
+    return CARDS.some(function (c) { return c.rank === r; });
+  });
+
+  var h = group("Branch", "branch", [["all", "All"]].concat(branches.map(function (b) { return [b, b]; })), f.branch);
+  h += group("Rank", "rank", [["all", "All"]].concat(ranks.map(function (r) { return [r, r]; })), f.rank);
+  h += group("Mode", "mode", [["due", "Scheduled"], ["cram", "Cram all"]], f.mode);
+  document.getElementById("studyFilters").innerHTML = h;
+}
+
+function group(title, key, opts, current) {
+  return '<div class="fgroup"><span class="lbl">' + title + "</span>" +
+    opts.map(function (o) { return pill(key, o[0], o[1], current); }).join("") + "</div>";
+}
+
+function pill(group, value, label, current) {
+  return '<button class="pill" data-f="' + group + '" data-v="' + esc(value) + '" aria-pressed="' +
+    (current === value) + '">' + esc(label) + "</button>";
+}
+
+function renderStudy() {
+  var stage = document.getElementById("studyStage");
+
+  if (!queue.length) {
+    var p = pool();
+    var now = Date.now();
+    var next = null;
+    p.forEach(function (c) {
+      var s = cs(c.id);
+      if (s && s.due > now && (next === null || s.due < next)) next = s.due;
+    });
+    var seen = p.filter(function (c) { return cs(c.id); }).length;
+
+    stage.innerHTML =
+      '<div class="empty"><h2>' + (session.done ? "Session complete" : "Nothing due") + "</h2>" +
+      "<p>" + (session.done
+        ? "You reviewed " + session.done + " card" + (session.done === 1 ? "" : "s") +
+          (session.again ? ", and missed " + session.again + " on the first pass" : "") + "."
+        : "You have seen " + seen + " of " + p.length + " cards in this filter.") +
+      (next ? " Next review " + relTime(next) + "." : "") +
+      "</p>" +
+      '<button class="btn solid" id="againBtn">' + (session.done ? "Study more" : "Start a session") + "</button>" +
+      ' <button class="btn" id="cramBtn">Cram everything</button></div>';
+
+    document.getElementById("againBtn").onclick = function () { buildQueue(); renderStudy(); };
+    document.getElementById("cramBtn").onclick = function () {
+      state.filters.mode = "cram"; save(); renderFilters(); buildQueue(); renderStudy();
+    };
+    return;
+  }
+
+  var c = queue[0];
+  var pct = session.total ? ((session.total - queue.length) / session.total) * 100 : 0;
+  var s = cs(c.id);
+
+  var h = '<div class="session-bar">' +
+    '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%"></div></div>' +
+    '<span class="session-count">' + (session.total - queue.length) + " / " + session.total + "</span></div>";
+
+  h += '<article class="card"><div class="card-head">' +
+    '<span class="chip">' + esc(TYPE_LABEL[c.type] || c.type) + "</span>" +
+    '<span class="chip plain">' + esc(c.rank) + "</span>" +
+    '<span class="spacer"></span>' +
+    '<span class="chip plain">' + (s && s.reps ? "seen " + s.reps + "&times;" : "new") + "</span>" +
+    "</div>";
+
+  h += '<div class="card-body">';
+  if (c.type === "photo" && c.image) {
+    h += '<div class="specimen"><img src="' + esc(img(c.image)) + '" alt="Unidentified specimen"></div>';
+  }
+  h += '<div class="prompt">' + rich(c.front) + "</div>";
+
+  if (revealed) {
+    h += '<div class="divider"><span>' + esc(c.taxon) + "</span></div>";
+    h += '<div class="answer">' + renderBack(c) + "</div>";
+    if (c.type !== "photo" && c.image) {
+      h += '<div class="specimen" style="margin-top:26px;margin-bottom:0;border-bottom:none;border-top:1px solid var(--rule-soft)">' +
+        '<img src="' + esc(img(c.image)) + '" alt="' + esc(c.taxon) + '"></div>';
+    }
+  }
+  h += "</div>";
+
+  h += '<div class="card-foot">';
+  if (!revealed) {
+    h += '<button class="reveal" id="revealBtn">Show answer<span class="kbd">space</span></button>';
+  } else {
+    h += '<div class="grades">' +
+      gradeBtn(0, "Again", c.id) + gradeBtn(1, "Hard", c.id) +
+      gradeBtn(2, "Good", c.id) + gradeBtn(3, "Easy", c.id) + "</div>";
+  }
+  h += "</div></article>";
+
+  if (revealed) {
+    h += '<div style="text-align:center;margin-top:16px">' +
+      '<button class="btn" id="detailBtn">Open ' + esc(c.taxon) + " profile</button></div>";
+  }
+
+  stage.innerHTML = h;
+
+  if (!revealed) {
+    document.getElementById("revealBtn").onclick = function () { revealed = true; renderStudy(); };
+  } else {
+    Array.prototype.forEach.call(stage.querySelectorAll("[data-g]"), function (b) {
+      b.onclick = function () { grade(parseInt(b.dataset.g, 10)); };
+    });
+    document.getElementById("detailBtn").onclick = function () { openDetail(c.taxonId); };
+  }
+}
+
+function gradeBtn(g, label, id) {
+  var cls = ["g-again", "g-hard", "g-good", "g-easy"][g];
+  return '<button class="grade ' + cls + '" data-g="' + g + '"><b>' + label +
+    "</b><span>" + preview(id, g) + " &middot; " + (g + 1) + "</span></button>";
+}
+
+function renderBack(c) {
+  var b = c.back;
+  if (b.kind === "list") {
+    return "<ul>" + b.items.map(function (x) {
+      var hi = /\bTHE\b|diagnostic|at a glance|signature/.test(x);
+      return '<li class="' + (hi ? "hi" : "") + '">' + rich(x) + "</li>";
+    }).join("") + "</ul>";
+  }
+  if (b.kind === "lineage") {
+    var ranks = ["Domain", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"];
+    return '<ol class="lineage">' + b.items.map(function (x, i) {
+      var italic = i >= 6 ? ' style="font-style:italic"' : "";
+      return '<li><span class="rk">' + (ranks[i] || "") + '</span>' +
+             '<span class="nm"' + italic + ">" + esc(x) + "</span></li>";
+    }).join("") + "</ol>";
+  }
+  return rich(b.text);
+}
+
+function grade(g) {
+  var c = queue.shift();
+  schedule(c.id, g);
+  session.done += 1;
+  if (g === 0) {
+    session.again += 1;
+    queue.splice(Math.min(4, queue.length), 0, c);  /* bring it back later this session */
+    session.total += 1;
+  }
+  revealed = false;
+  renderStudy();
+}
+
+function relTime(ts) {
+  var d = (ts - Date.now()) / DAY;
+  if (d < 1 / 24) return "in " + Math.max(1, Math.round(d * 1440)) + " min";
+  if (d < 1) return "in " + Math.round(d * 24) + " h";
+  return "in " + fmtDays(d);
+}
+
+/* -------------------------------------------------------- collection view */
+
+function renderTree() {
+  var el = document.getElementById("tree");
+  var inbox = document.getElementById("inboxNote");
+  inbox.innerHTML = DECK.inbox
+    ? DECK.inbox + " photo" + (DECK.inbox === 1 ? "" : "s") +
+      ' waiting in <span class="mono">to_categorize/</span>. File one into the tree, ' +
+      'add an <span class="mono">info.json</span>, and rebuild to turn it into cards.'
+    : "";
+
+  var collapsed = state.collapsed || {};
+  var hideBelow = Infinity;  /* depth of the nearest folded ancestor */
+  var h = "";
+
+  TAXA.forEach(function (t, i) {
+    if (t.depth <= hideBelow) hideBelow = Infinity;
+    if (t.depth > hideBelow) return;
+
+    var kids = 0;
+    for (var j = i + 1; j < TAXA.length && TAXA[j].depth > t.depth; j++) kids++;
+    var shut = kids > 0 && collapsed[t.id];
+    if (shut) hideBelow = t.depth;
+
+    /* A folded row reports mastery for its whole branch, not just itself. */
+    var ids = {};
+    ids[t.id] = true;
+    if (shut) for (var k = i + 1; k <= i + kids; k++) ids[TAXA[k].id] = true;
+    var cards = CARDS.filter(function (c) { return ids[c.taxonId]; });
+    var m = meanStrength(cards);
+    var indent = 8 + t.depth * 20;
+    h += '<button class="node" data-id="' + t.id + '" style="padding-left:' + indent + 'px">' +
+      '<span class="label">' +
+        (kids
+          ? '<span class="twisty' + (shut ? " shut" : "") + '" data-toggle="' + t.id + '" title="' +
+            (shut ? "Expand" : "Collapse") + '">&#9660;</span>'
+          : '<span class="twisty"></span>') +
+        '<span class="rank-tag">' + esc((t.rank || "").replace(" (Division)", "")) + "</span>" +
+        '<span class="nm"' + (t.rank === "Genus" || t.rank === "Species" ? ' style="font-style:italic"' : "") +
+          ">" + esc(t.name) + "</span>" +
+        (shut ? '<span class="kids">+' + kids + "</span>" : "") +
+        '<span class="cn">' + esc(t.common_name || "") + "</span>" +
+      "</span>" +
+      '<span class="bar"><i style="width:' + (m * 100).toFixed(0) + "%;background:" + masteryColor(m) + '"></i></span>' +
+      '<span class="pct">' + Math.round(m * 100) + "%</span>" +
+      "</button>";
+  });
+  el.innerHTML = h;
+}
+
+document.getElementById("tree").onclick = function (e) {
+  var tog = e.target.closest("[data-toggle]");
+  if (tog) {
+    state.collapsed = state.collapsed || {};
+    if (state.collapsed[tog.dataset.toggle]) delete state.collapsed[tog.dataset.toggle];
+    else state.collapsed[tog.dataset.toggle] = true;
+    save();
+    renderTree();
+    return;
+  }
+  var n = e.target.closest(".node");
+  if (n) openDetail(n.dataset.id);
+};
+
+document.getElementById("expandAll").onclick = function () {
+  state.collapsed = {}; save(); renderTree();
+};
+document.getElementById("collapseAll").onclick = function () {
+  /* Fold everything below the site, so the kingdoms stay in view. */
+  state.collapsed = {};
+  TAXA.forEach(function (t, i) {
+    if (t.depth >= 2 && TAXA[i + 1] && TAXA[i + 1].depth > t.depth) state.collapsed[t.id] = true;
+  });
+  save(); renderTree();
+};
+
+function masteryColor(m) {
+  if (m >= 0.75) return "var(--easy)";
+  if (m >= 0.45) return "var(--good)";
+  if (m > 0) return "var(--hard)";
+  return "var(--rule)";
+}
+
+/* -------------------------------------------------------------- detail */
+
+var dlg = document.getElementById("detail");
+
+function openDetail(id) {
+  var t = BY_ID[id];
+  if (!t) return;
+  var italic = t.rank === "Genus" || t.rank === "Species";
+
+  document.getElementById("dRank").textContent =
+    (t.rank || "") + (t.ancestors.length ? "  ·  " + t.ancestors.join(" › ") : "");
+  var nameEl = document.getElementById("dName");
+  nameEl.textContent = t.name;
+  nameEl.style.fontStyle = italic ? "italic" : "normal";
+  document.getElementById("dCommon").textContent =
+    [t.common_name, t.pronunciation].filter(Boolean).join("  ·  ");
+
+  var h = "";
+  if (t.image_path) {
+    h += '<section><img src="' + esc(img(t.image_path)) + '" alt="' + esc(t.name) + '" style="width:100%"></section>';
+  }
+  if (t.summary) h += '<section><h3>In one line</h3><p style="font-family:var(--display);font-size:1.3rem;line-height:1.5">' + esc(t.summary) + "</p></section>";
+  if (t.defining_characteristics) h += sec("Defining characteristics", t.defining_characteristics.map(rich));
+  if (t.distinguish_from) h += sec("Told apart from", t.distinguish_from.map(function (d) {
+    return "<span class='kv'><b>" + esc(d.taxon) + "</b><span>" + esc(d.difference) + "</span></span>";
+  }));
+  if (t.sections) h += sec("Subgroups", t.sections.map(function (s) {
+    return "<span class='kv'><b>" + esc(s.name) + "</b><span>" + esc(s.traits) + "</span></span>";
+  }));
+  if (t.key_facts) h += sec("Worth knowing", t.key_facts.map(rich));
+  if (t.study_notes) h += sec("Site notes", t.study_notes.map(rich));
+  if (t.etymology) h += '<section><h3>Etymology</h3><p>' + esc(t.etymology) + "</p></section>";
+  if (t.status) h += '<section><h3>Specimens</h3><p style="color:var(--ink-3)">' + esc(t.status) + "</p></section>";
+
+  var cards = CARDS.filter(function (c) { return c.taxonId === t.id; });
+  h += '<section><h3>Cards</h3><p style="color:var(--ink-2)">' + cards.length +
+    " cards, " + Math.round(meanStrength(cards) * 100) + "% mastered.</p>" +
+    '<p class="mono" style="color:var(--ink-3);font-size:var(--step--1);margin-top:8px">' + esc(t.path) + "/info.json</p></section>";
+
+  document.getElementById("dBody").innerHTML = h;
+  document.getElementById("dBody").scrollTop = 0;
+  dlg.showModal();
+}
+
+function sec(title, items) {
+  return "<section><h3>" + esc(title) + "</h3><ul>" +
+    items.map(function (i) { return "<li>" + i + "</li>"; }).join("") + "</ul></section>";
+}
+
+document.getElementById("dClose").onclick = function () { dlg.close(); };
+dlg.addEventListener("click", function (e) { if (e.target === dlg) dlg.close(); });
+
+/* ------------------------------------------------------------- progress */
+
+function renderProgress() {
+  var now = Date.now();
+  var seen = CARDS.filter(function (c) { return cs(c.id); });
+  var due = CARDS.filter(function (c) { var s = cs(c.id); return s && s.due <= now; });
+  var mastered = CARDS.filter(function (c) { return strength(c.id) >= 0.8; });
+  var overall = meanStrength(CARDS);
+  var reviews = Object.keys(state.days).reduce(function (n, k) { return n + state.days[k]; }, 0);
+
+  document.getElementById("stats").innerHTML = [
+    stat(Math.round(overall * 100) + "%", "Overall mastery"),
+    stat(seen.length, "of " + CARDS.length + " cards started"),
+    stat(mastered.length, "Cards mastered"),
+    stat(due.length, "Due right now"),
+    stat(streak() + "d", "Study streak"),
+    stat(reviews, "Total reviews")
+  ].join("");
+
+  var ranks = DECK.rank_order.filter(function (r) { return CARDS.some(function (c) { return c.rank === r; }); });
+  document.getElementById("byRank").innerHTML = ranks.map(function (r) {
+    var g = CARDS.filter(function (c) { return c.rank === r; });
+    return row(r.replace(" (Division)", ""), meanStrength(g), g.length);
+  }).join("");
+
+  document.getElementById("masteryLegend").innerHTML =
+    '<span><i style="background:var(--rule)"></i>untouched</span>' +
+    '<span><i style="background:var(--hard)"></i>learning</span>' +
+    '<span><i style="background:var(--good)"></i>familiar</span>' +
+    '<span><i style="background:var(--easy)"></i>solid</span>';
+
+  var types = [];
+  CARDS.forEach(function (c) { if (types.indexOf(c.type) < 0) types.push(c.type); });
+  types.sort();
+  document.getElementById("byType").innerHTML = types.map(function (ty) {
+    var g = CARDS.filter(function (c) { return c.type === ty; });
+    return row(TYPE_LABEL[ty] || ty, meanStrength(g), g.length);
+  }).join("");
+
+  var weak = CARDS.filter(function (c) { var s = cs(c.id); return s && (s.lapses > 0 || s.interval < 1); })
+    .sort(function (a, b) {
+      var sa = cs(a.id), sb = cs(b.id);
+      return (sb.lapses - sa.lapses) || (sa.interval - sb.interval);
+    }).slice(0, 12);
+
+  document.getElementById("weakList").innerHTML = weak.length
+    ? weak.map(function (c) {
+        var s = cs(c.id);
+        return '<button class="w" data-id="' + c.taxonId + '" style="text-align:left;width:100%">' +
+          '<span class="q">' + rich(c.front.replace(/\n\n[\s\S]*$/, "")) + "</span>" +
+          '<span class="lap">' + (s.lapses ? s.lapses + " missed" : "learning") + "</span></button>";
+      }).join("")
+    : '<p style="color:var(--ink-3)">Nothing has tripped you up yet. Study a session and this fills in.</p>';
+
+  Array.prototype.forEach.call(document.querySelectorAll("#weakList .w"), function (b) {
+    b.onclick = function () { openDetail(b.dataset.id); };
+  });
+
+  var buckets = [
+    { label: "Today", lo: -Infinity, hi: 1 },
+    { label: "Tomorrow", lo: 1, hi: 2 },
+    { label: "Next 7 days", lo: 2, hi: 7 },
+    { label: "Next 30 days", lo: 7, hi: 30 },
+    { label: "Beyond 30 days", lo: 30, hi: Infinity }
+  ];
+  var maxN = 1;
+  var counts = buckets.map(function (b) {
+    var n = CARDS.filter(function (c) {
+      var s = cs(c.id);
+      if (!s) return false;
+      var d = (s.due - now) / DAY;
+      return d < b.hi && d >= b.lo;
+    }).length;
+    maxN = Math.max(maxN, n);
+    return n;
+  });
+  document.getElementById("forecast").innerHTML = buckets.map(function (b, i) {
+    return '<div class="r"><span class="t">' + b.label + "</span>" +
+      '<span class="bar"><i style="width:' + ((counts[i] / maxN) * 100).toFixed(0) + '%;background:var(--accent)"></i></span>' +
+      '<span class="pct">' + counts[i] + "</span></div>";
+  }).join("");
+}
+
+function stat(n, k) {
+  return '<div class="stat"><div class="n">' + n + '</div><div class="k eyebrow">' + k + "</div></div>";
+}
+
+function row(label, m, n) {
+  return '<div class="r"><span class="t">' + esc(label) + ' <span class="mono" style="color:var(--ink-3);font-size:var(--step--1)">' + n + "</span></span>" +
+    '<span class="bar"><i style="width:' + (m * 100).toFixed(0) + "%;background:" + masteryColor(m) + '"></i></span>' +
+    '<span class="pct">' + Math.round(m * 100) + "%</span></div>";
+}
+
+/* ------------------------------------------------------------ data tools */
+
+var bdlg = document.getElementById("backup");
+document.getElementById("bClose").onclick = function () { bdlg.close(); };
+bdlg.addEventListener("click", function (e) { if (e.target === bdlg) bdlg.close(); });
+
+function say(msg) { document.getElementById("bStatus").textContent = msg || ""; }
+
+document.getElementById("exportBtn").onclick = function () {
+  document.getElementById("bMode").textContent = "Export";
+  document.getElementById("bTitle").textContent = "Your review history";
+  document.getElementById("bHint").textContent =
+    "Copy this and keep it somewhere. Paste it into Import on another browser or device to carry your progress across.";
+  document.getElementById("bText").value = JSON.stringify(state, null, 2);
+  document.getElementById("bText").readOnly = true;
+  document.getElementById("bActions").innerHTML =
+    '<button class="btn solid" id="bCopy">Copy to clipboard</button>' +
+    '<button class="btn" id="bDownload">Save as a file</button>';
+  say("");
+  bdlg.showModal();
+
+  document.getElementById("bCopy").onclick = function () {
+    var t = document.getElementById("bText");
+    t.select();
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(t.value).then(
+        function () { say("Copied."); },
+        function () { say("Copy blocked by the browser. Select the text above and copy it by hand."); });
+    } else {
+      say("Select the text above and copy it by hand.");
+    }
+  };
+  document.getElementById("bDownload").onclick = function () {
+    var blob = new Blob([document.getElementById("bText").value], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "biomap-progress-" + today() + ".json";
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    say("If no file appeared, this page can't save files here \u2014 use Copy to clipboard instead.");
+  };
+};
+
+document.getElementById("importBtn").onclick = function () {
+  document.getElementById("bMode").textContent = "Import";
+  document.getElementById("bTitle").textContent = "Restore review history";
+  document.getElementById("bHint").textContent =
+    "Paste an exported history below, or pick the file you saved. This replaces the progress in this browser.";
+  document.getElementById("bText").value = "";
+  document.getElementById("bText").readOnly = false;
+  document.getElementById("bActions").innerHTML =
+    '<button class="btn solid" id="bRestore">Restore</button>' +
+    '<button class="btn" id="bFile">Choose a file</button>';
+  say("");
+  bdlg.showModal();
+
+  document.getElementById("bRestore").onclick = function () {
+    applyImport(document.getElementById("bText").value);
+  };
+  document.getElementById("bFile").onclick = function () { document.getElementById("importFile").click(); };
+};
+
+document.getElementById("importFile").onchange = function (e) {
+  var f = e.target.files[0];
+  if (!f) return;
+  var r = new FileReader();
+  r.onload = function () { applyImport(r.result); };
+  r.readAsText(f);
+  e.target.value = "";
+};
+
+function applyImport(text) {
+  var s;
+  try { s = JSON.parse(text); }
+  catch (err) { say("That is not valid JSON. Paste the whole export, braces included."); return; }
+  if (!s || typeof s.cards !== "object") {
+    say("That JSON has no review history in it. Use a file from Export.");
+    return;
+  }
+  state = s;
+  state.cards = state.cards || {};
+  state.days = state.days || {};
+  state.filters = state.filters || {};
+  save();
+  buildQueue();
+  renderAll();
+  say("Restored " + Object.keys(state.cards).length + " cards.");
+  setTimeout(function () { bdlg.close(); }, 900);
+}
+
+document.getElementById("resetBtn").onclick = function () {
+  if (!confirm("Erase all review history and start every card over? This cannot be undone.")) return;
+  state = { cards: {}, days: {}, filters: state.filters, collapsed: state.collapsed, newPerSession: state.newPerSession || 12 };
+  save();
+  buildQueue(); renderAll();
+};
+
+/* ----------------------------------------------------------------- shell */
+
+var VIEWS = ["study", "collection", "progress"];
+var active = "study";
+
+function show(name) {
+  active = name;
+  VIEWS.forEach(function (v) {
+    document.getElementById("view-" + v).hidden = v !== name;
+    document.getElementById("tab-" + v).setAttribute("aria-selected", String(v === name));
+  });
+  if (name === "collection") renderTree();
+  if (name === "progress") renderProgress();
+}
+
+VIEWS.forEach(function (v) {
+  document.getElementById("tab-" + v).onclick = function () { show(v); };
+});
+
+document.getElementById("studyFilters").onclick = function (e) {
+  var b = e.target.closest("[data-f]");
+  if (!b) return;
+  state.filters[b.dataset.f] = b.dataset.v;
+  save();
+  renderFilters();
+  buildQueue();
+  renderStudy();
+};
+
+
+document.addEventListener("keydown", function (e) {
+  if (active !== "study" || dlg.open || bdlg.open) {
+    if (e.key === "Escape") { if (dlg.open) dlg.close(); if (bdlg.open) bdlg.close(); }
+    return;
+  }
+  if (!queue.length) return;
+  if ((e.key === " " || e.key === "Enter") && !revealed) {
+    e.preventDefault(); revealed = true; renderStudy();
+  } else if (revealed && e.key >= "1" && e.key <= "4") {
+    e.preventDefault(); grade(parseInt(e.key, 10) - 1);
+  }
+});
+
+function renderAll() {
+  renderFilters();
+  renderStudy();
+  if (active === "collection") renderTree();
+  if (active === "progress") renderProgress();
+}
+
+document.getElementById("coord").textContent = TAXA.length
+  ? [TAXA[0].common_name ? TAXA[0].common_name.split(",")[0] : "", TAXA[0].name].filter(Boolean).join("  ·  ")
+  : "";
+buildQueue();
+renderAll();
+show("study");
+
+};
+</script>

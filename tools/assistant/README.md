@@ -1,8 +1,8 @@
-# Assistant
+# Dot (assistant)
 
 `https://assistant.dot-y.co/` · permission group **`lukes_assistant`** (Luke only) · table `lukes-assistant`
 
-A chat with Claude (Opus 5.5 on Amazon Bedrock) that can read and change Google calendars.
+Dot: a chat with Claude (Opus 5.5 on Amazon Bedrock) that can read and change Google calendars.
 
 | Folder | What |
 |---|---|

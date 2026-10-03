@@ -6,7 +6,7 @@
   "scripts": {
     "test": "node --test \"platform/tests/*.test.mjs\" \"tools/*/tests/*.test.mjs\"",
     "test:live": "node --test \"tools/*/tests/*.live.mjs\"",
-    "build": "esbuild tools/assistant/api/handler.mjs --bundle --platform=node --target=node22 --format=esm --outfile=tools/assistant/api/dist/index.mjs --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\" --log-level=warning"
+    "build": "esbuild tools/assistant/api/handler.mjs --bundle --platform=node --target=node22 --format=esm --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\" --log-level=warning --outfile=tools/assistant/api/dist/index.mjs && esbuild tools/biomap/api/api.mjs --bundle --platform=node --target=node22 --format=esm --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\" --log-level=warning --outfile=tools/biomap/api/dist/index.mjs"
   },
   "devDependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.34.2",
@@ -17,6 +17,7 @@
     "@aws-sdk/client-sesv2": "^3.1146.0",
     "@aws-sdk/client-ssm": "^3.0.0",
     "@aws-sdk/lib-dynamodb": "^3.0.0",
+    "@aws-sdk/s3-request-presigner": "^3.1146.0",
     "aws-sdk-client-mock": "^4.0.0",
     "esbuild": "^0.28.2",
     "jsdom": "^25.0.0"
