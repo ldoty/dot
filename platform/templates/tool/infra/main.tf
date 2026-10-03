@@ -41,5 +41,6 @@ module "app" {
     title       = "__TITLE__"
     description = "TODO: one line about __TITLE__."
     url         = local.app_url
+    icon        = "leaf" # see the icon list in platform/core/portal/index.html
   }
 }

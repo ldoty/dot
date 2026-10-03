@@ -46,6 +46,7 @@ variable "tile" {
     title       = string
     description = string
     url         = string
+    icon        = optional(string) # leaf (default), coins, links, chat, mushroom: see core/portal/index.html
   })
   default     = null
   description = "Home page tile, shown to members of this app. Re-apply core to pick up changes."

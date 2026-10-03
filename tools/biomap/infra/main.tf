@@ -41,5 +41,6 @@ module "app" {
     title       = "Biomap"
     description = "Field deck of the plants and fungi you’ve found: flashcards and your collection."
     url         = local.app_url
+    icon        = "mushroom"
   }
 }

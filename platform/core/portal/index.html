@@ -72,7 +72,19 @@ footer button { background: none; border: 0; color: var(--pool); cursor: pointer
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
-  var LEAF = '<svg viewBox="0 0 44 44" aria-hidden="true"><path d="M6 38 C6 18 20 8 38 6 C38 26 26 38 6 38 Z" fill="var(--leaf)"/><path d="M6 38 C16 26 26 16 38 6" stroke="var(--surface)" stroke-width="2.5" fill="none"/></svg>';
+  // Tile icons, picked by a tool's tile `icon` (modules/family-app). Unknown or missing -> leaf.
+  var ICONS = {
+    leaf: '<path d="M6 38 C6 18 20 8 38 6 C38 26 26 38 6 38 Z" fill="var(--leaf)"/><path d="M6 38 C16 26 26 16 38 6" stroke="var(--surface)" stroke-width="2.5" fill="none"/>',
+    // a stack of coins sprouting
+    coins: '<g fill="var(--sun)" stroke="var(--wood)" stroke-width="1.5"><rect x="5" y="34" width="24" height="6" rx="3"/><rect x="5" y="28" width="24" height="6" rx="3"/><rect x="5" y="22" width="24" height="6" rx="3"/><circle cx="35" cy="34" r="6"/></g><circle cx="35" cy="34" r="2.5" fill="none" stroke="var(--wood)" stroke-width="1.5"/><path d="M17 22 V13" stroke="var(--leaf)" stroke-width="2.5" stroke-linecap="round"/><path d="M17 15 C11 15 8 11 8 6 C13 6 17 9 17 15 Z" fill="var(--leaf)"/><path d="M17 13 C17 7 21 4 28 4 C28 9 24 13 17 13 Z" fill="var(--leaf)"/>',
+    // two chain links
+    links: '<g transform="rotate(-45 22 22)" fill="none" stroke-width="4.5"><rect x="3" y="15" width="22" height="14" rx="7" stroke="var(--pool)"/><rect x="19" y="15" width="22" height="14" rx="7" stroke="var(--bloom)"/></g>',
+    // a speech bubble mid-thought
+    chat: '<path d="M7 6 H37 A5 5 0 0 1 42 11 V27 A5 5 0 0 1 37 32 H19 L10 39 V32 H7 A5 5 0 0 1 2 27 V11 A5 5 0 0 1 7 6 Z" fill="var(--pool)"/><circle cx="13" cy="19" r="3" fill="var(--on-accent)"/><circle cx="22" cy="19" r="3.6" fill="var(--sun)"/><circle cx="31" cy="19" r="3" fill="var(--on-accent)"/>',
+    // a spotted mushroom by a leaf
+    mushroom: '<path d="M17 24 H27 L28.5 39 H15.5 Z" fill="var(--raised)" stroke="var(--wood)" stroke-width="1.5"/><path d="M4 25 C4 12 13 5 22 5 C31 5 40 12 40 25 Z" fill="var(--ember)"/><g fill="var(--surface)"><circle cx="14" cy="16" r="2.6"/><circle cx="24" cy="11" r="2.2"/><circle cx="31" cy="19" r="2.8"/><circle cx="21" cy="20" r="1.6"/></g><path d="M30 41 C30 35 34 31 41 30 C41 36 37 41 30 41 Z" fill="var(--leaf)"/>',
+  };
+  function icon(name) { return '<svg viewBox="0 0 44 44" aria-hidden="true">' + (ICONS[name] || ICONS.leaf) + "</svg>"; }
 
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
   function fail(msg) { var e = $("error"); e.textContent = msg; e.hidden = false; }
@@ -84,7 +96,7 @@ footer button { background: none; border: 0; color: var(--pool); cursor: pointer
     $("title").innerHTML = "Welcome home, <em>" + esc(claims.given_name || "friend") + "</em>";
     $("lede").hidden = true;
     $("tiles").innerHTML = mine.map(function (a) {
-      return '<a class="card tile" href="' + esc(a.url) + '">' + LEAF + "<h3>" + esc(a.title) + "</h3><p>" + esc(a.description) + '</p><span class="go">Open →</span></a>';
+      return '<a class="card tile" href="' + esc(a.url) + '">' + icon(a.icon) + "<h3>" + esc(a.title) + "</h3><p>" + esc(a.description) + '</p><span class="go">Open →</span></a>';
     }).join("");
     $("empty").hidden = mine.length > 0;
     $("tools").hidden = false;

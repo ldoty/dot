@@ -20,12 +20,12 @@ variable "household" {
 }
 
 locals {
-  name     = "family_budget"
-  host     = "budget.${var.domain_name}"
-  app_url  = "https://${local.host}/"
-  dev_url  = "http://localhost:5173/"
-  pool_id  = data.aws_ssm_parameter.user_pool_id.value
-  issuer   = "https://cognito-idp.${data.aws_region.current.region}.amazonaws.com/${local.pool_id}"
+  name    = "family_budget"
+  host    = "budget.${var.domain_name}"
+  app_url = "https://${local.host}/"
+  dev_url = "http://localhost:5173/"
+  pool_id = data.aws_ssm_parameter.user_pool_id.value
+  issuer  = "https://cognito-idp.${data.aws_region.current.region}.amazonaws.com/${local.pool_id}"
 }
 
 data "aws_region" "current" {}
@@ -55,5 +55,6 @@ module "app" {
     title       = "Budget"
     description = "Luke & Amber’s household budget: shared costs, the mortgage and each person’s plan."
     url         = local.app_url
+    icon        = "coins"
   }
 }

@@ -18,6 +18,8 @@ resource "aws_dynamodb_table" "main" {
   point_in_time_recovery {
     enabled = true
   }
+
+  lifecycle { prevent_destroy = true }
 }
 
 # The published collection (deck.json + photos/), written by scripts/publish.sh. Private: the

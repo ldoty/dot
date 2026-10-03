@@ -41,5 +41,6 @@ module "app" {
     title       = "Links"
     description = "Family bookmarks, organized by section."
     url         = local.app_url
+    icon        = "links"
   }
 }

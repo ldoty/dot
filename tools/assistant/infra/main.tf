@@ -41,5 +41,6 @@ module "app" {
     title       = "Dot"
     description = "Your assistant: ask about your calendar, or have Dot add and move events."
     url         = local.app_url
+    icon        = "chat"
   }
 }
