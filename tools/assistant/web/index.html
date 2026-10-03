@@ -250,7 +250,7 @@ body { display: flex; flex-direction: column }
       var m = /#c=([A-Za-z0-9_-]+)/.exec(location.hash);
       openConversation(m && list.some(function (c) { return c.id === m[1]; }) ? m[1] : null);
     });
-  }).catch(function (e) { gate(e.message === "forbidden" ? "Your account doesn’t have access to Dot." : "Couldn’t load Dot. Reload to try again."); });
+  }).catch(function (e) { gate(e.signIn ? e.message : e.message === "forbidden" ? "Your account doesn’t have access to Dot." : "Couldn’t load Dot. Reload to try again."); });
 })();
 </script>
 </body>

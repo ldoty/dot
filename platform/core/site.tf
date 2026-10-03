@@ -42,13 +42,15 @@ resource "aws_s3_object" "config" {
     authDomain  = aws_cognito_user_pool_domain.main.domain
     clientId    = module.home.client_id
     redirectUri = local.home_url
+    region      = data.aws_region.current.region
   })
 }
 
-# Public pages served at extensionless paths (dot-y.co/sms, /privacy, /terms): the SMS program's
-# opt-in page and its policies, which carrier reviewers visit. The form posts to tools/sms.
+# Pages served at extensionless paths: dot-y.co/handoff (single sign-on for tools), and
+# /sms, /privacy, /terms: the SMS program's opt-in page and its policies, which carrier
+# reviewers visit. The form posts to tools/sms.
 resource "aws_s3_object" "page" {
-  for_each      = toset(["sms", "privacy", "terms"])
+  for_each      = toset(["handoff", "sms", "privacy", "terms"])
   bucket        = module.site.bucket
   key           = each.key
   source        = "${path.module}/portal/${each.key}.html"
@@ -81,6 +83,27 @@ resource "aws_s3_object" "catalog" {
   content_type  = "application/json"
   cache_control = "max-age=60"
   content       = jsonencode([for v in nonsensitive(data.aws_ssm_parameters_by_path.catalog.values) : jsondecode(v)])
+}
+
+# Single sign-on: which URLs dot-y.co/handoff may send each app's tokens to, from the
+# apps' access rules. Re-apply core after adding an app (same as apps.json).
+data "aws_ssm_parameters_by_path" "apps" {
+  path = "/family/apps/"
+}
+
+resource "aws_s3_object" "sso" {
+  bucket        = module.site.bucket
+  key           = "sso.json"
+  content_type  = "application/json"
+  cache_control = "max-age=60"
+  content = jsonencode({
+    for i, name in data.aws_ssm_parameters_by_path.apps.names :
+    trimprefix(name, "/family/apps/") => {
+      app     = jsondecode(nonsensitive(data.aws_ssm_parameters_by_path.apps.values[i])).app
+      returns = try(jsondecode(nonsensitive(data.aws_ssm_parameters_by_path.apps.values[i])).returns, [])
+    }
+    if length(try(jsondecode(nonsensitive(data.aws_ssm_parameters_by_path.apps.values[i])).returns, [])) > 0
+  })
 }
 
 # --- Moved into modules/static-site (2026-10-02) ---

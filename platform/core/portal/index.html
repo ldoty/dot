@@ -94,6 +94,8 @@ footer button { background: none; border: 0; color: var(--pool); cursor: pointer
   fetch("/config.json").then(function (r) { return r.json(); }).then(function (cfg) {
     $("signin").onclick = function () { FamilyAuth.login(); };
     $("signout").onclick = function () { FamilyAuth.logout(); };
+    // Signing out of any tool lands here to finish signing out of dot-y.co.
+    if (location.hash === "#signout") { history.replaceState(null, "", location.pathname); return FamilyAuth.init(cfg).then(function () { FamilyAuth.logout(); }); }
     return FamilyAuth.init(cfg).then(function (claims) {
       if (!claims) { $("signin").hidden = false; return; }
       return fetch("/apps.json").then(function (r) { return r.ok ? r.json() : []; }).then(function (apps) { showTools(claims, apps); });

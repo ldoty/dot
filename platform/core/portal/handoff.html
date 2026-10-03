@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signing you in</title>
+<link rel="icon" type="image/svg+xml" href="/style/favicon.svg">
+<link rel="stylesheet" href="/style/family.css">
+<style>
+.wrap { max-width: 520px; margin: 0 auto; padding: 96px 16px; display: grid; gap: 16px; text-align: center }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Signing you in…</h1>
+  <p class="sub" id="msg">One moment.</p>
+  <div class="note bad" id="error" hidden></div>
+  <p><a href="/">← dot-y.co</a></p>
+</div>
+
+<script src="/family-auth.js"></script>
+<script>
+// Single sign-on hand-off. A tool sends you here as /handoff#client=<its app client>&return=<its URL>.
+// Using your dot-y.co sign-in, this asks Cognito for that tool's own tokens (custom auth: the one
+// challenge is answered with your dot-y.co access token, which a Cognito trigger verifies), then
+// sends them back in the URL fragment. Tokens only ever go to a URL registered for that client
+// (sso.json), and Cognito's sign-in gate still refuses tools you aren't a member of.
+(function () {
+  var REQ = "family-handoff";
+  var $ = function (id) { return document.getElementById(id); };
+  function fail(msg) { $("msg").hidden = true; var e = $("error"); e.textContent = msg; e.hidden = false; }
+  function b64url(s) { return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
+  function claims(jwt) { return JSON.parse(decodeURIComponent(escape(atob(jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))))); }
+
+  // The request survives the dot-y.co sign-in round trip in sessionStorage.
+  var h = new URLSearchParams(location.hash.slice(1));
+  if (h.has("client")) {
+    try { sessionStorage.setItem(REQ, JSON.stringify({ client: h.get("client"), return: h.get("return") })); } catch (e) {}
+    history.replaceState(null, "", location.pathname);
+  }
+  var req = null;
+  try { req = JSON.parse(sessionStorage.getItem(REQ)); } catch (e) {}
+  if (!req) return fail("Nothing to sign in to. Open a tool from dot-y.co.");
+
+  function idp(region, target, body) {
+    return fetch("https://cognito-idp." + region + ".amazonaws.com/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-amz-json-1.1", "X-Amz-Target": "AWSCognitoIdentityProviderService." + target },
+      body: JSON.stringify(body),
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (r.ok) return j;
+        // The sign-in gate's message, e.g. "You don't have access to biomap. Ask an admin to add you."
+        throw new Error(String(j.message || "Sign-in failed (" + r.status + ").").replace(/^PreTokenGeneration failed with error /, ""));
+      });
+    });
+  }
+
+  Promise.all([
+    fetch("/config.json").then(function (r) { return r.json(); }),
+    fetch("/sso.json").then(function (r) { return r.ok ? r.json() : {}; }),
+  ]).then(function (all) {
+    var cfg = all[0], sso = all[1], app = sso[req.client];
+    if (!app || (app.returns || []).indexOf(req.return) < 0) {
+      try { sessionStorage.removeItem(REQ); } catch (e) {}
+      throw new Error("That tool isn't set up for dot-y.co sign-in.");
+    }
+    cfg.redirectUri = location.origin + "/handoff";
+    return FamilyAuth.init(cfg).then(function (user) {
+      if (!user) { $("msg").textContent = "Sign in to dot-y.co first."; return FamilyAuth.login(); }
+      $("msg").textContent = "Opening " + app.app + "…";
+      return FamilyAuth.accessToken().then(function (home) {
+        return idp(cfg.region, "InitiateAuth", { AuthFlow: "CUSTOM_AUTH", ClientId: req.client, AuthParameters: { USERNAME: claims(home).username } })
+          .then(function (c) {
+            return idp(cfg.region, "RespondToAuthChallenge", {
+              ClientId: req.client, ChallengeName: "CUSTOM_CHALLENGE", Session: c.Session,
+              ChallengeResponses: { USERNAME: c.ChallengeParameters.USERNAME, ANSWER: home },
+            });
+          });
+      }).then(function (res) {
+        var t = res.AuthenticationResult;
+        if (!t) throw new Error("Sign-in failed. Try again.");
+        sessionStorage.removeItem(REQ);
+        FamilyAuth.go(req.return + "#sso=" + b64url(JSON.stringify({ id_token: t.IdToken, access_token: t.AccessToken, refresh_token: t.RefreshToken, expires_in: t.ExpiresIn })));
+      }, function (e) {
+        sessionStorage.removeItem(REQ);
+        FamilyAuth.go(req.return + "#sso_error=" + encodeURIComponent(e.message));
+      });
+    });
+  }).catch(function (e) { fail(e.message); });
+})();
+</script>
+</body>
+</html>

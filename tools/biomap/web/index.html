@@ -532,7 +532,7 @@ dialog.detail::backdrop { background: rgba(8, 26, 40, .55); backdrop-filter: blu
           window.startBiomap();
         });
       });
-    }).catch(function () { gate("Couldn’t load Biomap. Reload to try again.", true); });
+    }).catch(function (e) { gate(e.signIn ? e.message.replace(/&/g, "&amp;").replace(/</g, "&lt;") : "Couldn’t load Biomap. Reload to try again.", true); });
   });
 })();
 </script>

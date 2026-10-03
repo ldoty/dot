@@ -48,6 +48,9 @@ resource "aws_cognito_user_pool" "family" {
       lambda_arn     = aws_lambda_function.pre_token.arn
       lambda_version = "V2_0"
     }
+    define_auth_challenge          = aws_lambda_function.sso["define"].arn
+    create_auth_challenge          = aws_lambda_function.sso["create"].arn
+    verify_auth_challenge_response = aws_lambda_function.sso["verify"].arn
   }
 
   lifecycle { prevent_destroy = true }
@@ -161,8 +164,83 @@ module "home" {
   source             = "../modules/family-app"
   name               = "home"
   user_pool_id       = aws_cognito_user_pool.family.id
-  callback_urls      = [local.home_url, "http://localhost:5173/"]
+  callback_urls      = [local.home_url, "${local.home_url}handoff", "http://localhost:5173/"]
   open_to_all_family = true
   portal             = true
   depends_on         = [aws_cognito_user_pool_domain.main]
+}
+
+resource "aws_ssm_parameter" "home_client_id" {
+  name  = "/family/core/home-client-id"
+  type  = "String"
+  value = module.home.client_id
+}
+
+# --- Single sign-on: tools get their own tokens from your dot-y.co sign-in ---
+# Custom-auth triggers (lambda/sso-auth.mjs). A tool's one challenge is answered with a valid
+# dot-y.co access token for the same person; the pre-token gate above still checks the group.
+
+data "archive_file" "sso" {
+  type        = "zip"
+  output_path = "${path.module}/.build/sso-auth.zip"
+  source {
+    filename = "sso-auth.mjs"
+    content  = file("${path.module}/lambda/sso-auth.mjs")
+  }
+  source {
+    filename = "verify-token.mjs"
+    content  = file("${path.module}/lambda/verify-token.mjs") # symlink to platform/api
+  }
+}
+
+resource "aws_iam_role" "sso" {
+  name               = "family-sso-auth"
+  assume_role_policy = aws_iam_role.pre_token.assume_role_policy
+}
+
+resource "aws_iam_role_policy_attachment" "sso_logs" {
+  role       = aws_iam_role.sso.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy" "sso_home_client" {
+  role = aws_iam_role.sso.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = "ssm:GetParameter"
+      # Built by name: the pool needs these Lambdas before the home client exists.
+      Resource = "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter/family/core/home-client-id"
+    }]
+  })
+}
+
+resource "aws_lambda_function" "sso" {
+  for_each         = toset(["define", "create", "verify"])
+  function_name    = "family-sso-${each.key}"
+  role             = aws_iam_role.sso.arn
+  runtime          = "nodejs22.x"
+  handler          = "sso-auth.${each.key}"
+  filename         = data.archive_file.sso.output_path
+  source_code_hash = data.archive_file.sso.output_base64sha256
+  timeout          = 5
+  environment {
+    variables = { HOME_CLIENT_PARAM = "/family/core/home-client-id" }
+  }
+}
+
+resource "aws_cloudwatch_log_group" "sso" {
+  for_each          = aws_lambda_function.sso
+  name              = "/aws/lambda/${each.value.function_name}"
+  retention_in_days = 30
+}
+
+resource "aws_lambda_permission" "sso" {
+  for_each      = aws_lambda_function.sso
+  statement_id  = "AllowCognito"
+  action        = "lambda:InvokeFunction"
+  function_name = each.value.function_name
+  principal     = "cognito-idp.amazonaws.com"
+  source_arn    = aws_cognito_user_pool.family.arn
 }

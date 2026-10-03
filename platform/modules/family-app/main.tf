@@ -1,7 +1,8 @@
 # Registers one project with the shared family login:
 #  - its own app client (tokens carry aud = this client, so other apps' APIs reject them)
 #  - groups "<name>" (members) and "<name>:admin"
-#  - an access rule at /family/apps/<clientId> that the pre-token Lambda enforces at sign-in
+#  - an access rule at /family/apps/<clientId> that the pre-token Lambda enforces at sign-in,
+#    plus the URLs dot-y.co/handoff may return single sign-on tokens to
 #  - optionally a tile on the dot-y.co home page, shown only to members (/family/catalog/<name>)
 
 terraform {
@@ -66,7 +67,8 @@ resource "aws_cognito_user_pool_client" "this" {
   name                                 = var.name
   user_pool_id                         = var.user_pool_id
   generate_secret                      = false
-  explicit_auth_flows                  = ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+  # Tools also allow CUSTOM_AUTH: single sign-on from dot-y.co (see core/lambda/sso-auth.mjs).
+  explicit_auth_flows                  = concat(["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"], var.portal ? [] : ["ALLOW_CUSTOM_AUTH"])
   allowed_oauth_flows_user_pool_client = true
   allowed_oauth_flows                  = ["code"]
   allowed_oauth_scopes                 = ["openid", "email", "profile"]
@@ -100,6 +102,8 @@ resource "aws_ssm_parameter" "access_rule" {
     app    = var.name
     group  = var.open_to_all_family ? "*" : var.name
     portal = var.portal
+    # Where dot-y.co/handoff may send this app's tokens (https only, never the portal itself)
+    returns = var.portal ? [] : [for u in var.callback_urls : u if startswith(u, "https://")]
   })
 }
 
