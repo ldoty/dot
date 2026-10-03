@@ -45,6 +45,30 @@ resource "aws_s3_object" "config" {
   })
 }
 
+# Public pages served at extensionless paths (dot-y.co/sms, /privacy, /terms): the SMS program's
+# opt-in page and its policies, which carrier reviewers visit. The form posts to tools/sms.
+resource "aws_s3_object" "page" {
+  for_each      = toset(["sms", "privacy", "terms"])
+  bucket        = module.site.bucket
+  key           = each.key
+  source        = "${path.module}/portal/${each.key}.html"
+  etag          = filemd5("${path.module}/portal/${each.key}.html")
+  content_type  = "text/html; charset=utf-8"
+  cache_control = "max-age=60"
+}
+
+data "aws_ssm_parameter" "sms_optin_url" {
+  name = "/family/sms/optin-url"
+}
+
+resource "aws_s3_object" "sms_config" {
+  bucket        = module.site.bucket
+  key           = "sms-config.json"
+  content_type  = "application/json"
+  cache_control = "max-age=60"
+  content       = jsonencode({ optinUrl = nonsensitive(data.aws_ssm_parameter.sms_optin_url.value) })
+}
+
 # Tool tiles registered by app roots (modules/family-app `tile`). The page shows
 # each person only the tiles for groups they're in. Re-apply core after adding an app.
 data "aws_ssm_parameters_by_path" "catalog" {

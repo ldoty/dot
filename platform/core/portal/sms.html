@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dot-y text messages: sign up</title>
+<meta name="description" content="Sign up for Dot-y personal reminder and assistant text messages from Luke Doty.">
+<link rel="icon" type="image/svg+xml" href="/style/favicon.svg">
+<link rel="stylesheet" href="/style/family.css">
+<style>
+/* Layout: one readable column. Program description, then the sign-up form, then program details. */
+.wrap { max-width: 680px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 28px }
+nav.site { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px }
+nav.site a { color: var(--muted); text-decoration: none }
+nav.site a[aria-current="page"] { color: var(--ink); font-weight: 600 }
+h1 { font-size: clamp(32px, 7vw, 48px) }
+h2 { font-size: 22px; margin-bottom: 8px }
+section p + p { margin-top: 10px }
+ul.examples { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px }
+form.card { display: grid; gap: 14px }
+.field { display: grid; gap: 4px }
+.field label { font-weight: 600; font-size: 14px }
+.field input { font: 16px var(--body); color: var(--ink); background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 10px 12px }
+.field input:focus { border-color: var(--pool); outline: none }
+.consent { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; font-size: 14.5px; line-height: 1.5 }
+.consent input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--pool) }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden }
+.msg { font-size: 15px; margin: 0 }
+.msg.error { color: color-mix(in srgb, var(--ember) 70%, var(--ink)) }
+.done { background: color-mix(in srgb, var(--leaf) 12%, var(--surface)); border-radius: var(--r-md); padding: 18px }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0 }
+dt { font-weight: 600 }
+dd { margin: 0 }
+footer { color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); padding-top: 16px }
+footer a { color: var(--muted) }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="site" aria-label="Dot-y"><a href="/">dot-y.co</a><a href="/sms" aria-current="page">Text messages</a><a href="/privacy">Privacy Policy</a><a href="/terms">Terms</a></nav>
+
+  <header>
+    <div class="eyebrow">Dot-y text messages</div>
+    <h1>Personal reminders and assistant texts</h1>
+  </header>
+
+  <section>
+    <p><strong>Dot-y</strong> is a personal assistant run by <strong>Luke Doty</strong> for himself and members of his family. It sends text messages from <strong>(864) 568-4810</strong>.</p>
+    <p>Messages are personal: reminders from your to-do list, reminders about meetings and appointments, and answers or summaries in reply to questions you text in. Some messages include links. Dot-y never sends marketing or promotional messages.</p>
+    <p>Example messages:</p>
+    <ul class="examples">
+      <li>“Taking out the trash is on your todo list”</li>
+      <li>“Don’t forget you have a meeting with Jon today”</li>
+      <li>“Looks like you took a note on that meeting - here is the summary: …”</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="signup">
+    <h2 id="signup">Sign up</h2>
+    <p style="margin-bottom:12px">Dot-y is limited to Luke Doty’s family members, by invitation. If you’re family and Luke has invited you, sign up here.</p>
+    <form class="card" id="optin" novalidate>
+      <div class="field"><label for="name">Your name</label><input id="name" name="name" autocomplete="name" maxlength="100" required></div>
+      <div class="field"><label for="phone">Mobile number</label><input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="(555) 555-5555" required></div>
+      <div class="hp" aria-hidden="true"><label for="company">Company</label><input id="company" name="company" tabindex="-1" autocomplete="off"></div>
+      <label class="consent"><input type="checkbox" id="consent" name="consent"><span id="consent-text">I agree to receive recurring personal reminder and assistant text messages from Dot-y (Luke Doty) at the number provided. Message frequency varies. Msg &amp; data rates may apply. Reply HELP for help, STOP to opt out. Consent is not a condition of any purchase. See our <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms</a>.</span></label>
+      <p class="msg error" id="error" role="alert" hidden></p>
+      <div><button class="btn primary" id="submit">Sign up for texts</button></div>
+    </form>
+    <div class="done" id="done" role="status" hidden></div>
+  </section>
+
+  <section aria-labelledby="details">
+    <h2 id="details">Program details</h2>
+    <dl>
+      <dt>Program</dt><dd>Dot-y personal reminders and assistant messages</dd>
+      <dt>Sent by</dt><dd>Luke Doty, from (864) 568-4810</dd>
+      <dt>Frequency</dt><dd>Varies, based on your reminders and the conversations you start</dd>
+      <dt>Cost</dt><dd>Free from Dot-y. Msg &amp; data rates may apply.</dd>
+      <dt>Help</dt><dd>Reply HELP, or email <a href="mailto:contact@dot-y.co">contact@dot-y.co</a></dd>
+      <dt>Stop</dt><dd>Reply STOP at any time to stop all messages</dd>
+    </dl>
+  </section>
+
+  <footer>Dot-y is operated by Luke Doty · <a href="mailto:contact@dot-y.co">contact@dot-y.co</a> · <a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms</a></footer>
+</div>
+<script>
+(function () {
+  var form = document.getElementById("optin"), err = document.getElementById("error"), btn = document.getElementById("submit");
+  function fail(msg, field) { err.textContent = msg; err.hidden = false; if (field) document.getElementById(field).focus(); }
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    err.hidden = true;
+    var f = form.elements; // the inputs (the form itself has its own "name" property)
+    var name = f.name.value.trim(), phone = f.phone.value.trim();
+    if (!name) return fail("Please enter your name.", "name");
+    var digits = phone.replace(/\D/g, "");
+    if (digits.length === 11 && digits[0] === "1") digits = digits.slice(1);
+    if (!/^[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return fail("Please enter a valid US mobile number.", "phone");
+    if (!f.consent.checked) return fail("Please check the box to agree to receive messages.", "consent");
+    btn.disabled = true; btn.textContent = "Signing up…";
+    fetch("/sms-config.json").then(function (r) { return r.json(); }).then(function (cfg) {
+      return fetch(cfg.optinUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: name, phone: phone, consent: true, company: f.company.value,
+          consentText: document.getElementById("consent-text").textContent.replace(/\s+/g, " ").trim(),
+          page: location.href,
+        }),
+      });
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (b) {
+        if (!res.ok) throw new Error(b.error || "Something went wrong. Please try again.");
+        form.hidden = true;
+        var done = document.getElementById("done");
+        done.textContent = "Thanks, " + name + ". You’re signed up for Dot-y texts at " + phone + ". Reply HELP for help or STOP to opt out at any time.";
+        done.hidden = false;
+      });
+    }).catch(function (e) {
+      fail(e.message || "Something went wrong. Please try again.");
+      btn.disabled = false; btn.textContent = "Sign up for texts";
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -7,6 +7,7 @@ Infrastructure is OpenTofu; state lives in `s3://family-tfstate-921782276410` (o
 platform/                 what every tool builds on
   bootstrap/              the state bucket
   billing/                account-wide spending alerts: $75/mo budget + cost anomaly detection
+  email/                  contact@dot-y.co via Amazon SES: receive, store 90 days, forward to Gmail
   core/                   domain cert, Cognito pool + auth.dot-y.co, sign-in gate Lambda, home page infra
     portal/               the dot-y.co home page
   web/                    shared frontend: family-auth.js, family.css, favicon, style-guide.html
@@ -19,6 +20,7 @@ tools/
   budget/                 budget.dot-y.co (see its README)
   links/                  links.dot-y.co: family bookmarks by section
   assistant/              assistant.dot-y.co: Luke's chat with Claude (Bedrock) + calendar tools
+  sms/                    Dot-y texting program: opt-in API behind dot-y.co/sms (+ /privacy, /terms)
 private/                  local only, gitignored (e.g. project_pax)
 ```
 
