@@ -6,6 +6,7 @@ Infrastructure is OpenTofu; state lives in `s3://family-tfstate-921782276410` (o
 ```
 platform/                 what every tool builds on
   bootstrap/              the state bucket
+  billing/                account-wide spending alerts: $75/mo budget + cost anomaly detection
   core/                   domain cert, Cognito pool + auth.dot-y.co, sign-in gate Lambda, home page infra
     portal/               the dot-y.co home page
   web/                    shared frontend: family-auth.js, family.css, favicon, style-guide.html
