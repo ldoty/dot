@@ -6,7 +6,6 @@
 <title>Doty &amp; Co.</title>
 <link rel="icon" type="image/svg+xml" href="/style/favicon.svg">
 <link rel="stylesheet" href="/style/family.css">
-<script>try { var m = localStorage.getItem("de-mode"); if (m && m !== "auto") document.documentElement.setAttribute("data-theme", m); } catch (e) {}</script>
 <style>
 /* Layout: one centered column. Hero (title + arch illustration) on top, then the signed-in person's tool tiles. */
 .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px }
@@ -33,9 +32,6 @@ footer button { background: none; border: 0; color: var(--pool); cursor: pointer
 <div class="wrap">
   <div class="topbar">
     <span class="brand"><img src="/style/favicon.svg" alt="">dot-y.co</span>
-    <div class="mode" role="group" aria-label="Theme">
-      <button data-mode="light">Daylight</button><button data-mode="dark">Evening</button><button data-mode="auto">Auto</button>
-    </div>
   </div>
 
   <div class="hero">
@@ -77,15 +73,6 @@ footer button { background: none; border: 0; color: var(--pool); cursor: pointer
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var LEAF = '<svg viewBox="0 0 44 44" aria-hidden="true"><path d="M6 38 C6 18 20 8 38 6 C38 26 26 38 6 38 Z" fill="var(--leaf)"/><path d="M6 38 C16 26 26 16 38 6" stroke="var(--surface)" stroke-width="2.5" fill="none"/></svg>';
-
-  function setMode(m) {
-    if (m === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", m);
-    document.querySelectorAll(".mode button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.mode === m)); });
-    try { localStorage.setItem("de-mode", m); } catch (e) {}
-  }
-  document.querySelectorAll(".mode button").forEach(function (b) { b.addEventListener("click", function () { setMode(b.dataset.mode); }); });
-  var mode = "auto"; try { mode = localStorage.getItem("de-mode") || "auto"; } catch (e) {}
-  setMode(mode);
 
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
   function fail(msg) { var e = $("error"); e.textContent = msg; e.hidden = false; }

@@ -20,23 +20,10 @@
   --serif: "Young Serif", Georgia, serif;
   --mono: "DM Mono", ui-monospace, Menlo, monospace;
   --r-sm: 8px; --r-md: 14px; --r-pill: 999px;
+  color-scheme: light;
 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  /* Evening (Amber) */
-  --bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;
-  --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;
-  --on-accent: #1a1613; --on-sun: #1a1613;
-  --texture: radial-gradient(rgba(241,231,216,.035) 1px, transparent 1.2px);
-  color-scheme: dark } }
-:root[data-theme="dark"] {
-  --bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;
-  --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;
-  --on-accent: #1a1613; --on-sun: #1a1613;
-  --texture: radial-gradient(rgba(241,231,216,.035) 1px, transparent 1.2px);
-  color-scheme: dark }
-:root[data-theme="light"] { color-scheme: light }
 /* Working aliases used by the components below */
-:root, :root[data-theme] {
+:root {
   --accent: var(--pool);
   --accent-soft: color-mix(in srgb, var(--pool) 14%, var(--surface));
   --good: color-mix(in srgb, var(--leaf) 60%, var(--ink));
@@ -51,9 +38,6 @@ header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: 
 h1 { font: 500 clamp(30px, 4.5vw, 46px)/1.05 var(--display); margin: 0; letter-spacing: -0.02em; text-wrap: balance; display: flex; align-items: center; gap: 12px }
 h1 em { font: 400 1em var(--serif); font-style: normal; color: var(--wood) }
 h1 svg { width: .9em; height: .9em; flex: none }
-.mode { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); background: var(--raised) }
-.mode button { border: 0; background: none; padding: 5px 12px; font-size: 13px }
-.mode button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.12) }
 .sub { color: var(--muted); margin: 6px 0 0; max-width: 62ch }
 .savebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
 .status { font-size: 13px; color: var(--muted) }
@@ -521,7 +505,6 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     app.innerHTML = '<div class="wrap">' +
       '<header class="top"><div><h1><svg viewBox="0 0 44 44" aria-hidden="true"><path d="M6 38 C6 18 20 8 38 6 C38 26 26 38 6 38 Z" fill="var(--leaf)"/><path d="M6 38 C16 26 26 16 38 6" stroke="var(--bg)" stroke-width="2.5" fill="none"/></svg><span>Luke <em>&amp;</em> Amber’s Budget</span></h1><a class="home-link" href="https://dot-y.co/">← dot-y.co</a></div>' +
       '<div class="savebar"><span class="status" id="status"></span>' +
-      '<div class="mode" role="group" aria-label="Theme"><button data-mode="light">Daylight</button><button data-mode="dark">Evening</button><button data-mode="auto">Auto</button></div>' +
       '<button id="reset">Reset</button><button id="signout">Sign out</button></div></header>' +
       '<nav class="tabs" role="tablist" aria-label="Budgets">' + tabs + "</nav>" +
       (resumed[tab] ? resumeBanner() : "") +
@@ -529,7 +512,6 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     totals();
     renderVersions();
     setStatus();
-    document.querySelectorAll(".mode button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.mode === mode)); });
   }
 
   var dateFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
@@ -915,8 +897,6 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       }
       armedDel = null; dcs.splice(di, 1); persist(); render();
       setStatus("Deleted “" + (dc.name || "Untitled") + "”" + (n ? " and its " + n + " item" + (n > 1 ? "s" : "") : ""));
-    } else if (t.dataset.mode) {
-      setMode(t.dataset.mode);
     } else if (t.id === "v-save") {
       saveVersion();
     } else if (t.dataset.vload) {
@@ -1083,18 +1063,9 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     }
   });
 
-  var mode = "auto";
-  function setMode(m) {
-    mode = m;
-    if (m === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", m);
-    document.querySelectorAll(".mode button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.mode === m)); });
-    try { localStorage.setItem("de-mode", m); } catch (e) {}
-  }
-  try { var storedMode = localStorage.getItem("de-mode"); if (storedMode) mode = storedMode; } catch (e) {}
   var fromHash = { "#shared": "shared", "#luke": "Luke", "#amber": "Amber" }[location.hash.toLowerCase()];
   try { tab = fromHash || localStorage.getItem(TKEY) || "shared"; } catch (e) { tab = fromHash || "shared"; }
   if (["shared", "Luke", "Amber"].indexOf(tab) < 0) tab = "shared";
-  setMode(mode);
 
   // --- API -------------------------------------------------------------------
   function api(method, path, body) {

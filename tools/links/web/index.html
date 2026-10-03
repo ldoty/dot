@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Links</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="family.css">
+<style>
+/* Layout: header with a link home, then a grid of section cards, each a list of links with an inline add/edit form. */
+.wrap { max-width: 1080px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 24px }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+.top a { color: var(--muted); text-decoration: none; font-size: 14px }
+h1 { font-size: clamp(32px, 6vw, 48px) }
+.status { color: var(--muted); font-size: 14px; min-height: 1.4em; margin: 0 }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; align-items: start }
+.section { display: grid; gap: 10px }
+.sec-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-bottom: 2px solid var(--wood); padding-bottom: 6px }
+.sec-head h2 { font-size: 20px; min-width: 0; overflow-wrap: anywhere }
+.tools { display: flex; gap: 4px; flex: none }
+.tools button, .link-acts button { border: 1px solid transparent; background: none; color: var(--muted); border-radius: var(--r-pill); padding: 3px 9px; font-size: 12px; font-weight: 600; cursor: pointer }
+.tools button:hover, .link-acts button:hover { color: var(--ink); border-color: var(--line) }
+.tools .arm, .link-acts .arm { color: var(--ember); border-color: var(--ember) }
+ul { list-style: none; margin: 0; padding: 0 }
+.link { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line) }
+.link a { color: var(--ink); font-weight: 600; text-decoration: none; overflow-wrap: anywhere }
+.link a:hover { color: var(--pool); text-decoration: underline }
+.link small { grid-column: 1; color: var(--muted); font: 12px var(--mono); overflow-wrap: anywhere }
+.link-acts { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 2px }
+@media (hover: hover) { .link-acts { opacity: 0 } .link:hover .link-acts, .link:focus-within .link-acts, .link-acts:has(.arm) { opacity: 1 } }
+.empty { color: var(--muted); font-size: 14px; margin: 0 }
+form.edit { display: grid; gap: 6px; padding: 10px; border-radius: var(--r-sm); background: var(--raised) }
+form.edit input { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-sm); padding: 7px 10px; color: var(--ink); min-width: 0 }
+form.edit input:focus { border-color: var(--pool); outline: none }
+form.edit .acts { display: flex; gap: 6px }
+form.edit .btn { padding: 6px 14px; font-size: 13px }
+.add-link { justify-self: start; padding: 6px 12px; font-size: 13px; border-style: dashed }
+.new-section { align-self: stretch; display: grid; place-items: center; border: 1.5px dashed var(--line); background: none; color: var(--muted); border-radius: var(--r-md); min-height: 120px; font-weight: 600; cursor: pointer }
+.new-section:hover { color: var(--ink); border-color: var(--muted) }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
+  <h1>Links</h1>
+  <p class="status" id="status" role="status"></p>
+  <div id="main"><p class="status">Loading…</p></div>
+</div>
+<script src="family-auth.js"></script>
+<script>
+(function () {
+  var cfg, sections = [], links = [];
+  // What's open for editing: { kind: "section" | "link" | "new-link" | "new-section", id }
+  var editing = null, armed = null;
+  var main = document.getElementById("main");
+
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function uid() { return "x" + Math.random().toString(36).slice(2, 9); }
+  function status(msg) {
+    var s = document.getElementById("status"); s.textContent = msg || "";
+    clearTimeout(status.t); if (msg) status.t = setTimeout(function () { s.textContent = ""; }, 4000);
+  }
+  // Accepts "unifi.ui.com" too; only http(s) is allowed
+  function cleanUrl(v) {
+    v = v.trim(); if (!v) return null;
+    // "host:port" isn't a scheme; only "scheme://" or a known non-web scheme (refused below) counts as one
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(v) && !/^(javascript|data|vbscript|file|mailto|blob):/i.test(v)) v = "https://" + v;
+    try { var u = new URL(v); return u.protocol === "http:" || u.protocol === "https:" ? u.href : null; } catch (e) { return null; }
+  }
+  function host(url) { try { return new URL(url).hostname.replace(/^www\./, ""); } catch (e) { return url; } }
+
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method,
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    }).then(function (res) {
+      if (!res.ok) return res.json().catch(function () { return {}; }).then(function (b) { throw new Error(b.error || "HTTP " + res.status); });
+      return res.json();
+    });
+  }
+
+  function linkForm(sectionId, l) {
+    return '<form class="edit" data-form="link" data-section="' + esc(sectionId) + '"' + (l ? ' data-id="' + esc(l.id) + '"' : "") + ">" +
+      '<input name="url" placeholder="https://…" aria-label="Link address" value="' + (l ? esc(l.url) : "") + '" required>' +
+      '<input name="title" placeholder="Title (optional)" aria-label="Link title" maxlength="120" value="' + (l ? esc(l.title) : "") + '">' +
+      '<div class="acts"><button class="btn primary">' + (l ? "Save" : "Add link") + '</button><button type="button" class="btn ghost" data-cancel>Cancel</button></div></form>';
+  }
+  function sectionForm(s) {
+    return '<form class="edit" data-form="section"' + (s ? ' data-id="' + esc(s.id) + '"' : "") + ">" +
+      '<input name="name" placeholder="Section name" aria-label="Section name" maxlength="80" value="' + (s ? esc(s.name) : "") + '" required>' +
+      '<div class="acts"><button class="btn primary">' + (s ? "Rename" : "Add section") + '</button><button type="button" class="btn ghost" data-cancel>Cancel</button></div></form>';
+  }
+  function is(kind, id) { return editing && editing.kind === kind && editing.id === id; }
+
+  function render() {
+    main.innerHTML = '<div class="grid">' + sections.map(function (s) {
+      var mine = links.filter(function (l) { return l.sectionId === s.id; });
+      return '<section class="card section" data-sec="' + esc(s.id) + '">' +
+        (is("section", s.id) ? sectionForm(s) :
+          '<div class="sec-head"><h2>' + esc(s.name) + '</h2><div class="tools">' +
+          '<button data-rename="' + esc(s.id) + '">Rename</button><button data-secdel="' + esc(s.id) + '">Delete</button></div></div>') +
+        "<ul>" + mine.map(function (l) {
+          if (is("link", l.id)) return "<li>" + linkForm(s.id, l) + "</li>";
+          return '<li class="link"><a href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">' + esc(l.title) + "</a>" +
+            '<span class="link-acts"><button data-edit="' + esc(l.id) + '" aria-label="Edit ' + esc(l.title) + '">Edit</button>' +
+            '<button data-del="' + esc(l.id) + '" aria-label="Delete ' + esc(l.title) + '">&times;</button></span>' +
+            "<small>" + esc(host(l.url)) + "</small></li>";
+        }).join("") + "</ul>" +
+        (mine.length || is("new-link", s.id) ? "" : '<p class="empty">No links yet.</p>') +
+        (is("new-link", s.id) ? linkForm(s.id, null) : '<button class="btn ghost add-link" data-addlink="' + esc(s.id) + '">+ Add link</button>') +
+        "</section>";
+    }).join("") +
+      (is("new-section", "") ? '<section class="card section">' + sectionForm(null) + "</section>" : '<button class="new-section" id="add-section">+ Add section</button>') +
+      "</div>";
+    var f = main.querySelector("form.edit input"); if (f) f.focus();
+  }
+
+  main.addEventListener("click", function (e) {
+    var t = e.target.closest("button"); if (!t) return;
+    if (t.id === "add-section") { editing = { kind: "new-section", id: "" }; render(); }
+    else if (t.dataset.addlink) { editing = { kind: "new-link", id: t.dataset.addlink }; render(); }
+    else if (t.dataset.rename) { editing = { kind: "section", id: t.dataset.rename }; render(); }
+    else if (t.dataset.edit) { editing = { kind: "link", id: t.dataset.edit }; render(); }
+    else if (t.dataset.cancel != null) { editing = null; render(); }
+    else if (t.dataset.del || t.dataset.secdel) {
+      var key = t.dataset.del ? "link:" + t.dataset.del : "sec:" + t.dataset.secdel;
+      if (armed !== key) {
+        var n = t.dataset.secdel ? links.filter(function (l) { return l.sectionId === t.dataset.secdel; }).length : 0;
+        armed = key; t.classList.add("arm"); t.textContent = n ? "Delete with " + n + " link" + (n > 1 ? "s" : "") + "?" : "Confirm";
+        setTimeout(function () { if (armed === key) { armed = null; render(); } }, 3000);
+        return;
+      }
+      armed = null;
+      if (t.dataset.del) {
+        var gone = t.dataset.del;
+        api("DELETE", "/links/" + gone).then(function () {
+          links = links.filter(function (l) { return l.id !== gone; }); render(); status("Link deleted");
+        }).catch(function (err) { status("Couldn’t delete: " + err.message); });
+      } else {
+        var sid = t.dataset.secdel;
+        api("DELETE", "/sections/" + sid).then(function () {
+          sections = sections.filter(function (s) { return s.id !== sid; });
+          links = links.filter(function (l) { return l.sectionId !== sid; }); render(); status("Section deleted");
+        }).catch(function (err) { status("Couldn’t delete: " + err.message); });
+      }
+    }
+  });
+
+  main.addEventListener("submit", function (e) {
+    e.preventDefault();
+    // Read fields via f.elements: f.name / f.title are the form’s own properties
+    var f = e.target, id = f.dataset.id;
+    if (f.dataset.form === "section") {
+      var name = f.elements.name.value.trim(); if (!name) return;
+      var old = id && sections.filter(function (s) { return s.id === id; })[0];
+      var sec = { id: id || uid(), name: name, order: old ? old.order : Date.now() };
+      api("PUT", "/sections/" + sec.id, sec).then(function () {
+        sections = sections.filter(function (s) { return s.id !== sec.id; }).concat([sec]).sort(function (a, b) { return a.order - b.order; });
+        editing = old ? null : { kind: "new-link", id: sec.id }; render(); status(old ? "Renamed" : "Section added: add its first link");
+      }).catch(function (err) { status("Couldn’t save: " + err.message); });
+      return;
+    }
+    var url = cleanUrl(f.elements.url.value);
+    if (!url) { f.elements.url.focus(); status("Links need to be a web address (http or https)."); return; }
+    var prev = id && links.filter(function (l) { return l.id === id; })[0];
+    var link = { id: id || uid(), sectionId: f.dataset.section, url: url, title: f.elements.title.value.trim(), order: prev ? prev.order : Date.now() };
+    api("PUT", "/links/" + link.id, link).then(function (saved) {
+      link.title = saved.title; link.url = saved.url;
+      links = links.filter(function (l) { return l.id !== link.id; }).concat([link]).sort(function (a, b) { return a.order - b.order; });
+      editing = null; render(); status(prev ? "Saved" : "Link added");
+    }).catch(function (err) { status("Couldn’t save: " + err.message); });
+  });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && editing) { editing = null; render(); } });
+
+  function gate(msg) {
+    main.innerHTML = '<p class="status">' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button>';
+    document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
+    document.getElementById("signout").hidden = false;
+    document.getElementById("signout").onclick = function () { FamilyAuth.logout(); };
+    return api("GET", "/all").then(function (all) { sections = all.sections; links = all.links; render(); });
+  }).catch(function (e) { gate(/forbidden/.test(e.message) ? "Your account doesn’t have access to Links yet." : e.message); });
+})();
+</script>
+</body>
+</html>

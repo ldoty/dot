@@ -16,6 +16,7 @@ platform/                 what every tool builds on
   tests/                  platform tests + shared test helpers
 tools/
   budget/                 budget.dot-y.co (see its README)
+  links/                  links.dot-y.co: family bookmarks by section
 private/                  local only, gitignored (e.g. project_pax)
 ```
 

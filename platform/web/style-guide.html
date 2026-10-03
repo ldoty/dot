@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=&quot;http://www.w3.org/2000/svg&quot; viewBox=&quot;0 0 64 64&quot;%3E%3Cstyle%3E.bg%7Bfill:%23fbf9f3%7D.sun%7Bfill:%23e9a41a%7D.leaf%7Bfill:%232f9e5b%7D.vein%7Bstroke:%23fbf9f3%7D%40media (prefers-color-scheme:dark)%7B.bg%7Bfill:%231a1613%7D.sun%7Bfill:%23e2b04c%7D.leaf%7Bfill:%2393a861%7D.vein%7Bstroke:%231a1613%7D%7D%3C/style%3E%3Crect class=&quot;bg&quot; width=&quot;64&quot; height=&quot;64&quot; rx=&quot;14&quot;/%3E%3Ccircle class=&quot;sun&quot; cx=&quot;46&quot; cy=&quot;18&quot; r=&quot;11&quot;/%3E%3Cpath class=&quot;leaf&quot; d=&quot;M9 55 C9 33 25 18 50 14 C48 39 33 53 9 55 Z&quot;/%3E%3Cpath class=&quot;vein&quot; d=&quot;M9 55 C21 41 33 29 50 14&quot; stroke-width=&quot;2.2&quot; fill=&quot;none&quot; stroke-linecap=&quot;round&quot;/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
 <title>Daylight &amp; Evening</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&amp;family=Karla:ital,wght@0,400;0,500;0,600;1,400&amp;family=Young+Serif&amp;family=DM+Mono:wght@400;500&amp;display=swap">
 <style>
@@ -20,7 +20,7 @@
   --r-sm: 8px; --r-md: 14px; --r-pill: 999px;
   --texture: none;
 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+@media not all { :root {
   --bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;
   --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;
   --on-accent: #1a1613; --on-sun: #1a1613;
@@ -36,7 +36,6 @@
 
 * { box-sizing: border-box }
 html { color-scheme: light }
-@media (prefers-color-scheme: dark) { html:not([data-theme="light"]) { color-scheme: dark } }
 body { margin: 0; background: var(--bg); background-image: var(--texture); background-size: 6px 6px; color: var(--ink); font: 16px/1.6 var(--body) }
 .wrap { max-width: 1040px; margin: 0 auto; padding: 40px 20px 80px }
 h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0 }
@@ -155,9 +154,8 @@ footer { color: var(--muted); font-size: 14px; padding-top: 24px; border-top: 1p
     <h1>Daylight <em>&amp;</em> Evening</h1>
     <p class="lede">One visual system for the household’s pages and documents. Daylight is Luke’s side: bright, mid-century, full of plants and morning light. Evening is Amber’s: dark wood, warm lamps, layered bohemian color. Every page carries both and switches with the time of day or the reader’s setting.</p>
     <div class="mode" role="group" aria-label="Preview theme">
-      <button data-mode="light" aria-pressed="false">Daylight</button>
+      <button data-mode="light" aria-pressed="true">Daylight</button>
       <button data-mode="dark" aria-pressed="false">Evening</button>
-      <button data-mode="auto" aria-pressed="true">Match device</button>
     </div>
   </div>
   <svg viewBox="0 0 240 240" role="img" aria-label="A sun over a leaf and an arch">
@@ -363,10 +361,9 @@ footer { color: var(--muted); font-size: 14px; padding-top: 24px; border-top: 1p
   function setMode(m) {
     if (m === "auto") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", m);
     btns.forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.mode === m)); });
-    try { localStorage.setItem("de-mode", m); } catch (e) {}
   }
   btns.forEach(function (b) { b.addEventListener("click", function () { setMode(b.dataset.mode); }); });
-  try { var saved = localStorage.getItem("de-mode"); if (saved) setMode(saved); } catch (e) {}
+
 
   var day = "--bg: #fbf9f3; --surface: #ffffff; --raised: #f3efe4; --ink: #1e2a24; --muted: #5d6a62; --line: #e4ddcd;\n  --leaf: #2f9e5b; --pool: #0b7b7e; --sun: #e9a41a; --ember: #e8612c; --bloom: #e0607e; --wood: #a5622d;\n  --on-accent: #ffffff; --on-sun: #1e2a24;";
   var eve = "--bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;\n  --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;\n  --on-accent: #1a1613; --on-sun: #1a1613;\n  --texture: radial-gradient(rgba(241,231,216,.035) 1px, transparent 1.2px);\n  color-scheme: dark;";
