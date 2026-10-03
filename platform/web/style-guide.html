@@ -7,7 +7,8 @@
 <title>Daylight &amp; Evening</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&amp;family=Karla:ital,wght@0,400;0,500;0,600;1,400&amp;family=Young+Serif&amp;family=DM+Mono:wght@400;500&amp;display=swap">
 <style>
-/* Layout: a single reading column of specimen sections; light theme is Luke's Daylight, dark theme is Amber's Evening, same token names */
+/* Layout: a single reading column of specimen sections. Two light palettes with the same token names:
+   Luke's Daylight (default) and Amber's Evening (bohemian, on linen), previewed with the switch up top. */
 :root {
   /* Daylight (Luke): mid-century modern, biophilic, bright */
   --bg: #fbf9f3; --surface: #ffffff; --raised: #f3efe4; --ink: #1e2a24; --muted: #5d6a62; --line: #e4ddcd;
@@ -20,19 +21,13 @@
   --r-sm: 8px; --r-md: 14px; --r-pill: 999px;
   --texture: none;
 }
-@media not all { :root {
-  --bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;
-  --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;
-  --on-accent: #1a1613; --on-sun: #1a1613;
-  --texture: radial-gradient(rgba(241,231,216,.035) 1px, transparent 1.2px);
-  color-scheme: dark } }
-:root[data-theme="dark"] {
-  --bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;
-  --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;
-  --on-accent: #1a1613; --on-sun: #1a1613;
-  --texture: radial-gradient(rgba(241,231,216,.035) 1px, transparent 1.2px);
-  color-scheme: dark }
-:root[data-theme="light"] { color-scheme: light }
+:root[data-theme="evening"] {
+  /* Evening (Amber): bohemian color on a light linen ground */
+  --bg: #f6eee2; --surface: #fffaf3; --raised: #efe2cf; --ink: #2b1f17; --muted: #6b584a; --line: #e3d2ba;
+  --leaf: #5f7a31; --pool: #1d7471; --sun: #cf9420; --ember: #a64624; --bloom: #8c4669; --wood: #93622c;
+  --on-accent: #fffaf3; --on-sun: #2b1f17;
+  --texture: radial-gradient(rgba(43,31,23,.07) 1px, transparent 1.2px);
+}
 
 * { box-sizing: border-box }
 html { color-scheme: light }
@@ -70,7 +65,7 @@ button, input, select { font: inherit }
 .palettes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px }
 .pal { border-radius: var(--r-md); padding: 20px; display: grid; gap: 14px }
 .pal.day { background: #fbf9f3; color: #1e2a24; border: 1px solid #e4ddcd }
-.pal.eve { background: #1a1613; color: #f1e7d8; border: 1px solid #3b322a }
+.pal.eve { background: #f6eee2; background-image: radial-gradient(rgba(43,31,23,.07) 1px, transparent 1.2px); background-size: 6px 6px; color: #2b1f17; border: 1px solid #e3d2ba }
 .pal h3 { font-family: var(--display) }
 .pal .who { font: 12px var(--mono); opacity: .7 }
 .sw-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px }
@@ -152,10 +147,10 @@ footer { color: var(--muted); font-size: 14px; padding-top: 24px; border-top: 1p
   <div>
     <div class="eyebrow">Luke &amp; Amber · House style</div>
     <h1>Daylight <em>&amp;</em> Evening</h1>
-    <p class="lede">One visual system for the household’s pages and documents. Daylight is Luke’s side: bright, mid-century, full of plants and morning light. Evening is Amber’s: dark wood, warm lamps, layered bohemian color. Every page carries both and switches with the time of day or the reader’s setting.</p>
+    <p class="lede">One visual system for the household’s pages and documents. Daylight is Luke’s side: bright, mid-century, full of plants and morning light. Evening is Amber’s: layered bohemian color (plum, rust, brass, moss) on a warm linen ground. Both are light; the sites use Daylight, and Evening is there for pages that want more warmth.</p>
     <div class="mode" role="group" aria-label="Preview theme">
       <button data-mode="light" aria-pressed="true">Daylight</button>
-      <button data-mode="dark" aria-pressed="false">Evening</button>
+      <button data-mode="evening" aria-pressed="false">Evening</button>
     </div>
   </div>
   <svg viewBox="0 0 240 240" role="img" aria-label="A sun over a leaf and an arch">
@@ -178,7 +173,7 @@ footer { color: var(--muted); font-size: 14px; padding-top: 24px; border-top: 1p
     <div class="principle">
       <svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="11" fill="var(--sun)"/><g stroke="var(--sun)" stroke-width="3" stroke-linecap="round"><line x1="22" y1="3" x2="22" y2="7"/><line x1="22" y1="37" x2="22" y2="41"/><line x1="3" y1="22" x2="7" y2="22"/><line x1="37" y1="22" x2="41" y2="22"/></g></svg>
       <h3>Lit from within</h3>
-      <p>Daylight pages feel like a sunny room. Evening pages feel like lamplight. Neither one is a gray office.</p>
+      <p>Daylight pages feel like a sunny room. Evening pages feel like a warm, layered room. Neither one is a gray office.</p>
       <span class="who">Both</span>
     </div>
     <div class="principle">
@@ -195,8 +190,8 @@ footer { color: var(--muted); font-size: 14px; padding-top: 24px; border-top: 1p
     </div>
     <div class="principle">
       <svg viewBox="0 0 44 44"><path d="M8 40 V20 A14 14 0 0 1 36 20 V40 Z" fill="var(--bloom)"/><path d="M14 40 V22 A8 8 0 0 1 30 22 V40" fill="none" stroke="var(--bg)" stroke-width="2"/></svg>
-      <h3>Layered after dark</h3>
-      <p>Evening adds depth: arches, a soft woven texture on the ground, plum and rust, and a serif voice for the big numbers.</p>
+      <h3>Layered and warm</h3>
+      <p>Evening adds depth: arches, a soft woven texture on the linen ground, plum and rust, and a serif voice for the big numbers.</p>
       <span class="who">Amber, bohemian</span>
     </div>
   </div>
@@ -204,7 +199,7 @@ footer { color: var(--muted); font-size: 14px; padding-top: 24px; border-top: 1p
 
 <section>
   <header><div class="eyebrow">Color</div><h2>Two palettes, one family</h2>
-  <p>Both palettes use the same six color roles. Luke’s versions are clear and saturated, Amber’s are earthy and low-lit, so a page can switch between them without changing its meaning.</p></header>
+  <p>Both palettes use the same six color roles. Luke’s versions are clear and saturated, Amber’s are earthy and deep, so a page can switch between them without changing its meaning.</p></header>
   <div class="palettes">
     <div class="pal day">
       <div><h3>Daylight</h3><span class="who">Luke · light theme</span></div>
@@ -219,16 +214,16 @@ footer { color: var(--muted); font-size: 14px; padding-top: 24px; border-top: 1p
       <div class="neutrals" aria-label="Daylight neutrals"><i style="background:#fbf9f3"></i><i style="background:#ffffff"></i><i style="background:#f3efe4"></i><i style="background:#e4ddcd"></i><i style="background:#5d6a62"></i><i style="background:#1e2a24"></i></div>
     </div>
     <div class="pal eve">
-      <div><h3>Evening</h3><span class="who">Amber · dark theme</span></div>
+      <div><h3>Evening</h3><span class="who">Amber · bohemian, on linen</span></div>
       <div class="sw-grid">
-        <div class="sw"><i style="background:#93a861"></i><b>Moss</b><span>leaf #93A861</span></div>
-        <div class="sw"><i style="background:#4fa9a8"></i><b>Peacock</b><span>pool #4FA9A8</span></div>
-        <div class="sw"><i style="background:#e2b04c"></i><b>Saffron</b><span>sun #E2B04C</span></div>
-        <div class="sw"><i style="background:#d26a3c"></i><b>Rust</b><span>ember #D26A3C</span></div>
-        <div class="sw"><i style="background:#b46a8c"></i><b>Plum</b><span>bloom #B46A8C</span></div>
-        <div class="sw"><i style="background:#bf8d55"></i><b>Brass</b><span>wood #BF8D55</span></div>
+        <div class="sw"><i style="background:#5f7a31"></i><b>Moss</b><span>leaf #5F7A31</span></div>
+        <div class="sw"><i style="background:#1d7471"></i><b>Peacock</b><span>pool #1D7471</span></div>
+        <div class="sw"><i style="background:#cf9420"></i><b>Saffron</b><span>sun #CF9420</span></div>
+        <div class="sw"><i style="background:#a64624"></i><b>Rust</b><span>ember #A64624</span></div>
+        <div class="sw"><i style="background:#8c4669"></i><b>Plum</b><span>bloom #8C4669</span></div>
+        <div class="sw"><i style="background:#93622c"></i><b>Brass</b><span>wood #93622C</span></div>
       </div>
-      <div class="neutrals" aria-label="Evening neutrals"><i style="background:#1a1613"></i><i style="background:#241e19"></i><i style="background:#2e2620"></i><i style="background:#3b322a"></i><i style="background:#b3a593"></i><i style="background:#f1e7d8"></i></div>
+      <div class="neutrals" aria-label="Evening neutrals"><i style="background:#f6eee2"></i><i style="background:#fffaf3"></i><i style="background:#efe2cf"></i><i style="background:#e3d2ba"></i><i style="background:#6b584a"></i><i style="background:#2b1f17"></i></div>
     </div>
   </div>
 
@@ -327,7 +322,7 @@ footer { color: var(--muted); font-size: 14px; padding-top: 24px; border-top: 1p
     <div><h3><span class="dot" style="background:var(--leaf)"></span>Do</h3>
       <ul>
         <li>Build every page from the tokens below so both themes work automatically.</li>
-        <li>Make Daylight the default for planning and numbers. Evening takes over at night or on a dark device.</li>
+        <li>Make Daylight the default for planning and numbers. Reach for Evening when a page should feel warmer and more personal.</li>
         <li>Pick one hero accent per page: sun for highlights, pool for actions.</li>
         <li>Use real photos of plants, wood and natural light when you need imagery.</li>
         <li>Set figures in DM Mono in tables and Young Serif when one number is the headline.</li>
@@ -347,7 +342,7 @@ footer { color: var(--muted); font-size: 14px; padding-top: 24px; border-top: 1p
 
 <section>
   <header><div class="eyebrow">Tokens</div><h2>Copy into any page</h2>
-  <p>Paste this at the top of a page’s stylesheet. Light values are Daylight, and the dark blocks switch to Evening.</p></header>
+  <p>Paste this at the top of a page’s stylesheet. The first block is Daylight; set <code>data-theme="evening"</code> on <code>&lt;html&gt;</code> to use Evening.</p></header>
   <div class="code-wrap"><button class="btn ghost" id="copy">Copy</button><pre id="tokens"></pre></div>
 </section>
 
@@ -366,12 +361,12 @@ footer { color: var(--muted); font-size: 14px; padding-top: 24px; border-top: 1p
 
 
   var day = "--bg: #fbf9f3; --surface: #ffffff; --raised: #f3efe4; --ink: #1e2a24; --muted: #5d6a62; --line: #e4ddcd;\n  --leaf: #2f9e5b; --pool: #0b7b7e; --sun: #e9a41a; --ember: #e8612c; --bloom: #e0607e; --wood: #a5622d;\n  --on-accent: #ffffff; --on-sun: #1e2a24;";
-  var eve = "--bg: #1a1613; --surface: #241e19; --raised: #2e2620; --ink: #f1e7d8; --muted: #b3a593; --line: #3b322a;\n  --leaf: #93a861; --pool: #4fa9a8; --sun: #e2b04c; --ember: #d26a3c; --bloom: #b46a8c; --wood: #bf8d55;\n  --on-accent: #1a1613; --on-sun: #1a1613;\n  --texture: radial-gradient(rgba(241,231,216,.035) 1px, transparent 1.2px);\n  color-scheme: dark;";
+  var eve = "--bg: #f6eee2; --surface: #fffaf3; --raised: #efe2cf; --ink: #2b1f17; --muted: #6b584a; --line: #e3d2ba;\n  --leaf: #5f7a31; --pool: #1d7471; --sun: #cf9420; --ember: #a64624; --bloom: #8c4669; --wood: #93622c;\n  --on-accent: #fffaf3; --on-sun: #2b1f17;\n  --texture: radial-gradient(rgba(43,31,23,.07) 1px, transparent 1.2px);";
   var css =
     '/* Fonts */\n@import url("https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&family=Karla:ital,wght@0,400;0,500;0,600;1,400&family=Young+Serif&family=DM+Mono:wght@400;500&display=swap");\n\n' +
     "/* Daylight (Luke) */\n:root {\n  " + day + "\n  --texture: none;\n" +
     '  --display: "Jost", "Futura", system-ui, sans-serif;\n  --body: "Karla", "Helvetica Neue", system-ui, sans-serif;\n  --serif: "Young Serif", Georgia, serif;\n  --mono: "DM Mono", ui-monospace, monospace;\n  --r-sm: 8px; --r-md: 14px; --r-pill: 999px;\n}\n\n' +
-    "/* Evening (Amber) */\n@media (prefers-color-scheme: dark) {\n  :root:not([data-theme=\"light\"]) {\n  " + eve + "\n  }\n}\n:root[data-theme=\"dark\"] {\n  " + eve + "\n}\n\n" +
+    "/* Evening (Amber): bohemian, on linen */\n:root[data-theme=\"evening\"] {\n  " + eve + "\n}\n\n" +
     "body { background: var(--bg); background-image: var(--texture); background-size: 6px 6px; color: var(--ink); font: 16px/1.6 var(--body); }";
   document.getElementById("tokens").textContent = css;
   var copy = document.getElementById("copy");
