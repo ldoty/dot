@@ -18,6 +18,7 @@ platform/                 what every tool builds on
 tools/
   budget/                 budget.dot-y.co (see its README)
   links/                  links.dot-y.co: family bookmarks by section
+  assistant/              assistant.dot-y.co: Luke's chat with Claude (Bedrock) + calendar tools
 private/                  local only, gitignored (e.g. project_pax)
 ```
 
@@ -35,6 +36,7 @@ The home page is the one "portal" client that sees all groups, to show each pers
 
 ```sh
 npm install && npm test                 # all unit + page tests (no AWS)
+npm run build                           # bundles Lambdas that need npm packages (the assistant)
 npm run test:live                       # read-only checks against what's deployed
 platform/scripts/new-tool.sh recipes "Recipes"
 platform/scripts/invite.sh someone@example.com Name family_budget

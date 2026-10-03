@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Scaffold a new tool from platform/templates/tool:
-#   platform/scripts/new-tool.sh recipes "Recipes"
-# Creates tools/recipes/ (site at recipes.dot-y.co, permission group family_recipes),
+#   platform/scripts/new-tool.sh recipes "Recipes" [group]
+# Creates tools/recipes/ (site at recipes.dot-y.co, permission group family_recipes unless given),
 # wired for sign-in, its own API + table, a home page tile, and tests.
 set -euo pipefail
-tool="${1:?usage: new-tool.sh NAME \"Title\"}"
-title="${2:?usage: new-tool.sh NAME \"Title\"}"
+tool="${1:?usage: new-tool.sh NAME \"Title\" [GROUP]}"
+title="${2:?usage: new-tool.sh NAME \"Title\" [GROUP]}"
 [[ "$tool" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || { echo "NAME must be lowercase letters, digits and - (it becomes NAME.dot-y.co)" >&2; exit 1; }
-group="family_${tool//-/_}"
+group="${3:-family_${tool//-/_}}"
+[[ "$group" =~ ^[a-z][a-z0-9_-]*$ ]] || { echo "GROUP must be lowercase letters, digits, - and _" >&2; exit 1; }
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 dest="$root/tools/$tool"
 [[ -e "$dest" ]] && { echo "$dest already exists" >&2; exit 1; }

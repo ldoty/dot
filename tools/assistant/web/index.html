@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+<title>Assistant</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="family.css">
+<style>
+/* Layout: header; then conversation list (left, collapsible on phones) beside the chat thread, with the composer pinned under it. */
+html, body { height: 100% }
+body { display: flex; flex-direction: column }
+.top { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap }
+.top h1 { font-size: 22px; margin-right: auto }
+.top a { color: var(--muted); text-decoration: none; font-size: 14px }
+.top .btn { padding: 6px 14px; font-size: 14px }
+#chats-toggle { display: none }
+.shell { flex: 1; min-height: 0; display: grid; grid-template-columns: 260px minmax(0, 1fr) }
+.list { border-right: 1px solid var(--line); overflow-y: auto; padding: 12px 8px; display: grid; align-content: start; gap: 2px }
+.list button { text-align: left; border: 0; background: none; color: var(--ink); border-radius: var(--r-sm); padding: 8px 10px; cursor: pointer; font-size: 14px; display: grid; gap: 1px }
+.list button:hover { background: var(--raised) }
+.list button[aria-current="true"] { background: var(--raised); font-weight: 600 }
+.list small { color: var(--muted); font: 11.5px var(--mono) }
+.list .empty { color: var(--muted); font-size: 14px; padding: 8px 10px }
+.list-foot { display: none; gap: 12px; padding: 12px 10px 4px; border-top: 1px solid var(--line); margin-top: 8px; align-items: center }
+.list-foot a { color: var(--muted); text-decoration: none; font-size: 14px }
+.chat { display: flex; flex-direction: column; min-height: 0 }
+.thread { flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 14px }
+.thread > * { max-width: 760px; width: 100%; margin-inline: auto }
+.msg.user { align-self: flex-end; width: auto; max-width: min(620px, 85%); margin-right: max(0px, calc((100% - 760px) / 2)); background: var(--raised); border-radius: var(--r-md) var(--r-md) 4px var(--r-md); padding: 10px 14px; white-space: pre-wrap; overflow-wrap: anywhere }
+.msg.assistant { line-height: 1.6; overflow-wrap: anywhere }
+.msg.assistant p { margin: 0 0 10px; max-width: none }
+.msg.assistant p:last-child { margin-bottom: 0 }
+.msg.assistant ul { margin: 0 0 10px; padding-left: 20px }
+.msg.assistant code { font: 13px var(--mono); background: var(--raised); padding: 1px 5px; border-radius: 4px }
+.tools-used { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px }
+.tool { font: 600 11.5px var(--mono); color: var(--pool); background: color-mix(in srgb, var(--pool) 10%, var(--surface)); border-radius: 99px; padding: 2px 9px }
+.tool.error { color: var(--ember); background: color-mix(in srgb, var(--ember) 10%, var(--surface)) }
+.thinking { color: var(--muted); font-size: 14px }
+.notice { color: var(--ember); font-size: 14px }
+.intro { margin: auto; text-align: center; color: var(--muted); display: grid; gap: 8px; justify-items: center; max-width: 420px }
+.intro h2 { color: var(--ink); font-size: 26px }
+.composer { border-top: 1px solid var(--line); padding: 12px 16px }
+.composer form { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end }
+.composer textarea { flex: 1; min-width: 0; resize: none; max-height: 40vh; font: 16px/1.5 var(--body); color: var(--ink); background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-md); padding: 10px 12px }
+.composer textarea:focus { border-color: var(--pool); outline: none }
+.composer .btn { padding: 10px 18px }
+.gate { margin: 15vh auto 0; display: grid; gap: 12px; justify-items: center; color: var(--muted); padding: 16px; text-align: center }
+@media (max-width: 760px) {
+  #chats-toggle { display: inline-block }
+  .shell { grid-template-columns: minmax(0, 1fr) }
+  .list { display: none; border-right: 0; border-bottom: 1px solid var(--line); max-height: 45vh }
+  .shell.show-list .list { display: grid }
+  /* The header keeps just the essentials; home link and sign out live in the Chats panel */
+  .top > a, #signout { display: none !important }
+  .list-foot { display: flex }
+  .shell.show-list .chat { display: none }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Assistant</h1>
+  <button class="btn ghost" id="chats-toggle" hidden>Chats</button>
+  <button class="btn ghost" id="new-chat" hidden>New chat</button>
+  <a href="https://dot-y.co/">← dot-y.co</a>
+  <button class="btn ghost" id="signout" hidden>Sign out</button>
+</header>
+<main class="shell" id="shell">
+  <nav class="list" id="list" aria-label="Conversations"></nav>
+  <section class="chat">
+    <div class="thread" id="thread" aria-live="polite"><p class="thinking">Loading…</p></div>
+    <div class="composer">
+      <form id="composer">
+        <textarea id="input" rows="1" placeholder="Ask about your calendar…" aria-label="Message" maxlength="8000" disabled></textarea>
+        <button class="btn primary" id="send" disabled>Send</button>
+      </form>
+    </div>
+  </section>
+</main>
+<script src="family-auth.js"></script>
+<script>
+(function () {
+  var cfg, conversations = [], current = null, busy = false;
+  var $ = function (id) { return document.getElementById(id); };
+  var thread = $("thread"), input = $("input");
+  var TOOL_LABELS = {
+    list_calendars: ["Looking up calendars…", "Looked up calendars"],
+    list_events: ["Checking calendar…", "Checked calendar"],
+    create_event: ["Adding event…", "Added an event"],
+    update_event: ["Changing event…", "Changed an event"],
+    delete_event: ["Deleting event…", "Deleted an event"],
+  };
+  function toolLabel(name, done) { var l = TOOL_LABELS[name]; return l ? l[done ? 1 : 0] : name; }
+
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  // A small, safe subset of Markdown: paragraphs, "- " lists, **bold**, `code`
+  function markdown(text) {
+    var inline = function (s) { return esc(s).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>"); };
+    return text.trim().split(/\n{2,}/).map(function (block) {
+      var lines = block.split("\n");
+      if (lines.every(function (l) { return /^\s*[-*•] /.test(l); })) {
+        return "<ul>" + lines.map(function (l) { return "<li>" + inline(l.replace(/^\s*[-*•] /, "")) + "</li>"; }).join("") + "</ul>";
+      }
+      return "<p>" + lines.map(inline).join("<br>") + "</p>";
+    }).join("");
+  }
+  function ago(iso) {
+    var d = new Date(iso), days = Math.floor((Date.now() - d) / 86400000);
+    return days < 1 ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : days < 7 ? d.toLocaleDateString([], { weekday: "short" }) : d.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method,
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    });
+  }
+  function apiJson(method, path, body) {
+    return api(method, path, body).then(function (res) {
+      if (!res.ok) throw new Error(res.status === 403 ? "forbidden" : "HTTP " + res.status);
+      return res.json();
+    });
+  }
+
+  function renderList() {
+    $("list").innerHTML = conversations.length ? conversations.map(function (c) {
+      return '<button data-conv="' + esc(c.id) + '"' + (current === c.id ? ' aria-current="true"' : "") + ">" + esc(c.title || "Untitled") + "<small>" + esc(ago(c.updatedAt)) + "</small></button>";
+    }).join("") : '<p class="empty">No conversations yet.</p>';
+    $("list").insertAdjacentHTML("beforeend", '<div class="list-foot"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" data-signout>Sign out</button></div>');
+  }
+  function intro() {
+    thread.innerHTML = '<div class="intro"><h2>What can I help with?</h2><p>Ask about your schedule, or have me add, move or remove calendar events.</p></div>';
+  }
+  function bubble(role) {
+    var el = document.createElement("div");
+    el.className = "msg " + role;
+    thread.appendChild(el);
+    return el;
+  }
+  function showAssistant(el, text, tools) {
+    el.innerHTML = (tools.length ? '<div class="tools-used">' + tools.map(function (t) { return '<span class="tool' + (t.error ? " error" : "") + '">' + esc(t.label) + "</span>"; }).join("") + "</div>" : "") + markdown(text || "");
+  }
+  function scrollDown() { thread.scrollTop = thread.scrollHeight; }
+
+  function openConversation(id) {
+    current = id;
+    try { history.replaceState(null, "", id ? "#c=" + id : location.pathname); } catch (e) {}
+    $("shell").classList.remove("show-list");
+    renderList();
+    if (!id) { intro(); input.focus(); return; }
+    thread.innerHTML = '<p class="thinking">Loading…</p>';
+    apiJson("GET", "/conversations/" + id).then(function (r) {
+      thread.innerHTML = "";
+      r.transcript.forEach(function (m) {
+        if (m.role === "user") bubble("user").textContent = m.text;
+        else showAssistant(bubble("assistant"), m.text, m.tools.map(function (n) { return { label: toolLabel(n, true) }; }));
+      });
+      scrollDown();
+    }).catch(function () { thread.innerHTML = '<p class="notice">Couldn’t open that conversation.</p>'; });
+  }
+
+  // Sends a message and renders the streamed reply (one JSON event per line)
+  function send(text) {
+    if (busy || !text.trim()) return;
+    busy = true; $("send").disabled = true;
+    if (!current) thread.innerHTML = "";
+    bubble("user").textContent = text;
+    var el = bubble("assistant"), reply = "", tools = [];
+    el.innerHTML = '<p class="thinking">Thinking…</p>';
+    scrollDown();
+    var handle = function (e) {
+      if (e.type === "conversation") {
+        if (current !== e.id) {
+          current = e.id;
+          try { history.replaceState(null, "", "#c=" + e.id); } catch (err) {}
+          if (!conversations.some(function (c) { return c.id === e.id; })) conversations.unshift({ id: e.id, title: e.title, updatedAt: new Date().toISOString() });
+          renderList();
+        }
+        return;
+      }
+      if (e.type === "text") reply += e.delta;
+      else if (e.type === "tool") {
+        var last = tools.filter(function (t) { return t.name === e.name && t.running; })[0];
+        if (e.status === "running") tools.push({ name: e.name, running: true, label: toolLabel(e.name, false) });
+        else if (last) { last.running = false; last.error = e.status === "error"; last.label = e.status === "error" ? toolLabel(e.name, true) + " (failed)" : toolLabel(e.name, true); }
+      } else if (e.type === "error") reply += (reply ? "\n\n" : "") + "⚠ " + e.message;
+      else if (e.type === "done") return;
+      showAssistant(el, reply, tools);
+      scrollDown();
+    };
+    api("POST", "/chat", { conversationId: current || undefined, text: text }).then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      var reader = res.body.getReader(), decoder = new TextDecoder(), buf = "";
+      var pump = function () {
+        return reader.read().then(function (r) {
+          buf += decoder.decode(r.value || new Uint8Array(), { stream: !r.done });
+          var lines = buf.split("\n"); buf = lines.pop();
+          lines.forEach(function (l) { if (l.trim()) { try { handle(JSON.parse(l)); } catch (err) {} } });
+          if (!r.done) return pump();
+        });
+      };
+      return pump();
+    }).catch(function () {
+      reply += (reply ? "\n\n" : "") + "⚠ Couldn’t reach the assistant. Try again.";
+      showAssistant(el, reply, tools);
+    }).then(function () {
+      busy = false; $("send").disabled = false;
+      var c = conversations.filter(function (x) { return x.id === current; })[0];
+      if (c) { c.updatedAt = new Date().toISOString(); conversations.sort(function (a, b) { return a.updatedAt < b.updatedAt ? 1 : -1; }); renderList(); }
+      input.focus();
+    });
+  }
+
+  $("composer").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var text = input.value; input.value = ""; input.style.height = "";
+    send(text);
+  });
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("composer").requestSubmit(); }
+  });
+  input.addEventListener("input", function () { input.style.height = ""; input.style.height = input.scrollHeight + "px"; });
+  $("list").addEventListener("click", function (e) {
+    if (e.target.closest("[data-signout]")) return FamilyAuth.logout();
+    var b = e.target.closest("[data-conv]"); if (b) openConversation(b.dataset.conv);
+  });
+  $("new-chat").addEventListener("click", function () { openConversation(null); });
+  $("chats-toggle").addEventListener("click", function () { $("shell").classList.toggle("show-list"); });
+
+  function gate(msg) {
+    $("shell").innerHTML = '<div class="gate"><p>' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button></div>';
+    $("signin").onclick = function () { FamilyAuth.login(); };
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in to use your assistant.");
+    ["signout", "new-chat", "chats-toggle"].forEach(function (id) { $(id).hidden = false; });
+    $("signout").onclick = function () { FamilyAuth.logout(); };
+    return apiJson("GET", "/conversations").then(function (list) {
+      conversations = list;
+      input.disabled = false; $("send").disabled = false;
+      var m = /#c=([A-Za-z0-9_-]+)/.exec(location.hash);
+      openConversation(m && list.some(function (c) { return c.id === m[1]; }) ? m[1] : null);
+    });
+  }).catch(function (e) { gate(e.message === "forbidden" ? "Your account doesn’t have access to the assistant." : "Couldn’t load the assistant. Reload to try again."); });
+})();
+</script>
+</body>
+</html>

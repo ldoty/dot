@@ -3,7 +3,7 @@
 // rules our code depends on, so tests fail where the real table would.
 import { mockClient } from 'aws-sdk-client-mock';
 import {
-  DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand,
+  DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 
 const err = (name, message) => Object.assign(new Error(message), { name });
@@ -34,6 +34,19 @@ export function fakeTable() {
     return {};
   });
   mock.on(DeleteCommand).callsFake(({ Key }) => { rows.delete(key(Key)); return {}; });
+  // Supports "SET a = :x, b = :y" (creates the item if missing, like DynamoDB)
+  mock.on(UpdateCommand).callsFake(({ Key, UpdateExpression: expr, ExpressionAttributeValues: v }) => {
+    const m = /^SET (.+)$/.exec(expr);
+    if (!m) throw new Error(`fake table: unsupported update ${expr}`);
+    const k = key(Key), item = clone(rows.get(k)) ?? { ...Key };
+    for (const part of m[1].split(',')) {
+      const [attr, val] = part.split('=').map((x) => x.trim());
+      if (!(val in v)) throw err('ValidationException', `missing value ${val}`);
+      item[attr] = clone(v[val]);
+    }
+    rows.set(k, item);
+    return {};
+  });
   mock.on(QueryCommand).callsFake(({ KeyConditionExpression: expr, ExpressionAttributeValues: v }) => {
     let prefix = null;
     if (expr === 'pk = :pk AND begins_with(sk, :p)') {
