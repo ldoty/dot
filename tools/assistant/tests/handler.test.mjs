@@ -1,6 +1,7 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { ISSUER, accessToken, forgedToken } from '../../../platform/tests/helpers/tokens.mjs';
+import Anthropic from '@anthropic-ai/sdk';
 import { createHandler } from '../api/handler.mjs';
 import { deps, table } from './helpers/deps.mjs';
 import { text, toolUse } from './helpers/fake-claude.mjs';
@@ -76,4 +77,11 @@ test('a failure mid-turn ends the stream with an error and done', async () => {
   const { handle } = handlerWith([() => { throw new Error('Bedrock is down'); }]);
   const events = (await call(handle, 'POST', '/chat', { body: { text: 'hi' } })).lines();
   assert.deepEqual(events.slice(-2), [{ type: 'error', message: 'Something went wrong. Try again.' }, { type: 'done' }]);
+});
+
+test('a Bedrock permission error says model access is the problem', async () => {
+  const denied = new Anthropic.PermissionDeniedError(403, { type: 'error', error: { type: 'permission_error', message: 'not available for this account' } }, 'not available', new Headers());
+  const { handle } = handlerWith([() => { throw denied; }]);
+  const events = (await call(handle, 'POST', '/chat', { body: { text: 'hi' } })).lines();
+  assert.match(events.find((e) => e.type === 'error').message, /isn’t enabled for this AWS account/);
 });

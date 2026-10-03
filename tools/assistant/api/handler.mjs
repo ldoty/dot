@@ -8,7 +8,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
-import { BetaFallbackState, betaRefusalFallbackMiddleware } from '@anthropic-ai/sdk';
+import Anthropic, { BetaFallbackState, betaRefusalFallbackMiddleware } from '@anthropic-ai/sdk';
 import { AnthropicBedrockMantle } from '@anthropic-ai/bedrock-sdk';
 import { verifyAccessToken } from './verify-token.mjs';
 import { makeStore } from './store.mjs';
@@ -16,6 +16,15 @@ import { makeGoogleAuth } from './google.mjs';
 import { makeCalendar } from './calendar.mjs';
 import { makeTools } from './tools.mjs';
 import { runTurn, toTranscript } from './agent.mjs';
+
+/** What to tell the page when a turn fails */
+export function errorMessage(e) {
+  if (e.status === 404 && !e.error) return 'That conversation no longer exists.';
+  // Bedrock answers 403 permission_error when the account can't use the model yet
+  if (e instanceof Anthropic.PermissionDeniedError) return 'Claude isn’t enabled for this AWS account yet (Bedrock model access).';
+  if (e instanceof Anthropic.RateLimitError) return 'Too many requests right now. Wait a moment and try again.';
+  return 'Something went wrong. Try again.';
+}
 
 /** Builds the real dependencies from the Lambda environment */
 export function liveDeps(env = process.env) {
@@ -87,7 +96,7 @@ export function createHandler(depsOrFactory) {
         await runTurn({ ...deps, fallbackState: new BetaFallbackState(), userId, conversationId: body.conversationId, text, onEvent: send });
       } catch (e) {
         console.error('turn failed', e);
-        send({ type: 'error', message: e.status === 404 ? 'That conversation no longer exists.' : 'Something went wrong. Try again.' });
+        send({ type: 'error', message: errorMessage(e) });
       }
       send({ type: 'done' });
       return out.end();
