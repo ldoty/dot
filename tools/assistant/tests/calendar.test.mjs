@@ -83,3 +83,25 @@ test('Google sign-in: signs a JWT with the key and caches the token', async () =
   assert.equal(claims.iss, key.client_email);
   assert.equal(claims.scope, 'https://www.googleapis.com/auth/calendar');
 });
+
+test('Google sign-in: a rotated key is reloaded from SSM once, then works', async () => {
+  const mk = (email) => ({ client_email: email, token_uri: 'https://oauth2.googleapis.com/token', private_key: generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }) });
+  const oldKey = mk('old@x.iam.gserviceaccount.com'), newKey = mk('new@x.iam.gserviceaccount.com');
+  const keys = [oldKey, newKey];
+  const auth = makeGoogleAuth({
+    loadKey: async () => keys.shift(),
+    fetch: async (url, o) => {
+      const iss = JSON.parse(Buffer.from(new URLSearchParams(o.body).get('assertion').split('.')[1], 'base64url').toString()).iss;
+      return iss === newKey.client_email
+        ? { ok: true, json: async () => ({ access_token: 'NEW', expires_in: 3600 }) }
+        : { ok: false, status: 400, json: async () => ({ error: 'invalid_grant' }) };
+    },
+  });
+  assert.equal(await auth(), 'NEW');
+
+  // A key that's still refused after the reload is an error, not a loop
+  let loads = 0;
+  const stuck = makeGoogleAuth({ loadKey: async () => { loads++; return oldKey; }, fetch: async () => ({ ok: false, status: 400, json: async () => ({ error: 'invalid_grant' }) }) });
+  await assert.rejects(stuck(), /invalid_grant/);
+  assert.equal(loads, 2);
+});
