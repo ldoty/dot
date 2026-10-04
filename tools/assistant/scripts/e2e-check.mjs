@@ -17,7 +17,7 @@ import { runTurn } from '../api/agent.mjs';
 
 const question = process.argv[2] || 'What’s on my calendars on Monday? Just a short summary.';
 const region = process.env.AWS_REGION || 'us-east-1';
-const calendars = { luke: 'luke.doty@gmail.com', shared: '19ktvn2rmaupk99h546rtjhh54@group.calendar.google.com', amber: '3ab76dc152f67dbcf8121a6f9cbf4000269ae2080de4ab6d85611d4973b44f4b@group.calendar.google.com' };
+const calendars = { luke: 'luke.doty@gmail.com', shared: '19ktvn2rmaupk99h546rtjhh54@group.calendar.google.com', amber: 'amber.n.brackett@gmail.com' };
 const ssm = new SSMClient({ region });
 const calendar = makeCalendar({
   calendars, timeZone: 'America/New_York',

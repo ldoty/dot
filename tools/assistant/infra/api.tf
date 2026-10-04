@@ -22,7 +22,7 @@ variable "calendars" {
   default = {
     luke   = "luke.doty@gmail.com"
     shared = "19ktvn2rmaupk99h546rtjhh54@group.calendar.google.com"
-    amber  = "3ab76dc152f67dbcf8121a6f9cbf4000269ae2080de4ab6d85611d4973b44f4b@group.calendar.google.com" # "Amber Sync"
+    amber  = "amber.n.brackett@gmail.com" # "Amber Master Calendar", shared read-only
   }
 }
 
