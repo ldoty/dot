@@ -1,6 +1,7 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { runTurn, stamp, toTranscript, SYSTEM_PROMPT } from '../api/agent.mjs';
+import { runTurn, stamp, toTranscript, systemPrompt } from '../api/agent.mjs';
+import { makeTools } from '../api/tools.mjs';
 import { deps, NOW, store, table } from './helpers/deps.mjs';
 import { text, toolUse } from './helpers/fake-claude.mjs';
 
@@ -24,7 +25,7 @@ test('a plain question: new conversation, streamed reply, history saved', async 
   const req = claude.calls[0].params;
   assert.equal(req.model, 'us.anthropic.claude-opus-4-6-v1');
   assert.deepEqual(req.output_config, { effort: 'low' });
-  assert.equal(req.system[0].text, SYSTEM_PROMPT);
+  assert.equal(req.system[0].text, systemPrompt({ calendars: true }));
   assert.deepEqual(req.system[0].cache_control, { type: 'ephemeral' });
 });
 
@@ -120,4 +121,16 @@ test('transcript shows your text (not the time stamp), replies, and tools used',
     { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] },
   ]);
   assert.deepEqual(t, [{ role: 'user', text: 'Add dentist' }, { role: 'assistant', text: 'Done.', tools: ['create_event'] }]);
+});
+
+test('the prompt names the person and only mentions the tools they have', async () => {
+  const { deps: d, claude } = deps([text('Hi Amber.')]);
+  const budget = { docs: ['shared', 'Luke', 'Amber'], read: async () => ({}) };
+  await run({ ...d, tools: makeTools({ budget }), person: { name: 'Amber' } }, 'hello');
+  const sys = claude.calls[0].params.system[0].text;
+  assert.match(sys, /talking with Amber/);
+  assert.match(sys, /read_budget/);
+  assert.doesNotMatch(sys, /list_calendars/);
+  assert.deepEqual(claude.calls[0].params.tools.map((t) => t.name), ['read_budget']);
+  assert.match(systemPrompt({}), /don't have any tools/);
 });

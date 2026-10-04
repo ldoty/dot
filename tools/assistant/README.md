@@ -1,8 +1,24 @@
 # Dot (assistant)
 
-`https://assistant.dot-y.co/` · permission group **`lukes_assistant`** (Luke only) · table `lukes-assistant`
+`https://assistant.dot-y.co/` · permission group **`family_assistant`** · table `lukes-assistant`
 
-Dot: a chat with Claude (Opus 4.6 on Amazon Bedrock) that can read and change Google calendars.
+Dot: a chat with Claude (Opus 4.6 on Amazon Bedrock) that can read and change Google calendars and
+read the household budget, for whoever is asking.
+
+## Who Dot acts as
+
+Dot acts as the person signed in, with **their** access and nothing more:
+
+- **Calendars and name** come from `var.people` in `infra/api.tf`, keyed by the person's Cognito
+  sub. No calendars means no calendar tools.
+- **Other tools** (today: Budget) are read with a short-lived, read-only token borrowed for that
+  person from the tool's delegated client (`platform/api/delegation.mjs`). Dot signs the request
+  with a KMS key only its role may use. Cognito still requires the tool's group, and the tool
+  refuses writes from these tokens, so Dot can never change anything there.
+- **Audit:** every borrowed read is logged (`GET /audit`): everyone's for `family_assistant:admin`,
+  each person's own otherwise.
+
+To let someone use Dot: add them to `family_assistant`, and add them to `var.people` for their name and calendars.
 
 | Folder | What |
 |---|---|
@@ -11,6 +27,7 @@ Dot: a chat with Claude (Opus 4.6 on Amazon Bedrock) that can read and change Go
 | `api/handler.mjs` | Web entry point (Lambda Function URL, response streaming) |
 | `api/store.mjs` | Conversations in DynamoDB, append-only |
 | `api/tools.mjs`, `api/calendar.mjs`, `api/google.mjs` | Calendar tools; the Google service-account key is in SSM at `/family/calendar/google-key` |
+| `api/budget.mjs`, `api/delegation.mjs` | Budget reads with the asker's own access (delegation module is shared from `platform/api`) |
 | `infra/` | OpenTofu root (state key `tools/assistant/terraform.tfstate`) |
 | `tests/` | Agent, calendar, handler and page tests (fake Claude, fake Google, in-memory table); live checks |
 
@@ -22,6 +39,7 @@ The Lambda needs npm packages, so it's bundled first:
 npm run build
 cd tools/assistant/infra && tofu apply
 npm run test:live
+AWS_PROFILE=ldoty node tools/assistant/scripts/e2e-check.mjs [--as amber] "question"   # real Claude, in-memory store
 ```
 
 ## How it's built

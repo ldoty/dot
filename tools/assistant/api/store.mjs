@@ -1,6 +1,8 @@
 // Conversation storage, one table (lukes-assistant):
 //   pk = USER#<sub>, sk = CONV#<id>            { title, channel, createdAt, updatedAt }
 //   pk = USER#<sub>, sk = MSG#<id>#<seq:000000> { role, content (JSON) }
+//   pk = AUDIT,      sk = <iso time>#<id>        { user, username, channel, tool, action, outcome, detail }
+//     what Dot did on someone's behalf with their access (admins see everyone's, others their own)
 // History is append-only (a message is never edited): prompt caching depends on an unchanged
 // prefix, and the API rejects edited history that carries thinking blocks.
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
@@ -67,6 +69,32 @@ export function makeStore({ db, table }) {
         UpdateExpression: 'SET updatedAt = :t',
         ExpressionAttributeValues: { ':t': now.toISOString() },
       }));
+    },
+
+    async addAudit(entry, now = new Date()) {
+      const at = now.toISOString();
+      await db.send(new PutCommand({
+        TableName: table,
+        Item: { pk: 'AUDIT', sk: `${at}#${Math.random().toString(36).slice(2, 8)}`, at, ...entry },
+      }));
+    },
+
+    /** Newest first; only `user`'s entries when given */
+    async listAudit({ user, limit = 200 } = {}) {
+      const items = [];
+      let ExclusiveStartKey;
+      do {
+        const r = await db.send(new QueryCommand({
+          TableName: table, KeyConditionExpression: 'pk = :pk', ExpressionAttributeValues: { ':pk': 'AUDIT' }, ExclusiveStartKey,
+        }));
+        items.push(...r.Items);
+        ExclusiveStartKey = r.LastEvaluatedKey;
+      } while (ExclusiveStartKey);
+      return items
+        .filter((i) => !user || i.user === user)
+        .sort((a, b) => (a.sk < b.sk ? 1 : -1))
+        .slice(0, limit)
+        .map(({ pk: _p, sk: _s, ...e }) => e);
     },
 
     async deleteConversation(userId, id) {

@@ -1,11 +1,12 @@
-// The tools Claude can call. Each tool's input is checked here before anything runs,
-// and a failure comes back to Claude as an error result rather than throwing.
+// The tools Claude can call for one person: calendar tools for their calendars (if they have any)
+// and read_budget (if Budget is set up for Dot; it reads with their own access). Each tool's input
+// is checked here before anything runs, and a failure comes back to Claude as an error result.
 
 const dateTime = 'Date "YYYY-MM-DD" or local time "YYYY-MM-DDTHH:MM" (the calendar’s time zone unless an offset is given)';
 
-export function makeTools({ calendar, calendarNames }) {
+export function makeTools({ calendar, calendarNames = [], budget }) {
   const cal = { type: 'string', enum: calendarNames, description: 'Which calendar' };
-  const definitions = [
+  const calendarTools = [
     {
       name: 'list_calendars',
       description: 'List the calendars you can use, with their display names and time zones.',
@@ -75,8 +76,25 @@ export function makeTools({ calendar, calendarNames }) {
       },
     },
   ];
+  const budgetTools = budget ? [{
+    name: 'read_budget',
+    description: 'Read the household budget (read-only), with this person’s own access. Without `version`: that budget’s working copy, '
+      + 'which is what the budget app shows now and may include unsaved edits, plus its saved versions and tags. With `version`: that saved version, '
+      + 'by name or by tag (e.g. "default"). Amounts are dollars; freq "mo" is monthly and "yr" yearly. You can’t change the budget; '
+      + 'for changes, point them to budget.dot-y.co.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        doc: { type: 'string', enum: budget.docs, description: 'Which budget: the shared household one, or a person’s own (default shared)' },
+        version: { type: 'string', description: 'Optional saved version name or tag' },
+      },
+      additionalProperties: false,
+    },
+  }] : [];
+  const definitions = [...(calendarNames.length ? calendarTools : []), ...budgetTools];
 
   const handlers = {
+    read_budget: (i) => budget.read(i),
     list_calendars: () => calendar.listCalendars(),
     list_events: (i) => calendar.listEvents(i),
     create_event: (i) => calendar.createEvent(i),

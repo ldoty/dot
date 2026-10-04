@@ -6,8 +6,8 @@ import { createHandler } from '../api/handler.mjs';
 import { deps, table } from './helpers/deps.mjs';
 import { text, toolUse } from './helpers/fake-claude.mjs';
 
-const AUTH = { issuer: ISSUER, clientId: 'assistant-client', group: 'lukes_assistant' };
-const member = () => accessToken({ clientId: 'assistant-client', group: 'lukes_assistant', sub: 'luke-sub' });
+const AUTH = { issuer: ISSUER, clientId: 'assistant-client', group: 'family_assistant' };
+const member = () => accessToken({ clientId: 'assistant-client', group: 'family_assistant', sub: 'luke-sub' });
 beforeEach(() => table.clear());
 
 function call(handle, method, path, { body, token = member() } = {}) {
@@ -24,9 +24,9 @@ const handlerWith = (script) => { const d = deps(script); return { ...d, handle:
 test('refuses missing, forged, wrong-group and other-app tokens', async () => {
   const { handle, claude } = handlerWith([]);
   assert.equal((await call(handle, 'GET', '/conversations', { token: null })).status, 401);
-  assert.equal((await call(handle, 'GET', '/conversations', { token: forgedToken({ clientId: 'assistant-client', group: 'lukes_assistant' }) })).status, 401);
+  assert.equal((await call(handle, 'GET', '/conversations', { token: forgedToken({ clientId: 'assistant-client', group: 'family_assistant' }) })).status, 401);
   assert.equal((await call(handle, 'POST', '/chat', { body: { text: 'hi' }, token: accessToken({ clientId: 'assistant-client', group: 'family_budget' }) })).status, 403);
-  assert.equal((await call(handle, 'POST', '/chat', { body: { text: 'hi' }, token: accessToken({ clientId: 'budget-client', group: 'lukes_assistant' }) })).status, 401);
+  assert.equal((await call(handle, 'POST', '/chat', { body: { text: 'hi' }, token: accessToken({ clientId: 'budget-client', group: 'family_assistant' }) })).status, 401);
   assert.equal(claude.calls.length, 0, 'Claude is never called without a valid token');
 });
 
@@ -58,7 +58,7 @@ test('conversations are listed, reopened as a transcript, and deleted', async ()
 test('another user can’t see or continue your conversations', async () => {
   const { handle } = handlerWith([text('Hello!')]);
   const id = (await call(handle, 'POST', '/chat', { body: { text: 'Hi' } })).lines()[0].id;
-  const other = accessToken({ clientId: 'assistant-client', group: 'lukes_assistant', sub: 'someone-else' });
+  const other = accessToken({ clientId: 'assistant-client', group: 'family_assistant', sub: 'someone-else' });
   assert.deepEqual((await call(handle, 'GET', '/conversations', { token: other })).json(), []);
   assert.equal((await call(handle, 'GET', `/conversations/${id}`, { token: other })).status, 404);
   const cont = (await call(handle, 'POST', '/chat', { body: { text: 'more', conversationId: id }, token: other })).lines();
@@ -84,4 +84,26 @@ test('a Bedrock permission error says model access is the problem', async () => 
   const { handle } = handlerWith([() => { throw denied; }]);
   const events = (await call(handle, 'POST', '/chat', { body: { text: 'hi' } })).lines();
   assert.match(events.find((e) => e.type === 'error').message, /isn’t enabled for this AWS account/);
+});
+
+test('Dot is set up for whoever asks: their name and their own tools', async () => {
+  const d = deps([text('Hi Amber.')]);
+  const seen = [];
+  const handle = createHandler({
+    ...d.deps, auth: AUTH,
+    forUser: (claims) => { seen.push(claims.sub); return { person: { name: 'Amber' }, tools: d.deps.tools }; },
+  });
+  await call(handle, 'POST', '/chat', { body: { text: 'hi' }, token: accessToken({ clientId: 'assistant-client', group: 'family_assistant', sub: 'amber-sub' }) });
+  assert.deepEqual(seen, ['amber-sub']);
+  assert.match(d.claude.calls[0].params.system[0].text, /talking with Amber/);
+});
+
+test('GET /audit: admins see everyone’s entries, others only their own', async () => {
+  const { handle, deps: d } = handlerWith([]);
+  await d.store.addAudit({ user: 'luke-sub', tool: 'family_budget', action: 'GET /all', outcome: 'ok' }, new Date('2026-10-04T10:00:00Z'));
+  await d.store.addAudit({ user: 'amber-sub', tool: 'family_budget', action: 'GET /all', outcome: 'ok' }, new Date('2026-10-04T11:00:00Z'));
+  const amber = await call(handle, 'GET', '/audit', { token: accessToken({ clientId: 'assistant-client', group: 'family_assistant', sub: 'amber-sub' }) });
+  assert.deepEqual(amber.json().map((e) => e.user), ['amber-sub']);
+  const admin = accessToken({ clientId: 'assistant-client', sub: 'luke-sub', 'cognito:groups': ['family_assistant', 'family_assistant:admin'] });
+  assert.deepEqual((await call(handle, 'GET', '/audit', { token: admin })).json().map((e) => e.user), ['amber-sub', 'luke-sub'], 'newest first');
 });

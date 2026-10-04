@@ -1,4 +1,4 @@
-# Luke’s assistant at assistant.dot-y.co (Claude on Bedrock), for members of lukes_assistant.
+# Dot, the family assistant at assistant.dot-y.co (Claude on Bedrock), for members of family_assistant.
 
 variable "domain_name" {
   type    = string
@@ -6,7 +6,7 @@ variable "domain_name" {
 }
 
 locals {
-  name    = "lukes_assistant"
+  name    = "family_assistant"
   host    = "assistant.${var.domain_name}"
   app_url = "https://${local.host}/"
   dev_url = "http://localhost:5173/"

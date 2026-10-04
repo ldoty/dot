@@ -30,7 +30,7 @@ beforeEach(() => {
 test('refuses missing, forged, wrong-group and other-tool tokens', async () => {
   assert.equal((await call('GET', '/deck', undefined, null)).status, 401);
   assert.equal((await call('GET', '/deck', undefined, forgedToken({ clientId: 'biomap-client', group: 'lukes_biomap' }))).status, 401);
-  assert.equal((await call('GET', '/deck', undefined, accessToken({ clientId: 'biomap-client', group: 'lukes_assistant' }))).status, 403);
+  assert.equal((await call('GET', '/deck', undefined, accessToken({ clientId: 'biomap-client', group: 'family_assistant' }))).status, 403);
   assert.equal((await call('GET', '/progress', undefined, accessToken({ clientId: 'assistant-client', group: 'lukes_biomap' }))).status, 401);
 });
 

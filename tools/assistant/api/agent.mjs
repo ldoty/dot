@@ -5,11 +5,23 @@
 //     -> { conversationId, text, stopReason }
 //   onEvent receives { type: 'conversation' | 'text' | 'tool' | 'error' , ... } as the turn runs.
 
-export const SYSTEM_PROMPT = `You are Dot, Luke's personal assistant. If asked, you're Dot (short for Dorothy), named after the family's dot-y.co. He reaches you from a private web page, and later by phone, so keep replies short and plain; he is often on his phone.
+/** Dot's instructions for one person. Stable per person, so prompt caching still works. */
+export function systemPrompt({ name, calendars = false, budget = false } = {}) {
+  const who = name || 'a member of the family';
+  const parts = [`You are Dot (short for Dorothy), the Doty family's assistant, named after the family's dot-y.co. You're talking with ${who}. They reach you from a private web page, and later by phone, so keep replies short and plain; they're often on their phone.
 
-You can read and change Google calendars with your tools. Call list_calendars if you need the calendars' names. Times are in the calendar's time zone unless Luke says otherwise, and each of Luke's messages begins with the current date and time in brackets, so resolve "tomorrow" or "next Friday" from that.
+You act with ${name ? `${name}'s` : 'their'} own access: your tools only reach what they can see themselves. Each of their messages begins with the current date and time in brackets, so resolve "tomorrow" or "next Friday" from that.`];
+  if (calendars) {
+    parts.push(`You can read and change Google calendars with your tools. Call list_calendars if you need the calendars' names. Times are in the calendar's time zone unless they say otherwise.
 
-Before creating an event, make sure you know which calendar, the title, the day and the time; ask if one of those is missing rather than guessing. Confirm with Luke before deleting an event, or before changing one you didn't create (created_by_assistant is false). After any change, say exactly what you did: calendar, title, day and time.`;
+Before creating an event, make sure you know which calendar, the title, the day and the time; ask if one of those is missing rather than guessing. Confirm before deleting an event, or before changing one you didn't create (created_by_assistant is false). After any change, say exactly what you did: calendar, title, day and time. Some calendars are shared read-only; if a change is refused, say so.`);
+  }
+  if (budget) {
+    parts.push(`You can read the household budget with read_budget, but not change it. Answer from the numbers it returns, and say whether you're reading the working copy or a saved version. If they want something changed, tell them to edit it at budget.dot-y.co.`);
+  }
+  if (!calendars && !budget) parts.push(`You don't have any tools for them yet. Say so if they ask for their calendar or budget.`);
+  return parts.join('\n\n');
+}
 
 const MAX_STEPS = 12;
 
@@ -33,7 +45,7 @@ function withCacheBreakpoint(messages) {
 }
 
 export async function runTurn({
-  client, store, tools, model, fallbackState, timeZone, now = () => new Date(), log = () => {},
+  client, store, tools, model, fallbackState, timeZone, now = () => new Date(), log = () => {}, person = {},
   userId, conversationId, text, channel = 'web', onEvent = () => {}, effort = 'low',
 }) {
   let conv = conversationId ? await store.getConversation(userId, conversationId) : null;
@@ -48,13 +60,15 @@ export async function runTurn({
   };
   await append({ role: 'user', content: [{ type: 'text', text: stamp(now(), timeZone) }, { type: 'text', text }] });
 
+  const has = (name) => tools.definitions.some((d) => d.name === name);
+  const system = systemPrompt({ name: person.name, calendars: has('list_events'), budget: has('read_budget') });
   let reply = '', stopReason = null;
   for (let step = 0; step < MAX_STEPS; step++) {
     const stream = client.beta.messages.stream({
       model,
       max_tokens: 16000,
       output_config: { effort },
-      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+      system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
       tools: tools.definitions,
       messages: withCacheBreakpoint(history),
     }, { fallbackState });

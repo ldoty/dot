@@ -1,6 +1,6 @@
 # The assistant runs behind a Lambda Function URL with response streaming (API Gateway
 # can't stream and caps requests at 30s; a turn with several tool calls can take longer).
-# Access: Cognito only issues this app's tokens to lukes_assistant members, the Lambda
+# Access: Cognito only issues this app's tokens to family_assistant members, the Lambda
 # verifies every token itself, and its role reaches only its table, its Google key and Bedrock.
 
 variable "model" {
@@ -16,14 +16,35 @@ variable "fallback_model" {
   description = "Retried when the main model declines (client-side; Bedrock has no server-side fallback). Empty = off; Opus 4.6 on Bedrock Runtime rejects the fallback's beta flag, so set this only with Opus 4.7+."
 }
 
-variable "calendars" {
-  type        = map(string)
-  description = "Calendars the assistant may use: alias => Google calendar id"
+variable "people" {
+  type = map(object({
+    name      = string
+    calendars = optional(map(string), {}) # alias => Google calendar id (shared with Dot's service account)
+  }))
+  description = "Who Dot is talking with, by Cognito sub (the user's id in the pool): their name and their calendars"
   default = {
-    luke   = "luke.doty@gmail.com"
-    shared = "19ktvn2rmaupk99h546rtjhh54@group.calendar.google.com"
-    amber  = "amber.n.brackett@gmail.com" # "Amber Master Calendar", shared read-only
+    "44f8c468-4011-70b8-76aa-ec2b68b0b004" = {
+      name = "Luke"
+      calendars = {
+        luke   = "luke.doty@gmail.com"
+        shared = "19ktvn2rmaupk99h546rtjhh54@group.calendar.google.com"
+        amber  = "amber.n.brackett@gmail.com" # "Amber Master Calendar", shared read-only
+      }
+    }
+    "74c8b418-e0b1-7075-7ae5-ca791980dd07" = {
+      name      = "Amber"
+      calendars = { amber = "amber.n.brackett@gmail.com" }
+    }
   }
+}
+
+# Dot reads these tools for whoever asks, with that person's own access (platform/api/delegation.mjs)
+data "aws_ssm_parameter" "delegation_key" {
+  name = "/family/core/delegation-key-arn"
+}
+
+data "aws_ssm_parameter" "budget" {
+  name = "/family/delegation/family_budget"
 }
 
 locals {
@@ -75,6 +96,12 @@ resource "aws_iam_role_policy" "api" {
         Resource = "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter${local.google_key_param}"
       },
       {
+        # Only Dot may vouch for someone; the trigger checks this key's signature
+        Effect   = "Allow"
+        Action   = "kms:Sign"
+        Resource = data.aws_ssm_parameter.delegation_key.value
+      },
+      {
         # us.* inference profiles route to any US region, so allow the models there too
         Effect = "Allow"
         Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
@@ -107,7 +134,9 @@ resource "aws_lambda_function" "api" {
       MODEL            = var.model
       FALLBACK_MODEL   = var.fallback_model
       GOOGLE_KEY_PARAM = local.google_key_param
-      CALENDARS        = jsonencode(var.calendars)
+      PEOPLE           = jsonencode(var.people)
+      DELEGATION_KEY   = data.aws_ssm_parameter.delegation_key.value
+      BUDGET           = data.aws_ssm_parameter.budget.value
       TIME_ZONE        = "America/New_York"
     }
   }
