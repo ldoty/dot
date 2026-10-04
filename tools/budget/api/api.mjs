@@ -15,13 +15,15 @@
 // Auth is checked twice. API Gateway's JWT authorizer runs first, but this handler
 // does not trust it: it re-verifies the token's signature against the pool's JWKS
 // and checks issuer, expiry, token_use, client_id and the family_budget group itself.
+// Dot reads the budget for whoever asks it, with a token from the delegated client
+// (platform/api/delegation.mjs). Those tokens are read-only: any write is refused here.
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { verifyAccessToken } from './verify-token.mjs';
 
-const { TABLE, HOUSEHOLD, GROUP, ISSUER, CLIENT_ID } = process.env;
+const { TABLE, HOUSEHOLD, GROUP, ISSUER, CLIENT_ID, DELEGATED_CLIENT_ID } = process.env;
 const PK = `HOUSEHOLD#${HOUSEHOLD}`;
 const DOCS = ['shared', 'Luke', 'Amber'];
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -124,11 +126,17 @@ async function putTag(doc, name, body, user) {
 export const handler = async (event) => {
   let claims;
   try {
-    claims = await verifyAccessToken(event.headers, { issuer: ISSUER, clientId: CLIENT_ID, group: GROUP });
+    claims = await verifyAccessToken(event.headers, { issuer: ISSUER, clientId: [CLIENT_ID, DELEGATED_CLIENT_ID].filter(Boolean), group: GROUP });
   } catch (e) {
     if (!e.status) throw e;
     console.warn('denied', e.message);
     return json(e.status, { error: e.status === 403 ? 'forbidden' : 'unauthorized' });
+  }
+
+  const viaDot = claims.via === 'dot' || (DELEGATED_CLIENT_ID && claims.client_id === DELEGATED_CLIENT_ID);
+  if (viaDot && !event.routeKey?.startsWith('GET ')) {
+    console.warn('denied: Dot is read-only', event.routeKey, claims.username);
+    return json(403, { error: 'read-only' });
   }
 
   let body = {};

@@ -1,7 +1,7 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { accessToken, forgedToken } from '../../../platform/tests/helpers/tokens.mjs';
-import { CLIENT_ID, PK, call, seed, sharedDoc, table } from './helpers/budget-api.mjs';
+import { CLIENT_ID, DOT_CLIENT_ID, PK, call, seed, sharedDoc, table } from './helpers/budget-api.mjs';
 
 beforeEach(() => seed());
 
@@ -95,4 +95,37 @@ test('a tagged personal version can’t be deleted, and personal default can’t
   await call('PUT', '/docs/Amber/tags/default', { versionId: 'av1' });
   assert.equal((await call('DELETE', '/docs/Amber/versions/av1')).status, 409);
   assert.equal((await call('DELETE', '/docs/Amber/tags/default')).status, 400);
+});
+
+// --- Dot reading for someone (delegated client) ---
+
+const dotToken = (over = {}) => accessToken({ clientId: DOT_CLIENT_ID, group: 'family_budget', via: 'dot', ...over });
+
+test('Dot can read the budget for a member', async () => {
+  const all = await call('GET', '/all', undefined, dotToken());
+  assert.equal(all.status, 200);
+  assert.deepEqual(Object.keys(all.body.docs).sort(), ['Amber', 'Luke', 'shared']);
+  assert.equal((await call('GET', '/defaults', undefined, dotToken())).status !== 401, true);
+});
+
+test('Dot is read-only: every write is refused and nothing changes', async () => {
+  const before = JSON.stringify(table.dump());
+  for (const [m, p, b] of [
+    ['PUT', '/docs/shared/state', { state: { income: [], categories: [] }, rev: 1 }],
+    ['PUT', '/docs/Luke/versions/v9', { name: 'x', savedAt: 1, state: {} }],
+    ['DELETE', '/docs/shared/versions/v1'],
+    ['PUT', '/docs/shared/tags/mine', { versionId: 'v1' }],
+    ['DELETE', '/docs/shared/tags/default'],
+  ]) {
+    const r = await call(m, p, b, dotToken());
+    assert.deepEqual([r.status, r.body.error], [403, 'read-only'], `${m} ${p}`);
+  }
+  // also refused when only one of the two markers is present
+  assert.equal((await call('PUT', '/docs/shared/state', { state: {}, rev: 1 }, dotToken({ via: undefined }))).status, 403);
+  assert.equal((await call('PUT', '/docs/shared/state', { state: {}, rev: 1 }, accessToken({ clientId: CLIENT_ID, group: 'family_budget', via: 'dot' }))).status, 403);
+  assert.equal(JSON.stringify(table.dump()), before);
+});
+
+test('Dot gets nothing for someone outside family_budget', async () => {
+  assert.equal((await call('GET', '/all', undefined, dotToken({ group: 'family_assistant' }))).status, 403);
 });

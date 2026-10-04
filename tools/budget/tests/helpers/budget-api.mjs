@@ -6,7 +6,8 @@ import { caller } from '../../../../platform/tests/helpers/http.mjs';
 
 export const PK = 'HOUSEHOLD#luke-amber';
 export const CLIENT_ID = 'budget-client';
-Object.assign(process.env, { TABLE: 'family-budget', HOUSEHOLD: 'luke-amber', GROUP: 'family_budget', ISSUER, CLIENT_ID });
+export const DOT_CLIENT_ID = 'budget-via-dot';
+Object.assign(process.env, { TABLE: 'family-budget', HOUSEHOLD: 'luke-amber', GROUP: 'family_budget', ISSUER, CLIENT_ID, DELEGATED_CLIENT_ID: DOT_CLIENT_ID });
 
 export const table = fakeTable();
 const { handler } = await import('../../api/api.mjs');

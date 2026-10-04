@@ -55,11 +55,12 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      TABLE     = aws_dynamodb_table.budget.name
-      HOUSEHOLD = var.household
-      GROUP     = module.app.member_group
-      ISSUER    = local.issuer
-      CLIENT_ID = module.app.client_id
+      TABLE               = aws_dynamodb_table.budget.name
+      HOUSEHOLD           = var.household
+      GROUP               = module.app.member_group
+      ISSUER              = local.issuer
+      CLIENT_ID           = module.app.client_id
+      DELEGATED_CLIENT_ID = module.app.delegated_client_id
     }
   }
 }
@@ -87,7 +88,7 @@ resource "aws_apigatewayv2_authorizer" "cognito" {
   identity_sources = ["$request.header.Authorization"]
   jwt_configuration {
     issuer   = local.issuer
-    audience = [module.app.client_id]
+    audience = [module.app.client_id, module.app.delegated_client_id]
   }
 }
 
@@ -127,4 +128,15 @@ resource "aws_lambda_permission" "api" {
   function_name = aws_lambda_function.api.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+# Where Dot finds this tool when it reads the budget for someone (tools/assistant)
+resource "aws_ssm_parameter" "delegation" {
+  name        = "/family/delegation/${local.name}"
+  description = "Budget API and delegated client, for Dot"
+  type        = "String"
+  value = jsonencode({
+    api_url   = aws_apigatewayv2_api.api.api_endpoint
+    client_id = module.app.delegated_client_id
+  })
 }

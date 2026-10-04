@@ -51,6 +51,7 @@ module "app" {
   name          = local.name
   user_pool_id  = local.pool_id
   callback_urls = [local.app_url, local.dev_url]
+  delegated     = true # Dot can read the budget for members who ask it
   tile = {
     title       = "Budget"
     description = "Luke & Amber’s household budget: shared costs, the mortgage and each person’s plan."
