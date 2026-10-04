@@ -9,7 +9,7 @@ function fakeGoogle(responses = {}) {
   const requests = [];
   const fetch = async (url, o = {}) => {
     const u = new URL(url);
-    requests.push({ method: o.method || 'GET', path: u.pathname, query: Object.fromEntries(u.searchParams), body: o.body ? JSON.parse(o.body) : undefined, auth: o.headers?.authorization });
+    requests.push({ method: o.method || 'GET', path: u.pathname, query: Object.fromEntries(u.searchParams), types: u.searchParams.getAll('eventTypes'), body: o.body ? JSON.parse(o.body) : undefined, auth: o.headers?.authorization });
     const r = responses[`${o.method || 'GET'} ${u.pathname}`] ?? {};
     return { ok: (r.status ?? 200) < 300, status: r.status ?? 200, json: async () => r.body ?? {} };
   };
@@ -22,6 +22,7 @@ test('list_events sends a bounded, time-zone-correct query and returns compact e
     { id: 'e1', summary: 'Dentist', start: { dateTime: '2026-10-05T14:00:00-04:00' }, end: { dateTime: '2026-10-05T15:00:00-04:00' }, extendedProperties: { private: { by: 'assistant' } } },
     { id: 'e2', status: 'cancelled' },
     { id: 'e3', summary: 'Trip', start: { date: '2026-10-09' }, end: { date: '2026-10-12' } },
+    { id: 'e4', summary: 'Flight to Denver', eventType: 'fromGmail', start: { dateTime: '2026-10-09T08:00:00-04:00' }, end: { dateTime: '2026-10-09T10:30:00-06:00' } },
   ] } } });
   const events = await cal(g).listEvents({ calendar: 'luke', start: '2026-10-05', end: '2026-10-12', max_results: 500 });
   const q = g.requests[0].query;
@@ -30,7 +31,11 @@ test('list_events sends a bounded, time-zone-correct query and returns compact e
   assert.equal(q.singleEvents, 'true');
   assert.equal(q.maxResults, '50', 'capped at 50');
   assert.equal(g.requests[0].auth, 'Bearer tok');
-  assert.deepEqual(events.map((e) => [e.id, e.all_day, e.created_by_assistant]), [['e1', false, true], ['e3', true, false]]);
+  assert.ok(g.requests[0].types.includes('fromGmail'), 'Gmail-created events (flights) are asked for');
+  assert.ok(g.requests[0].types.includes('default'));
+  assert.deepEqual(events.map((e) => [e.id, e.all_day, e.created_by_assistant]), [['e1', false, true], ['e3', true, false], ['e4', false, false]]);
+  assert.equal(events[2].type, 'fromGmail');
+  assert.equal(events[0].type, undefined);
 });
 
 test('only configured calendars can be used', async () => {

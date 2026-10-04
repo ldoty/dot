@@ -4,6 +4,9 @@
 
 const API = 'https://www.googleapis.com/calendar/v3';
 const TAG = { source: 'home_host', by: 'assistant' };
+// Ask for every event type by name, so none is left out by Google's default: flights and
+// reservations Gmail adds are "fromGmail", not "default".
+const EVENT_TYPES = ['default', 'fromGmail', 'outOfOffice', 'focusTime', 'workingLocation', 'birthday'];
 
 /** "2026-10-05T14:00" (wall time in tz) -> "2026-10-05T14:00:00-04:00"; values with an offset pass through */
 export function toRfc3339(value, timeZone) {
@@ -58,6 +61,7 @@ export function makeCalendar({ accessToken, calendars, timeZone, fetch = globalT
     all_day: Boolean(e.start?.date),
     ...(e.location ? { location: e.location } : {}),
     ...(e.description ? { description: e.description.slice(0, 500) } : {}),
+    ...(e.eventType && e.eventType !== 'default' ? { type: e.eventType } : {}),
     created_by_assistant: e.extendedProperties?.private?.by === 'assistant',
   });
 
@@ -72,11 +76,12 @@ export function makeCalendar({ accessToken, calendars, timeZone, fetch = globalT
     },
 
     async listEvents({ calendar, start, end, query, max_results: max = 25 }) {
-      const r = await call('GET', `/calendars/${idFor(calendar)}/events`, null, {
-        timeMin: toRfc3339(start, timeZone), timeMax: toRfc3339(end, timeZone),
-        singleEvents: 'true', orderBy: 'startTime', maxResults: String(Math.min(Math.max(1, max), 50)),
-        ...(query ? { q: query } : {}),
-      });
+      const r = await call('GET', `/calendars/${idFor(calendar)}/events`, null, [
+        ['timeMin', toRfc3339(start, timeZone)], ['timeMax', toRfc3339(end, timeZone)],
+        ['singleEvents', 'true'], ['orderBy', 'startTime'], ['maxResults', String(Math.min(Math.max(1, max), 50))],
+        ...EVENT_TYPES.map((t) => ['eventTypes', t]),
+        ...(query ? [['q', query]] : []),
+      ]);
       return (r.items || []).filter((e) => e.status !== 'cancelled').map(view);
     },
 
