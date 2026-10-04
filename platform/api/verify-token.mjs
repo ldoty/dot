@@ -2,7 +2,8 @@
 // Bundled into each tool's Lambda zip at deploy time (see the tool's infra/api.tf).
 //
 //   const claims = await verifyAccessToken(event.headers, { issuer, clientId, group });
-//   (group: null skips the group check; tool APIs always pass their group)
+//   (clientId may be a list, e.g. a tool's own client and its delegated client for Dot;
+//    group: null skips the group check; tool APIs always pass their group)
 //   -> the token's claims, or throws an Error with .status 401 (bad token) or 403 (not in group)
 //
 // Checks: RS256 signature against the pool's JWKS, issuer, token_use=access, client_id
@@ -44,7 +45,7 @@ export async function verifyAccessToken(headers, { issuer, clientId, group }) {
   const now = Math.floor(Date.now() / 1000);
   if (c.iss !== issuer) throw fail(401, 'wrong issuer');
   if (c.token_use !== 'access') throw fail(401, 'not an access token');
-  if (c.client_id !== clientId) throw fail(401, 'token is for another app');
+  if (![].concat(clientId).includes(c.client_id)) throw fail(401, 'token is for another app');
   if (!(c.exp > now)) throw fail(401, 'expired');
   // group: null skips the membership check (only for callers that check access another way)
   if (group !== null && !(c['cognito:groups'] ?? []).includes(group)) throw fail(403, `not in ${group}`);

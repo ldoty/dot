@@ -7,6 +7,7 @@ const ssm = mockClient(SSMClient);
 const rules = {
   '/family/apps/home-client': { app: 'home', group: '*', portal: true },
   '/family/apps/budget-client': { app: 'family_budget', group: 'family_budget' },
+  '/family/apps/budget-dot': { app: 'family_budget', group: 'family_budget', delegated: true },
 };
 beforeEach(() => {
   ssm.reset();
@@ -36,4 +37,12 @@ test('non-members are refused', async () => {
 test('the portal (home page) sees every group, to pick which tiles to show', async () => {
   const e = await handler(event('home-client', ['family_budget', 'recipes']));
   assert.deepEqual(groupsOut(e), ['family_budget', 'recipes']);
+});
+
+test('Dot’s delegated tokens need the same group, and are marked via=dot', async () => {
+  await assert.rejects(handler(event('budget-dot', ['recipes'])), /don't have access/);
+  const e = await handler(event('budget-dot', ['family_budget']));
+  assert.equal(e.response.claimsAndScopeOverrideDetails.accessTokenGeneration.claimsToAddOrOverride.via, 'dot');
+  const normal = await handler(event('budget-client', ['family_budget']));
+  assert.equal(normal.response.claimsAndScopeOverrideDetails.accessTokenGeneration.claimsToAddOrOverride.via, undefined);
 });

@@ -5,7 +5,8 @@
 // Unregistered clients get no tokens (fail closed). Tokens only carry the
 // caller app's own groups, so one app never learns memberships in another.
 // The exception is the portal (the dot-y.co home page), which sees every group
-// so it can show each person the tools they have access to.
+// so it can show each person the tools they have access to. A tool's delegated client
+// ({"delegated": true}) is how Dot acts for someone: same group rule, tokens marked via=dot.
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 
 const ssm = new SSMClient({});
@@ -36,10 +37,12 @@ export const handler = async (event) => {
   }
 
   const own = rule.portal ? groups : groups.filter((g) => g === rule.app || g.startsWith(`${rule.app}:`));
+  // Tokens Dot gets on someone's behalf (a tool's delegated client) say so; tools make them read-only
+  const via = rule.delegated ? { via: 'dot' } : {};
   event.response = {
     claimsAndScopeOverrideDetails: {
       groupOverrideDetails: { groupsToOverride: own },
-      accessTokenGeneration: { claimsToAddOrOverride: { app: rule.app } },
+      accessTokenGeneration: { claimsToAddOrOverride: { app: rule.app, ...via } },
       idTokenGeneration: { claimsToAddOrOverride: { app: rule.app } },
     },
   };

@@ -191,6 +191,10 @@ data "archive_file" "sso" {
     filename = "verify-token.mjs"
     content  = file("${path.module}/lambda/verify-token.mjs") # symlink to platform/api
   }
+  source {
+    filename = "delegation.mjs"
+    content  = file("${path.module}/lambda/delegation.mjs") # symlink to platform/api
+  }
 }
 
 resource "aws_iam_role" "sso" {
@@ -226,7 +230,10 @@ resource "aws_lambda_function" "sso" {
   source_code_hash = data.archive_file.sso.output_base64sha256
   timeout          = 5
   environment {
-    variables = { HOME_CLIENT_PARAM = "/family/core/home-client-id" }
+    variables = {
+      HOME_CLIENT_PARAM = "/family/core/home-client-id"
+      DELEGATION_KEY    = aws_kms_key.delegation.arn
+    }
   }
 }
 
@@ -243,4 +250,41 @@ resource "aws_lambda_permission" "sso" {
   function_name = each.value.function_name
   principal     = "cognito-idp.amazonaws.com"
   source_arn    = aws_cognito_user_pool.family.arn
+}
+
+# --- Dot acting on behalf of the person asking it (platform/api/delegation.mjs) ---
+# Dot signs a short assertion with this key; the custom-auth trigger checks it with the public
+# half. Only Dot's role is granted kms:Sign (tools/assistant/infra), so nothing else can vouch.
+resource "aws_kms_key" "delegation" {
+  description              = "Dot's signing key for acting on behalf of family members"
+  key_usage                = "SIGN_VERIFY"
+  customer_master_key_spec = "RSA_2048"
+  deletion_window_in_days  = 7
+}
+
+resource "aws_kms_alias" "delegation" {
+  name          = "alias/family-dot-delegation"
+  target_key_id = aws_kms_key.delegation.key_id
+}
+
+resource "aws_ssm_parameter" "delegation_key" {
+  name  = "/family/core/delegation-key-arn"
+  type  = "String"
+  value = aws_kms_key.delegation.arn
+}
+
+resource "aws_iam_role_policy" "sso_delegation" {
+  role = aws_iam_role.sso.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      { Effect = "Allow", Action = "kms:GetPublicKey", Resource = aws_kms_key.delegation.arn },
+      {
+        # Each app's rule says whether its client takes dot-y.co sign-ins or Dot's assertions
+        Effect   = "Allow"
+        Action   = "ssm:GetParameter"
+        Resource = "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter/family/apps/*"
+      },
+    ]
+  })
 }

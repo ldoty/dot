@@ -4,6 +4,8 @@
 #  - an access rule at /family/apps/<clientId> that the pre-token Lambda enforces at sign-in,
 #    plus the URLs dot-y.co/handoff may return single sign-on tokens to
 #  - optionally a tile on the dot-y.co home page, shown only to members (/family/catalog/<name>)
+#  - optionally a delegated client: how Dot gets this app's tokens for the person asking it
+#    (read-only, same group rule; see platform/api/delegation.mjs)
 
 terraform {
   required_providers {
@@ -39,6 +41,12 @@ variable "portal" {
   type        = bool
   default     = false
   description = "true = tokens carry all of the user's groups (only the home page needs this)."
+}
+
+variable "delegated" {
+  type        = bool
+  default     = false
+  description = "true = Dot may use this app on behalf of whoever asks it (read-only, members only)."
 }
 
 variable "tile" {
@@ -116,6 +124,39 @@ resource "aws_ssm_parameter" "tile" {
   value       = jsonencode(merge(var.tile, { group = var.open_to_all_family ? "*" : var.name }))
 }
 
+# Dot's client: custom auth only (Dot's signed assertion), no sign-in page, short-lived tokens.
+# Refresh tokens can't be turned off; Dot never keeps them.
+resource "aws_cognito_user_pool_client" "delegated" {
+  count                         = var.delegated ? 1 : 0
+  name                          = "${var.name}-via-dot"
+  user_pool_id                  = var.user_pool_id
+  generate_secret               = false
+  explicit_auth_flows           = ["ALLOW_CUSTOM_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+  prevent_user_existence_errors = "ENABLED"
+
+  access_token_validity  = 5
+  id_token_validity      = 5
+  refresh_token_validity = 60
+  token_validity_units {
+    access_token  = "minutes"
+    id_token      = "minutes"
+    refresh_token = "minutes"
+  }
+}
+
+resource "aws_ssm_parameter" "delegated_rule" {
+  count       = var.delegated ? 1 : 0
+  name        = "/family/apps/${aws_cognito_user_pool_client.delegated[0].id}"
+  description = "Sign-in rule for Dot acting in family app ${var.name}"
+  type        = "String"
+  value = jsonencode({
+    app       = var.name
+    group     = var.open_to_all_family ? "*" : var.name
+    delegated = true
+  })
+}
+
 output "client_id" { value = aws_cognito_user_pool_client.this.id }
+output "delegated_client_id" { value = var.delegated ? aws_cognito_user_pool_client.delegated[0].id : null }
 output "member_group" { value = aws_cognito_user_group.member.name }
 output "admin_group" { value = aws_cognito_user_group.admin.name }

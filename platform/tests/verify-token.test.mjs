@@ -36,3 +36,10 @@ test('rejects wrong issuer, ID tokens, another tool’s client and expired token
 test('rejects users outside the tool’s group with 403', async () => {
   assert.equal(await status(check(accessToken({ clientId: 'tool-client', group: 'other_group' }))), 403);
 });
+
+test('a list of clients accepts any of them (a tool and its delegated client)', async () => {
+  const both = { ...opts, clientId: ['tool-client', 'tool-dot'] };
+  const c = await verifyAccessToken({ authorization: `Bearer ${accessToken({ clientId: 'tool-dot', group: 'tool_group' })}` }, both);
+  assert.equal(c.client_id, 'tool-dot');
+  assert.equal(await status(verifyAccessToken({ authorization: `Bearer ${accessToken({ clientId: 'other', group: 'tool_group' })}` }, both)), 401);
+});
