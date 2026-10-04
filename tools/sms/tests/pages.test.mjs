@@ -46,7 +46,9 @@ test('/sms: consent box is not pre-checked, shows the exact consent text, and li
   assert.ok(d.getElementById('name') && d.getElementById('phone'));
   const t = text(pages.sms);
   assert.ok(t.includes(PROGRAM.number));
-  assert.match(t, /limited to Luke Doty’s family members/);
+  assert.match(t, /family assistant app/);
+  assert.match(t, /invitation only/);
+  assert.doesNotMatch(t, /his family|for himself/);
   for (const ex of ['Taking out the trash is on your todo list', 'Don’t forget you have a meeting with Jon today']) assert.ok(t.includes(ex));
 });
 

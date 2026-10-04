@@ -1,6 +1,6 @@
 # SMS program (Dot-y)
 
-Personal reminder and assistant texts from Luke Doty to himself and invited family members, sent from
+Dot-y family assistant texts (reminders, to-dos, answers) to people invited by their household, operated by Luke Doty and sent from
 (864) 568-4810 through Twilio (US A2P 10DLC, Sole Proprietor brand).
 
 | Where | What |
