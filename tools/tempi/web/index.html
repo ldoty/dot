@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OT Field Course</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Patrick+Hand&display=swap">
+<style>
+/* Layout: a therapist's clipboard — sticky module rail on the left (a strip on phones), one module "sheet" at a time on the right.
+   Motif: primary-grade handwriting paper (solid top line, dashed midline, red baseline) and therapy-putty colors,
+   which run soft → firm the same way the modules run easy → challenging. */
+:root {
+  --paper: #F4F7FB;
+  --sheet: #FFFFFF;
+  --ink: #1B2333;
+  --muted: #586378;
+  --hair: #DCE3EE;
+  --rule: #7FA3D9;      /* handwriting-paper blue line */
+  --margin: #DB4B53;    /* handwriting-paper red baseline */
+  --accent: #2F63C0;
+  --accent-ink: #FFFFFF;
+  --tint: #EAF0FA;
+  --good: #2F8A55;
+  --good-tint: #E3F3E9;
+  --bad: #B8433F;
+  --bad-tint: #FBE7E6;
+  /* putty, softest to firmest */
+  --p1: #CDA978; --p2: #E9C43F; --p3: #D9534F; --p4: #3F9A62; --p5: #3C74D6; --p6: #26272C;
+  --p6-edge: #26272C;
+
+  --f-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Atkinson Hyperlegible", "Verdana", system-ui, sans-serif;
+  --f-hand: "Patrick Hand", "Comic Neue", "Chalkboard SE", cursive;
+
+  --t-xs: 0.8125rem; --t-sm: 0.9375rem; --t-md: 1.0625rem; --t-lg: 1.375rem; --t-xl: 1.875rem; --t-2xl: clamp(2.1rem, 5vw, 3.4rem);
+}
+
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: var(--t-md); line-height: 1.6; }
+a { color: var(--accent); text-underline-offset: 3px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+h1, h2, h3, h4 { font-family: var(--f-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h2 { font-size: var(--t-xl); font-weight: 800; letter-spacing: -0.01em; }
+h3 { font-size: var(--t-lg); font-weight: 700; }
+h4 { font-size: var(--t-md); font-weight: 700; }
+p { margin: 0; }
+ul, ol { margin: 0; padding-left: 1.25rem; }
+li + li { margin-top: 0.35rem; }
+button { font: inherit; color: inherit; }
+
+.shell { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 20px 64px; }
+
+/* ---------- top bar ---------- */
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding-bottom: 18px; border-bottom: 1px solid var(--hair); }
+.brand { display: flex; flex-direction: column; gap: 2px; }
+.brand .kicker { font-size: var(--t-xs); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.brand .name { font-family: var(--f-display); font-weight: 800; font-size: 1.35rem; }
+.putty-row { display: flex; align-items: center; gap: 10px; }
+.putty-row .lbl { font-size: var(--t-xs); color: var(--muted); text-align: right; line-height: 1.3; }
+.putties { display: flex; gap: 6px; }
+.blob { width: 26px; height: 20px; border-radius: 48% 52% 45% 55% / 58% 50% 50% 42%; border: 2px dashed var(--hair); background: transparent; transition: background .3s, border-color .3s; }
+.blob.on { border-style: solid; }
+
+/* ---------- layout ---------- */
+.layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 32px; margin-top: 24px; align-items: start; }
+.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); display: flex; flex-direction: column; gap: 18px; }
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav .group { font-size: var(--t-xs); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 12px 0 4px 10px; }
+.nav .group:first-child { margin-top: 0; }
+.nav button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: none; border: 0; border-radius: 8px; padding: 7px 10px; cursor: pointer; font-size: var(--t-sm); color: var(--ink); }
+.nav button:hover { background: var(--tint); }
+.nav button[aria-current="page"] { background: var(--tint); font-weight: 700; }
+.nav .dot { flex: none; width: 14px; height: 11px; border-radius: 48% 52% 45% 55% / 58% 50% 50% 42%; border: 2px solid var(--c, var(--hair)); background: transparent; }
+.nav button.done .dot { background: var(--c); }
+.nav .check { margin-left: auto; color: var(--good); font-weight: 700; font-size: var(--t-xs); }
+.nav .plain { width: 14px; flex: none; text-align: center; color: var(--muted); font-size: var(--t-xs); }
+
+.skills { background: var(--sheet); border: 1px solid var(--hair); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.skills h4 { font-size: var(--t-sm); }
+.skill-row { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 8px; font-size: var(--t-xs); }
+.bar { height: 8px; background: var(--tint); border-radius: 99px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .4s; }
+
+/* ---------- pages ---------- */
+main { min-width: 0; }
+.page { background: var(--sheet); border: 1px solid var(--hair); border-radius: 16px; padding: clamp(20px, 4vw, 44px); display: flex; flex-direction: column; gap: 28px; }
+.page > * { max-width: 72ch; }
+.page > .wide { max-width: none; }
+
+.eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: var(--t-xs); letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 6px; border-radius: 99px; border: 1px solid var(--hair); letter-spacing: 0.04em; text-transform: none; font-weight: 700; color: var(--ink); }
+.chip .dot { width: 14px; height: 11px; border-radius: 48% 52% 45% 55% / 58% 50% 50% 42%; background: var(--c); border: 2px solid var(--c); }
+
+/* handwriting-paper title */
+.lined { font-size: var(--t-2xl); font-weight: 800; letter-spacing: -0.015em; line-height: 1.5; }
+.lined span {
+  padding-inline: 2px;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  background:
+    linear-gradient(var(--rule), var(--rule)) 0 16% / 100% 2px no-repeat,
+    repeating-linear-gradient(90deg, var(--rule) 0 9px, transparent 9px 16px) 0 38% / 100% 2px no-repeat,
+    linear-gradient(var(--margin), var(--margin)) 0 79% / 100% 2px no-repeat;
+}
+.lede { font-size: 1.1875rem; line-height: 1.55; color: var(--ink); }
+.big-idea { border-left: 4px solid var(--c, var(--accent)); padding: 4px 0 4px 16px; font-size: var(--t-lg); font-family: var(--f-display); font-weight: 600; line-height: 1.35; }
+
+.block { display: flex; flex-direction: column; gap: 14px; }
+.block-label { font-size: var(--t-xs); letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.block-label::after { content: ""; flex: 1; height: 1px; background: var(--hair); }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.card { border: 1px solid var(--hair); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.card h4 { font-size: var(--t-md); }
+.card p { font-size: var(--t-sm); color: var(--muted); }
+
+.note { background: var(--tint); border-radius: 12px; padding: 14px 16px; font-size: var(--t-sm); }
+.note strong { font-family: var(--f-display); }
+
+/* index-card style hands-on activity */
+.tryit { border: 1px solid var(--hair); border-radius: 4px; background:
+  linear-gradient(var(--margin), var(--margin)) 0 52px / 100% 2px no-repeat,
+  repeating-linear-gradient(transparent 0 27px, var(--hair) 27px 28px) 0 54px / 100% calc(100% - 54px) no-repeat, var(--sheet);
+  padding: 14px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
+.tryit-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; min-height: 30px; }
+.tryit-head h3 { font-size: var(--t-lg); }
+.meta { font-size: var(--t-xs); color: var(--muted); font-weight: 700; letter-spacing: 0.04em; }
+.tryit ol { line-height: 1.75; }
+.tag-grown { display: inline-block; font-size: var(--t-xs); font-weight: 700; padding: 1px 8px; border-radius: 99px; background: var(--tint); color: var(--accent); margin-left: 4px; }
+
+.skillbox { border: 2px solid var(--ink); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.skillbox .block-label { color: var(--ink); }
+.skillbox .block-label::after { background: var(--ink); opacity: .15; }
+
+/* journal */
+.reflect { display: flex; flex-direction: column; gap: 8px; }
+.reflect label { font-weight: 700; }
+.reflect .hint { font-size: var(--t-sm); color: var(--muted); }
+textarea.jr {
+  width: 100%; min-height: 140px; resize: vertical; border: 1px solid var(--hair); border-radius: 8px; padding: 6px 14px 6px 46px;
+  font-family: var(--f-hand); font-size: 1.25rem; line-height: 32px; color: var(--ink);
+  background:
+    linear-gradient(90deg, transparent 34px, var(--margin) 34px, var(--margin) 36px, transparent 36px),
+    repeating-linear-gradient(transparent 0 31px, var(--rule) 31px 32px) 0 6px,
+    var(--sheet);
+  background-attachment: local;
+}
+textarea.jr.short { min-height: 76px; }
+.saved { font-size: var(--t-xs); color: var(--muted); min-height: 1em; }
+
+/* buttons */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 18px; border-radius: 99px; border: 2px solid var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 700; cursor: pointer; font-size: var(--t-sm); }
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn:hover { filter: brightness(1.05); }
+.btn.is-done { background: var(--good); border-color: var(--good); color: var(--sheet); }
+.foot { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; padding-top: 20px; border-top: 1px solid var(--hair); }
+
+/* quizzes */
+.quiz { display: flex; flex-direction: column; gap: 10px; }
+.q { border: 1px solid var(--hair); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.q .prompt { font-weight: 700; }
+.opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt { border: 1.5px solid var(--hair); background: var(--sheet); border-radius: 99px; padding: 6px 14px; cursor: pointer; font-size: var(--t-sm); font-weight: 700; }
+.opt:hover { border-color: var(--accent); }
+.opt.right { background: var(--good-tint); border-color: var(--good); color: var(--good); }
+.opt.wrong { background: var(--bad-tint); border-color: var(--bad); color: var(--bad); }
+.fb { font-size: var(--t-sm); color: var(--muted); }
+.fb b { color: var(--ink); }
+.score { font-size: var(--t-sm); font-weight: 700; color: var(--muted); }
+
+/* order quiz */
+.order { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.order li { margin: 0; display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; border: 1px solid var(--hair); border-radius: 10px; padding: 8px 10px; }
+.order li.right { border-color: var(--good); background: var(--good-tint); }
+.order li.wrong { border-color: var(--bad); background: var(--bad-tint); }
+.order .pos { font-family: var(--f-display); font-weight: 800; width: 1.6em; text-align: center; color: var(--muted); font-variant-numeric: tabular-nums; }
+.order .age { display: block; font-size: var(--t-xs); color: var(--muted); }
+.order .mv { display: flex; gap: 4px; }
+.order .mv button { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--hair); background: var(--sheet); cursor: pointer; }
+.order .mv button:disabled { opacity: .35; cursor: default; }
+
+/* tabs */
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.tab { border: 1.5px solid var(--hair); background: var(--sheet); border-radius: 99px; padding: 7px 14px; cursor: pointer; font-weight: 700; font-size: var(--t-sm); }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+.setting { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; border: 1px solid var(--hair); border-radius: 12px; padding: 18px; }
+.sched { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0; font-size: var(--t-sm); }
+.sched li { margin: 0; display: grid; grid-template-columns: 4.6em 1fr; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--hair); }
+.sched time { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--muted); }
+.setting dl { margin: 0; display: flex; flex-direction: column; gap: 10px; font-size: var(--t-sm); }
+.setting dt { font-weight: 700; font-family: var(--f-display); }
+.setting dd { margin: 0; color: var(--muted); }
+
+/* grading machine */
+.machine { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.machine label { display: flex; flex-direction: column; gap: 4px; font-size: var(--t-sm); font-weight: 700; }
+select { font: inherit; font-size: var(--t-sm); padding: 8px 10px; border-radius: 8px; border: 1px solid var(--hair); background: var(--sheet); color: var(--ink); width: 100%; }
+.meter { position: relative; height: 18px; border-radius: 99px; display: grid; grid-template-columns: 2fr 3fr 6fr; overflow: hidden; border: 1px solid var(--hair); }
+.meter span { display: block; }
+.meter .z1 { background: var(--tint); }
+.meter .z2 { background: var(--good-tint); border-inline: 2px solid var(--good); }
+.meter .z3 { background: var(--bad-tint); }
+.meter-wrap { position: relative; padding-top: 6px; }
+.needle { position: absolute; top: 0; width: 4px; height: 30px; background: var(--ink); border-radius: 2px; transform: translateX(-2px); transition: left .35s; }
+.meter-labels { display: grid; grid-template-columns: 2fr 3fr 6fr; font-size: var(--t-xs); color: var(--muted); margin-top: 6px; font-weight: 700; }
+.meter-labels span:nth-child(2) { text-align: center; color: var(--good); }
+.meter-labels span:nth-child(3) { text-align: right; }
+.verdict { font-weight: 700; }
+
+/* sensory sliders */
+.senses { display: flex; flex-direction: column; gap: 10px; }
+.sense { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 4px 14px; align-items: center; }
+.sense .nm { font-weight: 700; font-size: var(--t-sm); }
+.sense .nm small { display: block; font-weight: 400; color: var(--muted); font-size: var(--t-xs); }
+.sense input[type=range] { width: 100%; accent-color: var(--accent); }
+.ends { display: flex; justify-content: space-between; font-size: var(--t-xs); color: var(--muted); grid-column: 2; margin-top: -4px; }
+
+/* table */
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--hair); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: var(--t-sm); min-width: 520px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--hair); vertical-align: top; }
+th { font-family: var(--f-display); background: var(--tint); }
+tr:last-child td { border-bottom: 0; }
+
+/* timeline */
+.timeline { list-style: none; padding: 0; position: relative; display: flex; flex-direction: column; gap: 0; }
+.timeline::before { content: ""; position: absolute; left: 47px; top: 8px; bottom: 8px; width: 2px; background: var(--rule); }
+.timeline li { margin: 0; display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 18px; padding-bottom: 22px; position: relative; }
+.timeline .when { text-align: center; position: relative; z-index: 1; }
+.timeline .age { display: inline-block; background: var(--sheet); border: 2px solid var(--rule); border-radius: 99px; padding: 2px 10px; font-family: var(--f-display); font-weight: 800; font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+.timeline .stage { font-size: var(--t-xs); color: var(--muted); margin-top: 4px; font-weight: 700; }
+.timeline .what { display: flex; flex-direction: column; gap: 6px; }
+.timeline .what p, .timeline .what li { font-size: var(--t-sm); }
+.timeline li.now .age { background: var(--margin); border-color: var(--margin); color: #fff; }
+
+/* glossary */
+dl.gloss { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); margin: 0; border-top: 1px solid var(--hair); }
+dl.gloss dt, dl.gloss dd { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--hair); font-size: var(--t-sm); }
+dl.gloss dt { font-weight: 700; padding-right: 14px; }
+dl.gloss dd { color: var(--muted); }
+
+.copybox { width: 100%; min-height: 220px; font-family: var(--f-body); font-size: var(--t-sm); border: 1px solid var(--hair); border-radius: 8px; padding: 12px; background: var(--paper); color: var(--ink); }
+.journal-list { display: flex; flex-direction: column; gap: 14px; }
+.journal-entry { border-bottom: 1px dashed var(--hair); padding-bottom: 12px; }
+.journal-entry .q-lbl { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+.journal-entry .ans { font-family: var(--f-hand); font-size: 1.3rem; line-height: 1.4; white-space: pre-wrap; }
+.journal-entry .ans.empty { color: var(--muted); font-family: var(--f-body); font-size: var(--t-sm); font-style: italic; }
+
+.case { border: 1px solid var(--hair); border-radius: 12px; overflow: hidden; }
+.case-head { background: var(--ink); color: var(--sheet); padding: 12px 18px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; font-family: var(--f-display); font-weight: 700; }
+.case-body { padding: 16px 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; font-size: var(--t-sm); }
+.case-body h4 { font-size: var(--t-sm); margin-bottom: 4px; }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .rail { position: static; }
+  .nav { flex-direction: row; overflow-x: auto; gap: 4px; padding-bottom: 6px; scrollbar-width: thin; }
+  .nav .group { display: none; }
+  .nav button { width: auto; white-space: nowrap; border: 1px solid var(--hair); }
+  .nav .check { display: none; }
+  .skills { display: none; }
+  .setting { grid-template-columns: minmax(0, 1fr); }
+  .putty-row .lbl { text-align: left; }
+}
+@media (max-width: 520px) {
+  .shell { padding-inline: 16px; }
+  .sense { grid-template-columns: minmax(0, 1fr); }
+  .ends { grid-column: 1; }
+  dl.gloss { grid-template-columns: minmax(0, 1fr); }
+  dl.gloss dt { border-bottom: 0; padding-bottom: 0; }
+  .timeline::before { left: 31px; }
+  .timeline li { grid-template-columns: 64px minmax(0, 1fr); gap: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+/* Sign-in gate, shown until the course loads */
+.gate { max-width: 520px; margin: 18vh auto 0; padding: 0 16px; text-align: center; display: grid; gap: 14px; justify-items: center }
+.gate h1 { font-family: var(--f-display); font-size: var(--t-xl) }
+.gate p { color: var(--muted); margin: 0 }
+.gate button { font: 700 var(--t-md) var(--f-body); background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 999px; padding: 10px 22px; cursor: pointer }
+</style>
+</head>
+<body>
+<div id="course"><div class="gate"><h1>OT Field Course</h1><p id="gate-msg">Loading…</p></div></div>
+<script src="family-auth.js"></script>
+<script>
+/* Signs in, then loads the course and your saved progress from the API and starts it.
+   The course itself is served by the API so it isn't public. Progress is kept in this browser
+   and saved to your account a moment after each change, so every device picks up where you left off. */
+(function () {
+  var KEY = "tempi-ot-course-v1", cfg, pending = null, timer = null, saving = false;
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method, keepalive: method === "PUT",
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    });
+  }
+  function push() {
+    clearTimeout(timer); timer = null;
+    if (saving || !pending) return;
+    var body = pending; pending = null; saving = true;
+    var retry = false;
+    api("PUT", "/progress", { progress: body }).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+    }).catch(function () { if (!pending) pending = body; retry = true; }).then(function () {
+      saving = false;
+      if (pending) timer = setTimeout(push, retry ? 5000 : 200);
+    });
+  }
+  window.tempiSync = function (state) {
+    pending = JSON.parse(JSON.stringify(state));
+    clearTimeout(timer); timer = setTimeout(push, 1000);
+  };
+  window.addEventListener("pagehide", push);
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") push(); });
+
+  function gate(msg, signIn) {
+    document.getElementById("gate-msg").textContent = msg;
+    if (signIn && !document.getElementById("signin")) {
+      var b = document.createElement("button"); b.id = "signin"; b.textContent = "Sign in";
+      b.onclick = function () { FamilyAuth.login(); };
+      document.querySelector(".gate").appendChild(b);
+    }
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.", true);
+    return Promise.all([api("GET", "/course"), api("GET", "/progress")]).then(function (r) {
+      if (r[0].status === 403) return gate("Your account doesn’t have access to this course.");
+      if (!r[0].ok || !(r[1].ok || r[1].status === 404)) throw new Error("load failed");
+      return Promise.all([r[0].json(), r[1].status === 404 ? null : r[1].json()]).then(function (x) {
+        var local = null;
+        try { local = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+        var start = x[1] ? x[1].progress : local;
+        try { if (start) localStorage.setItem(KEY, JSON.stringify(start)); } catch (e) {}
+        if (!x[1] && local) window.tempiSync(local);
+        document.getElementById("course").innerHTML = x[0].html;
+        window.startCourse(start);
+      });
+    });
+  }).catch(function (e) {
+    gate(e.signIn ? e.message : "Couldn’t load the course. Reload to try again.", true);
+  });
+})();
+</script>
+<script>
+/* The course: navigation, checkmarks, journal and activities. State `S` is saved by save(). */
+window.startCourse = function (initial) {
+  var KEY = "tempi-ot-course-v1";
+  var S = initial || {};
+  S.done = S.done || {}; S.j = S.j || {}; S.s = S.s || {};
+  var saveTimer;
+  function save() { window.tempiSync(S); try { localStorage.setItem(KEY, JSON.stringify(S)); return true; } catch (e) { return false; } }
+
+  var MODS = ["m1", "m2", "m3", "m4", "m5", "m6"];
+  var PUTTY = ["--p1", "--p2", "--p3", "--p4", "--p5", "--p6"];
+  var SKILLS = {
+    Observe: ["m2", "m3", "m6"],
+    Empathize: ["m1", "m3", "m4"],
+    Analyze: ["m5", "m6", "m3"],
+    Create: ["m5", "m6"],
+    Communicate: ["m1", "m2", "m6"],
+    Science: ["m3", "m4"]
+  };
+
+  // ---------- navigation ----------
+  var pages = Array.prototype.slice.call(document.querySelectorAll(".page"));
+  var navBtns = Array.prototype.slice.call(document.querySelectorAll("#nav button"));
+  var ids = pages.map(function (p) { return p.id.slice(2); });
+  function go(id, noScroll) {
+    if (ids.indexOf(id) < 0) id = "start";
+    pages.forEach(function (p) { p.hidden = p.id !== "p-" + id; });
+    navBtns.forEach(function (b) {
+      if (b.dataset.go === id) { b.setAttribute("aria-current", "page"); if (b.scrollIntoView && window.innerWidth < 860) b.scrollIntoView({ block: "nearest", inline: "center" }); }
+      else b.removeAttribute("aria-current");
+    });
+    if (id === "journal") renderJournal();
+    S.last = id; save();
+    try { history.replaceState(null, "", "#" + id); } catch (e) {}
+    if (!noScroll) { var m = document.getElementById("main"); var top = m.getBoundingClientRect().top + window.scrollY - 16; if (window.scrollY > top) window.scrollTo(0, top); }
+  }
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-go]");
+    if (t) { e.preventDefault(); go(t.dataset.go); }
+  });
+
+  // ---------- completion + progress ----------
+  var putties = document.getElementById("putties");
+  PUTTY.forEach(function (v, i) {
+    var b = document.createElement("span"); b.className = "blob"; b.dataset.i = i;
+    b.style.setProperty("--c", "var(" + v + ")"); putties.appendChild(b);
+  });
+  function renderProgress() {
+    var n = 0;
+    MODS.forEach(function (m, i) {
+      var d = !!S.done[m]; if (d) n++;
+      var blob = putties.children[i];
+      blob.classList.toggle("on", d);
+      blob.style.background = d ? "var(" + PUTTY[i] + ")" : "transparent";
+      blob.style.borderColor = d ? (i === 5 ? "var(--p6-edge)" : "var(" + PUTTY[i] + ")") : "";
+      var nb = document.querySelector('#nav button[data-go="' + m + '"]');
+      nb.classList.toggle("done", d);
+      nb.querySelector(".check").textContent = d ? "✓" : "";
+    });
+    document.getElementById("doneCount").textContent = n + " of 6 modules";
+    document.querySelectorAll(".done-btn").forEach(function (b) {
+      var d = !!S.done[b.dataset.mod];
+      b.classList.toggle("is-done", d); b.classList.toggle("ghost", !d);
+      b.textContent = d ? "✓ Completed (tap to undo)" : (b.dataset.mod === "m6" ? "Mark capstone complete" : "Mark module complete");
+    });
+    var bars = document.getElementById("skillBars"); bars.innerHTML = "";
+    Object.keys(SKILLS).forEach(function (k) {
+      var list = SKILLS[k], got = list.filter(function (m) { return S.done[m]; }).length;
+      var row = document.createElement("div"); row.className = "skill-row";
+      row.innerHTML = '<span>' + k + '</span><div class="bar" role="img" aria-label="' + k + ' ' + got + ' of ' + list.length + '"><i style="width:' + Math.round(100 * got / list.length) + '%"></i></div>';
+      bars.appendChild(row);
+    });
+  }
+  document.querySelectorAll(".done-btn").forEach(function (b) {
+    b.addEventListener("click", function () { var m = b.dataset.mod; S.done[m] = !S.done[m]; save(); renderProgress(); });
+  });
+
+  // ---------- journal ----------
+  var jrs = Array.prototype.slice.call(document.querySelectorAll("textarea[data-j]"));
+  jrs.forEach(function (t) {
+    t.value = S.j[t.dataset.j] || "";
+    t.addEventListener("input", function () {
+      S.j[t.dataset.j] = t.value;
+      clearTimeout(saveTimer);
+      var msg = t.closest(".page").querySelector(".reflect .saved");
+      saveTimer = setTimeout(function () {
+        var ok = save();
+        if (msg) msg.textContent = ok ? "Saved" : "Couldn't save in this browser. Copy your writing somewhere safe.";
+      }, 500);
+    });
+  });
+  function journalText() {
+    var out = [document.querySelector(".shell").dataset.journalTitle, ""];
+    jrs.forEach(function (t) { out.push(t.dataset.label); out.push((S.j[t.dataset.j] || "").trim() || "(not written yet)"); out.push(""); });
+    var sense = senseSummaryText(); if (sense) { out.push("My sensory profile"); out.push(sense); }
+    return out.join("\n");
+  }
+  function renderJournal() {
+    var list = document.getElementById("journalList"); list.innerHTML = "";
+    jrs.forEach(function (t) {
+      var v = (S.j[t.dataset.j] || "").trim();
+      var d = document.createElement("div"); d.className = "journal-entry";
+      var l = document.createElement("div"); l.className = "q-lbl"; l.textContent = t.dataset.label;
+      var a = document.createElement("div"); a.className = "ans" + (v ? "" : " empty"); a.textContent = v || "Not written yet.";
+      d.appendChild(l); d.appendChild(a); list.appendChild(d);
+    });
+    document.getElementById("journalText").value = journalText();
+  }
+  function copyFrom(box, msgEl, text) {
+    function fallback() { box.focus(); box.select(); msgEl.textContent = "Selected. Press Ctrl+C or ⌘C to copy."; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { msgEl.textContent = "Copied"; }, fallback);
+    } else fallback();
+  }
+  document.getElementById("copyJournal").addEventListener("click", function () {
+    var box = document.getElementById("journalText"); box.value = journalText();
+    copyFrom(box, document.getElementById("copyJournalMsg"), box.value);
+  });
+  document.getElementById("copyEmail").addEventListener("click", function () {
+    var box = document.getElementById("emailDraft");
+    copyFrom(box, document.getElementById("copyEmailMsg"), box.value);
+  });
+
+  // ---------- choice quizzes ----------
+  function choiceQuiz(elId, scoreId, items, choices) {
+    var el = document.getElementById(elId), scoreEl = document.getElementById(scoreId);
+    var answered = {}, right = 0;
+    items.forEach(function (it, i) {
+      var q = document.createElement("div"); q.className = "q";
+      var p = document.createElement("div"); p.className = "prompt"; p.textContent = it.t;
+      var opts = document.createElement("div"); opts.className = "opts";
+      var fb = document.createElement("div"); fb.className = "fb"; fb.setAttribute("aria-live", "polite");
+      choices.forEach(function (c) {
+        var b = document.createElement("button"); b.type = "button"; b.className = "opt"; b.textContent = c;
+        b.addEventListener("click", function () {
+          var ok = it.a.indexOf(c) >= 0;
+          opts.querySelectorAll(".opt").forEach(function (o) { o.classList.remove("right", "wrong"); });
+          b.classList.add(ok ? "right" : "wrong");
+          fb.innerHTML = "<b>" + (ok ? "Yes. " : "Not quite. ") + "</b>" + it.why;
+          if (!(i in answered)) { answered[i] = ok; if (ok) right++; }
+          var n = Object.keys(answered).length;
+          scoreEl.textContent = n === items.length ? "First-try score: " + right + " of " + items.length + "." : "";
+        });
+        opts.appendChild(b);
+      });
+      q.appendChild(p); q.appendChild(opts); q.appendChild(fb); el.appendChild(q);
+    });
+  }
+
+  choiceQuiz("quiz-m1", "score-m1", [
+    { t: "A 7-year-old can't button her coat and always gets to recess last.", a: ["OT"], why: "Dressing is a self-care occupation, and buttoning is a fine motor skill. Classic OT." },
+    { t: "A toddler with a healing broken leg is relearning to walk.", a: ["PT"], why: "Walking, leg strength and gross motor recovery are a PT's home base." },
+    { t: "A 4-year-old's speech is hard for strangers to understand.", a: ["SLP"], why: "Speech sounds and language belong to speech-language pathologists." },
+    { t: "A 9-year-old melts down in the noisy cafeteria every day.", a: ["OT"], why: "Sensory processing and taking part in school routines are big parts of pediatric OT." },
+    { t: "A premature baby has trouble coordinating sucking and swallowing.", a: ["OT", "SLP"], why: "Both are right. Feeding is shared territory, and NICU OTs and SLPs often work on it together." },
+    { t: "A 2nd grader's handwriting is unreadable and he avoids writing.", a: ["OT"], why: "Handwriting combines fine motor, visual-motor and endurance skills. OTs see it constantly." }
+  ], ["OT", "PT", "SLP"]);
+
+  choiceQuiz("quiz-m4", "score-m4", [
+    { t: "Spinning on a tire swing until you're dizzy", a: ["Vestibular"], why: "Your inner ear tracks rotation and speed. Dizziness is your vestibular system working hard." },
+    { t: "Knowing where your foot is under your desk without looking", a: ["Proprioception"], why: "Muscles and joints report body position to your brain, with no eyes needed." },
+    { t: "Realizing you're starving only after school ends", a: ["Interoception"], why: "Hunger is an internal body signal. Some kids notice these signals late or very strongly." },
+    { t: "A shirt tag that feels unbearable", a: ["Touch"], why: "That's the touch system with its volume turned up high, called tactile over-responsiveness." },
+    { t: "Carrying a heavy laundry basket makes a wiggly kid calmer", a: ["Proprioception"], why: "That's heavy work. Strong input to the muscles and joints is organizing for many nervous systems." },
+    { t: "Feeling carsick while reading in the back seat", a: ["Vestibular"], why: "Your inner ear says you're moving while your eyes say you're still, and the mismatch makes you queasy." }
+  ], ["Vestibular", "Proprioception", "Interoception", "Touch"]);
+
+  choiceQuiz("quiz-m6", "score-m6", [
+    { t: "\"Maya is lazy about writing.\"", a: ["Interpretation"], why: "It's a guess about her character, and probably an unfair one. Writing may be physically exhausting for her." },
+    { t: "\"Maya wrote 4 of 10 spelling words in 10 minutes.\"", a: ["Observation"], why: "It's measurable, and anyone watching would agree." },
+    { t: "\"Maya covered her ears when the lunch bell rang.\"", a: ["Observation"], why: "It describes exactly what she did, without guessing why." },
+    { t: "\"Maya hates school.\"", a: ["Interpretation"], why: "Maybe some parts are hard. She also loves being line leader. Check the evidence before concluding." },
+    { t: "\"Maya held the pencil in her fist with her thumb wrapped over.\"", a: ["Observation"], why: "This precise description of her grasp is exactly what an OT note needs." },
+    { t: "\"Maya's sensory system is over-responsive to sound.\"", a: ["Interpretation"], why: "It's a reasonable clinical hypothesis, but still an interpretation. An OT would test it with a standardized assessment." }
+  ], ["Observation", "Interpretation"]);
+
+  // ---------- milestone order ----------
+  var MILES = [
+    { t: "Brings both hands together in front of the body", age: "about 3–4 months" },
+    { t: "Passes a toy from one hand to the other", age: "about 6 months" },
+    { t: "Picks up a Cheerio with fingertips (pincer grasp)", age: "about 10–12 months" },
+    { t: "Scribbles holding a crayon in a fist", age: "about 12–18 months" },
+    { t: "Copies a circle and snips with scissors", age: "about 3 years" },
+    { t: "Copies a square and prints some letters", age: "about 4–5 years" },
+    { t: "Ties shoelaces independently", age: "about 5–7 years" }
+  ];
+  var orderEl = document.getElementById("order"), orderFb = document.getElementById("orderFb");
+  var cur = [];
+  function shuffle() {
+    do { cur = MILES.map(function (_, i) { return i; }).sort(function () { return Math.random() - 0.5; }); }
+    while (cur.every(function (v, i) { return v === i; }));
+    orderFb.textContent = ""; drawOrder(false);
+  }
+  function drawOrder(checked) {
+    orderEl.innerHTML = "";
+    cur.forEach(function (mi, pos) {
+      var li = document.createElement("li");
+      if (checked) li.className = mi === pos ? "right" : "wrong";
+      li.innerHTML = '<span class="pos">' + (pos + 1) + '</span><span></span><span class="mv"></span>';
+      li.children[1].textContent = MILES[mi].t;
+      if (checked) { var a = document.createElement("span"); a.className = "age"; a.textContent = MILES[mi].age; li.children[1].appendChild(a); }
+      [["↑", -1, "Move up"], ["↓", 1, "Move down"]].forEach(function (d) {
+        var b = document.createElement("button"); b.type = "button"; b.textContent = d[0]; b.setAttribute("aria-label", d[2] + ": " + MILES[mi].t);
+        b.disabled = (pos === 0 && d[1] < 0) || (pos === cur.length - 1 && d[1] > 0);
+        b.addEventListener("click", function () {
+          var j = pos + d[1]; var tmp = cur[pos]; cur[pos] = cur[j]; cur[j] = tmp; orderFb.textContent = ""; drawOrder(false);
+          var btns = orderEl.children[j].querySelectorAll(".mv button"); var f = btns[d[1] < 0 ? 0 : 1]; (f.disabled ? btns[d[1] < 0 ? 1 : 0] : f).focus();
+        });
+        li.children[2].appendChild(b);
+      });
+      orderEl.appendChild(li);
+    });
+  }
+  document.getElementById("orderCheck").addEventListener("click", function () {
+    var n = cur.filter(function (v, i) { return v === i; }).length;
+    drawOrder(true);
+    orderFb.innerHTML = n === cur.length ? "<b>All " + n + " in order.</b> You think like a developmental OT." : "<b>" + n + " of " + cur.length + " in the right spot.</b> Ages are shown now. Fix the red ones and check again.";
+  });
+  document.getElementById("orderReset").addEventListener("click", shuffle);
+  shuffle();
+
+  // ---------- settings tabs ----------
+  var SETTINGS = [
+    { k: "school", n: "School", sched: [["7:45", "Check in at the elementary school; quick chat with a 1st-grade teacher about a student's scissors skills"], ["8:15", "Push into a kindergarten class and run a handwriting warm-up for everyone"], ["9:00", "Small group: three 2nd graders practicing letter sizing with a game"], ["10:30", "Drive to the middle school; try out a keyboard and typing app with a student who has dysgraphia"], ["12:00", "Lunch and paperwork"], ["1:00", "IEP meeting with parents, teacher and the speech therapist"], ["2:15", "Observe a student at recess to see how he handles the playground"], ["3:00", "Write progress notes"]], tools: "Pencil grips, slant boards, adapted scissors, fidgets, a laptop, a rolling cart.", hard: "Large caseloads, often 40+ students across several schools. Lots of meetings and paperwork.", great: "School-year schedule with summers off. You see kids in their real daily life and work with whole classrooms.", note: "Works under the federal special-education law (IDEA). OT goals are written into each student's IEP." },
+    { k: "clinic", n: "Outpatient clinic", sched: [["8:00", "Set up the sensory gym: swing, crash pad, climbing wall"], ["8:30", "Session: 5-year-old working on motor planning through an obstacle course"], ["9:30", "Session: 8-year-old with ADHD building a calm-down routine"], ["10:30", "Session: 3-year-old practicing feeding with new textures"], ["11:30", "Notes and calls to insurance"], ["12:30", "Lunch"], ["1:00", "Evaluation: a new client, with standardized testing and a parent interview"], ["3:00", "Two more sessions, coaching parents in the last five minutes of each"], ["5:00", "Write up the evaluation report"]], tools: "Suspended swings, therapy putty, scooter boards, weighted items, standardized test kits.", hard: "Insurance paperwork and a back-to-back schedule. Many sessions are after school.", great: "A gym full of equipment, the same kids week after week, and progress you can watch.", note: "Sessions usually last 45–60 minutes, once or twice a week. Families often bring kids for sensory, motor or feeding concerns." },
+    { k: "hospital", n: "Hospital & NICU", sched: [["7:30", "Team huddle: review overnight admissions"], ["8:00", "NICU: position a premature baby to support healthy development; teach a parent how to hold him"], ["9:00", "Feeding session with a baby learning to bottle-feed"], ["10:30", "Pediatric floor: make a custom hand splint for a 10-year-old after a burn"], ["12:00", "Lunch"], ["12:30", "Help a teen after spine surgery relearn how to get dressed safely"], ["2:00", "Rehab: play-based arm therapy with a 6-year-old recovering from a brain injury"], ["3:30", "Notes and discharge planning"]], tools: "Splinting materials, positioning supports, adaptive utensils, medical charts.", hard: "Kids who are very sick, emotional families, and fast pace. Often needs extra training and experience first.", great: "Medical problem-solving and big moments, like a baby's first full feeding or a child's first steps home.", note: "NICU work usually needs several years of experience plus specialized training." },
+    { k: "ei", n: "Early intervention", sched: [["8:30", "Drive to the first home visit"], ["9:00", "Home visit: help a family make bath time work for their 18-month-old"], ["10:15", "Drive and write notes in the car"], ["11:00", "Visit a daycare: coach staff on helping a 2-year-old join circle time"], ["12:30", "Lunch on the road"], ["1:30", "Home visit: a 9-month-old learning to sit and reach for toys"], ["3:00", "Team call with the family's service coordinator"], ["4:00", "Finish notes at home"]], tools: "A trunk full of toys, a laptop, and the family's own spoons, cups and bathtub.", hard: "Lots of driving, and every home is different. You work around family schedules.", great: "You coach parents in their own routines, so the help continues all week. The age range is birth to 3, when the brain changes fastest.", note: "Covered by Part C of IDEA. The focus is coaching families, not just treating the child." }
+  ];
+  var tabsEl = document.getElementById("settingTabs"), panel = document.getElementById("settingPanel");
+  function showSetting(k) {
+    var s = SETTINGS.filter(function (x) { return x.k === k; })[0];
+    tabsEl.querySelectorAll(".tab").forEach(function (t) { t.setAttribute("aria-selected", t.dataset.k === k ? "true" : "false"); t.tabIndex = t.dataset.k === k ? 0 : -1; });
+    var sched = s.sched.map(function (r) { return "<li><time>" + r[0] + "</time><span>" + r[1] + "</span></li>"; }).join("");
+    panel.innerHTML = '<div class="setting" role="tabpanel"><div><h4 style="margin-bottom:8px">A sample day</h4><ul class="sched">' + sched + '</ul></div><dl><dt>In the bag</dt><dd>' + s.tools + '</dd><dt>The hard part</dt><dd>' + s.hard + '</dd><dt>The best part</dt><dd>' + s.great + '</dd><dt>Good to know</dt><dd>' + s.note + '</dd></dl></div>';
+  }
+  SETTINGS.forEach(function (s) {
+    var b = document.createElement("button"); b.className = "tab"; b.type = "button"; b.setAttribute("role", "tab"); b.dataset.k = s.k; b.textContent = s.n;
+    b.addEventListener("click", function () { showSetting(s.k); });
+    tabsEl.appendChild(b);
+  });
+  showSetting("school");
+
+  // ---------- setting finder ----------
+  var FINDER = [
+    { t: "Your ideal amount of routine:", o: [["Predictable, same building every day", "school"], ["Fresh, every day is different", "hospital"], ["On the move, different places", "ei"], ["A steady schedule with lots of play", "clinic"]] },
+    { t: "Which age group sounds most fun?", o: [["Babies and toddlers", "ei"], ["Elementary schoolers", "school"], ["Any age, including really sick kids", "hospital"], ["Preschool through tweens", "clinic"]] },
+    { t: "You'd rather spend time:", o: [["Coaching parents at their kitchen table", "ei"], ["Solving medical puzzles", "hospital"], ["Running a gym full of swings", "clinic"], ["Working with teachers and classrooms", "school"]] },
+    { t: "Pick a perk:", o: [["Summers off", "school"], ["Watching the same kids improve week to week", "clinic"], ["Working in the most advanced medical setting", "hospital"], ["Spending part of the day driving with music on", "ei"]] }
+  ];
+  var finderEl = document.getElementById("finder"), finderRes = document.getElementById("finderResult"), picks = {};
+  FINDER.forEach(function (f, i) {
+    var q = document.createElement("div"); q.className = "q";
+    var p = document.createElement("div"); p.className = "prompt"; p.textContent = f.t;
+    var opts = document.createElement("div"); opts.className = "opts";
+    f.o.forEach(function (o) {
+      var b = document.createElement("button"); b.type = "button"; b.className = "opt"; b.textContent = o[0];
+      b.addEventListener("click", function () {
+        opts.querySelectorAll(".opt").forEach(function (x) { x.classList.remove("right"); x.setAttribute("aria-pressed", "false"); });
+        b.classList.add("right"); b.setAttribute("aria-pressed", "true"); picks[i] = o[1]; finderOut();
+      });
+      opts.appendChild(b);
+    });
+    q.appendChild(p); q.appendChild(opts); finderEl.appendChild(q);
+  });
+  function finderOut() {
+    if (Object.keys(picks).length < FINDER.length) return;
+    var tally = {}; Object.keys(picks).forEach(function (k) { tally[picks[k]] = (tally[picks[k]] || 0) + 1; });
+    var best = Object.keys(tally).sort(function (a, b) { return tally[b] - tally[a]; })[0];
+    var name = SETTINGS.filter(function (s) { return s.k === best; })[0].n;
+    finderRes.hidden = false;
+    finderRes.innerHTML = "<strong>You lean toward: " + name + ".</strong> Revisit that tab above. Lots of OTs try two or three settings over a career, and fieldwork in grad school lets you test them before you choose.";
+    S.finder = best; save();
+  }
+
+  // ---------- grading machine ----------
+  var gIds = ["g-sc", "g-pa", "g-sh", "g-li"];
+  function grade() {
+    var total = gIds.reduce(function (s, id) { return s + Number(document.getElementById(id).value); }, 0);
+    var pct = Math.min(100, (total + 0.5) / 11 * 100);
+    document.getElementById("needle").style.left = pct + "%";
+    var v = document.getElementById("verdict");
+    if (total <= 1) v.textContent = "Difficulty " + total + " of 10: too easy. Leo will succeed, but he won't learn anything new. Add one small challenge, like a straight line instead of fringe.";
+    else if (total <= 4) v.textContent = "Difficulty " + total + " of 10: just right. Leo has to stretch a little, but he'll succeed most of the time. Once he gets it, change one thing to make it a bit harder.";
+    else v.textContent = "Difficulty " + total + " of 10: too hard. Leo will probably give up or melt down. Change one thing at a time. Which change makes the biggest difference?";
+    S.g = gIds.map(function (id) { return document.getElementById(id).value; }); save();
+  }
+  if (Array.isArray(S.g)) gIds.forEach(function (id, i) { if (S.g[i] != null) document.getElementById(id).value = S.g[i]; });
+  gIds.forEach(function (id) { document.getElementById(id).addEventListener("change", grade); });
+  grade();
+
+  // ---------- sensory sliders ----------
+  var SENSES = [["Sight", "bright lights, busy walls"], ["Hearing", "noise, crowds, music"], ["Touch", "tags, textures, hugs"], ["Taste", "spicy, bland, new foods"], ["Smell", "perfume, cafeteria"], ["Vestibular", "swings, rides, spinning"], ["Proprioception", "pressure, heavy work"], ["Interoception", "hunger, heartbeat"]];
+  var sensesEl = document.getElementById("senses");
+  SENSES.forEach(function (s) {
+    var id = "s-" + s[0].toLowerCase();
+    var row = document.createElement("div"); row.className = "sense";
+    row.innerHTML = '<label class="nm" for="' + id + '">' + s[0] + '<small>' + s[1] + '</small></label><input type="range" min="-2" max="2" step="1" id="' + id + '"><div class="ends"><span>I avoid it / it bugs me</span><span>I seek it / love it</span></div>';
+    sensesEl.appendChild(row);
+    var inp = row.querySelector("input");
+    inp.value = S.s[s[0]] != null ? S.s[s[0]] : 0;
+    inp.addEventListener("input", function () { S.s[s[0]] = Number(inp.value); save(); senseSummary(); });
+  });
+  function senseSummaryText() {
+    var seek = [], avoid = [];
+    SENSES.forEach(function (s) { var v = Number(S.s[s[0]] || 0); if (v > 0) seek.push(s[0].toLowerCase()); if (v < 0) avoid.push(s[0].toLowerCase()); });
+    if (!seek.length && !avoid.length) return "";
+    var t = [];
+    if (seek.length) t.push("You tend to seek out " + seek.join(", ") + " input.");
+    if (avoid.length) t.push("You tend to avoid or get bothered by " + avoid.join(", ") + " input.");
+    return t.join(" ");
+  }
+  function senseSummary() {
+    var el = document.getElementById("senseSummary"), t = senseSummaryText();
+    el.innerHTML = t ? "<strong>Your profile so far.</strong> " + t + " Neither is better. Knowing your profile helps you choose study spots, calm down and understand the kids you'll work with." : "<strong>Your profile so far.</strong> All sliders are in the middle. Move any slider to see your profile here.";
+  }
+  senseSummary();
+
+  // ---------- boot ----------
+  renderProgress();
+  var h = (location.hash || "").slice(1);
+  go(ids.indexOf(h) >= 0 ? h : (S.last && ids.indexOf(S.last) >= 0 ? S.last : "start"), true);
+};
+</script>
+</body>
+</html>

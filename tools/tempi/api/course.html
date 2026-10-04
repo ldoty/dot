@@ -1,0 +1,566 @@
+<div class="shell" data-journal-title="My OT Journal: Tempi Doty">
+  <header class="top">
+    <div class="brand">
+      <span class="kicker">An exploratory course for Tempi Doty</span>
+      <span class="name">Pediatric Occupational Therapy</span>
+    </div>
+    <div class="putty-row" title="Therapy putty comes in colors by resistance. These modules get firmer as you go.">
+      <span class="lbl">Putty level<br><span id="doneCount">0 of 6 modules</span></span>
+      <div class="putties" id="putties"></div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="rail">
+      <nav class="nav" id="nav" aria-label="Course sections">
+        <div class="group">Start</div>
+        <button data-go="start"><span class="plain">◆</span>Welcome</button>
+        <div class="group">Modules · soft to firm</div>
+        <button data-go="m1" style="--c: var(--p1)"><span class="dot"></span>1. What OTs do<span class="check"></span></button>
+        <button data-go="m2" style="--c: var(--p2)"><span class="dot"></span>2. A day in the life<span class="check"></span></button>
+        <button data-go="m3" style="--c: var(--p3)"><span class="dot"></span>3. How kids grow<span class="check"></span></button>
+        <button data-go="m4" style="--c: var(--p4)"><span class="dot"></span>4. Your eight senses<span class="check"></span></button>
+        <button data-go="m5" style="--c: var(--p5)"><span class="dot"></span>5. Break it down, play it up<span class="check"></span></button>
+        <button data-go="m6" style="--c: var(--p6); border-color: var(--p6-edge)"><span class="dot" style="border-color: var(--p6-edge)"></span>6. Capstone: Meet Maya<span class="check"></span></button>
+        <div class="group">Beyond the modules</div>
+        <button data-go="path"><span class="plain">→</span>The path: 13 to OTR</button>
+        <button data-go="kit"><span class="plain">✦</span>Field kit</button>
+        <button data-go="journal"><span class="plain">✎</span>My journal</button>
+      </nav>
+      <div class="skills" aria-label="Skills you are building">
+        <h4>Skills you're building</h4>
+        <div id="skillBars"></div>
+      </div>
+    </aside>
+
+    <main id="main">
+
+<!-- ================= WELCOME ================= -->
+<section class="page" id="p-start">
+  <div class="eyebrow">Welcome · start here</div>
+  <h1 class="lined"><span>Helping kids do the things kids do.</span></h1>
+  <p class="lede">Hi Tempi. A pediatric occupational therapist (OT) helps children take part in their everyday lives: playing, learning, getting dressed, eating, making friends, and handling a loud and busy world. This course lets you look at the job from the inside and practice the skills OTs use every day. You can start practicing them at 13.</p>
+
+  <div class="block">
+    <div class="block-label">How the course works</div>
+    <div class="cards">
+      <div class="card"><h4>Six modules, soft to firm</h4><p>Therapy putty comes in colors that tell you how hard it is to squeeze, from tan (softest) to black (firmest). The modules follow the same colors. Module 1 is the easiest and the capstone is the hardest.</p></div>
+      <div class="card"><h4>One module a week</h4><p>Each module takes about an hour to read and work through, plus a hands-on activity you do during the week. Six weeks total, or go faster.</p></div>
+      <div class="card"><h4>Five parts per module</h4><p><b>Explore</b> the idea, <b>check</b> yourself, <b>try it</b> in real life, practice a <b>skill</b>, and <b>reflect</b> in your journal.</p></div>
+      <div class="card"><h4>Your journal stays with you</h4><p>What you write saves automatically in this browser on this device. The Journal page collects it all and lets you copy it out.</p></div>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">By the end you'll be able to</div>
+    <ul>
+      <li>Explain what OT is (and how it's different from physical and speech therapy) to anyone who asks.</li>
+      <li>Describe what a workday looks like in a school, a clinic, a hospital and a family's living room.</li>
+      <li>Recognize major milestones in how children's hands and bodies develop.</li>
+      <li>Name all eight senses, including the three most people have never heard of.</li>
+      <li>Break any activity into parts and make it easier or harder on purpose.</li>
+      <li>Write an observation, a goal and a play-based session plan for a practice client.</li>
+      <li>Map the exact steps from where you are now to becoming a licensed OT.</li>
+    </ul>
+  </div>
+
+  <p class="note"><strong>A note on the activities.</strong> Anything marked <span class="tag-grown">with a grown-up</span> means you'll need a parent's help, for example to contact a real therapist or to play with a younger kid. Real OTs always work with families and never alone with someone else's child without permission. You'll practice that habit from the start.</p>
+
+  <div class="foot"><span class="meta">About 6 weeks · 6 modules · 1 capstone</span><button class="btn" data-go="m1">Start Module 1 →</button></div>
+</section>
+
+<!-- ================= MODULE 1 ================= -->
+<section class="page" id="p-m1" hidden style="--c: var(--p1)">
+  <div class="eyebrow"><span class="chip"><span class="dot"></span>Tan · softest</span>Module 1 · Explore</div>
+  <h2>What OTs actually do</h2>
+  <p class="big-idea">In OT, an "occupation" means anything you need or want to do with your day. For a kid, playing, learning, eating, dressing, sleeping and making friends are all occupations.</p>
+
+  <div class="block">
+    <div class="block-label">Explore</div>
+    <p>When most people hear "occupation" they think of a job. OTs use the word more broadly. A child's occupations are the everyday activities that fill their life. A pediatric OT steps in when something makes those activities hard. That could be a diagnosis like autism, ADHD, cerebral palsy or Down syndrome, an early birth, an injury, or a hand that tires out too fast to finish a worksheet.</p>
+    <p>OTs don't ask "what's wrong with this child?" They ask <b>"what does this child want and need to do, and what's getting in the way?"</b> Then they can help in three different places:</p>
+    <div class="cards">
+      <div class="card"><h4>The person</h4><p>Build the skill itself: strength, coordination, balance, attention, or calming down when overwhelmed.</p></div>
+      <div class="card"><h4>The activity</h4><p>Change how it's done: Velcro shoes instead of laces, a thicker pencil grip, steps written on a picture card.</p></div>
+      <div class="card"><h4>The environment</h4><p>Change the surroundings: a quieter seat at lunch, a slanted writing board, noise-reducing headphones.</p></div>
+    </div>
+    <p>OTs call this the <b>Person–Environment–Occupation</b> idea: how well someone can do something depends on all three working together. A great OT can usually find a fix in at least one of them.</p>
+    <p class="note"><strong>Origin story.</strong> OT became an official profession in the U.S. in 1917. Early OTs used crafts, gardening and meaningful work to help soldiers coming home from World War I and patients in hospitals rebuild their lives. The core belief hasn't changed: doing things that matter to you helps you heal and grow.</p>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Check yourself: who would you call?</div>
+    <p>OTs work alongside physical therapists (PTs) and speech-language pathologists (SLPs). The lines blur, but each has a home base. Pick who you'd call first.</p>
+    <div class="quiz" id="quiz-m1"></div>
+    <p class="score" id="score-m1"></p>
+  </div>
+
+  <div class="tryit">
+    <div class="tryit-head"><h3>Try it: Your occupation log</h3><span class="meta">One school day · 20 min total</span></div>
+    <ol>
+      <li>From waking up to falling asleep, jot down everything you do. Small things count: brushing teeth, unzipping a backpack, texting, opening a yogurt.</li>
+      <li>Next to each, mark <b>H</b> if it needs fine hand skills, <b>P</b> if it needs planning or remembering steps, <b>S</b> if sounds, textures or movement are part of it.</li>
+      <li>Pick three activities and try them using only your non-dominant hand. Notice what you do differently.</li>
+      <li>Count: how many of your day's occupations would be harder if your hands, senses or planning didn't cooperate?</li>
+    </ol>
+  </div>
+
+  <div class="skillbox">
+    <div class="block-label">Skill builder · Asking the OT question</div>
+    <p>OT starts with curiosity about the <i>person</i>, not the problem. The first thing an OT makes is an "occupational profile": who is this person, what do they love, what's hard, and what do they hope for? Practice on someone you know. Ask a family member these three questions and listen without fixing anything:</p>
+    <ol>
+      <li>What does a normal day look like for you?</li>
+      <li>What's something you love doing that you wish you had more time for?</li>
+      <li>What's one everyday thing that's more annoying or harder than it should be?</li>
+    </ol>
+  </div>
+
+  <div class="reflect">
+    <label for="j-m1a">Reflect: Which occupation in your day matters most to you? What would you lose if you suddenly couldn't do it?</label>
+    <textarea class="jr" id="j-m1a" data-j="m1a" data-label="M1 · The occupation that matters most to me"></textarea>
+    <label for="j-m1b">What did you learn from your family member's answers that surprised you?</label>
+    <textarea class="jr short" id="j-m1b" data-j="m1b" data-label="M1 · What the OT question taught me"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+
+  <div class="foot"><button class="btn ghost done-btn" data-mod="m1">Mark module complete</button><button class="btn" data-go="m2">Next: A day in the life →</button></div>
+</section>
+
+<!-- ================= MODULE 2 ================= -->
+<section class="page" id="p-m2" hidden style="--c: var(--p2)">
+  <div class="eyebrow"><span class="chip"><span class="dot"></span>Yellow · extra soft</span>Module 2 · Explore</div>
+  <h2>A day in the life</h2>
+  <p class="big-idea">"Pediatric OT" covers several different jobs. The same training can lead you to a school hallway, a gym full of swings, a hospital nursery, or a family's kitchen floor.</p>
+
+  <div class="block wide">
+    <div class="block-label">Explore four workplaces</div>
+    <div class="tabs" role="tablist" id="settingTabs"></div>
+    <div id="settingPanel"></div>
+  </div>
+
+  <div class="block">
+    <p>Other places pediatric OTs work: private practices they own, telehealth (sessions over video), summer camps, horse-riding therapy programs, adaptive sports leagues, children's mental health programs, and universities where they teach and do research.</p>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Check yourself: which setting fits you?</div>
+    <p>There's no wrong answer. This helps you notice your own preferences.</p>
+    <div class="quiz" id="finder"></div>
+    <p class="note" id="finderResult" hidden></p>
+  </div>
+
+  <div class="tryit">
+    <div class="tryit-head"><h3>Try it: Watch like an OT</h3><span class="meta">This week · 45 min</span></div>
+    <ol>
+      <li><span class="tag-grown">with a grown-up</span> Search YouTube for "pediatric occupational therapy session" and pick two videos from different settings (a clinic and a school, for example).</li>
+      <li>Watch once just for fun. Then watch again with the sound off and track only what the therapist does: where they stand, how they set up materials, how they help without taking over.</li>
+      <li>Write down three things the OT did that a regular babysitter probably wouldn't.</li>
+    </ol>
+  </div>
+
+  <div class="skillbox">
+    <div class="block-label">Skill builder · Explaining it in 30 seconds</div>
+    <p>Pediatric OTs explain their work all the time, to parents, teachers, doctors and kids. Practice an "elevator pitch." Write a 2–3 sentence explanation of pediatric OT that a 7-year-old would understand, then a version for a doctor. Read both out loud and time them.</p>
+  </div>
+
+  <div class="reflect">
+    <label for="j-m2a">Reflect: Which setting pulled at you the most, and why? Which one would be hardest for you?</label>
+    <textarea class="jr" id="j-m2a" data-j="m2a" data-label="M2 · The setting that pulls at me"></textarea>
+    <label for="j-m2b">Your 30-second explanation for a 7-year-old:</label>
+    <textarea class="jr short" id="j-m2b" data-j="m2b" data-label="M2 · OT explained to a 7-year-old"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+
+  <div class="foot"><button class="btn ghost done-btn" data-mod="m2">Mark module complete</button><button class="btn" data-go="m3">Next: How kids grow →</button></div>
+</section>
+
+<!-- ================= MODULE 3 ================= -->
+<section class="page" id="p-m3" hidden style="--c: var(--p3)">
+  <div class="eyebrow"><span class="chip"><span class="dot"></span>Red · soft</span>Module 3 · Explore</div>
+  <h2>How kids grow (especially their hands)</h2>
+  <p class="big-idea">Skills build in a predictable order. To know whether a child needs help, an OT has to know what's typical for each age.</p>
+
+  <div class="block">
+    <div class="block-label">Explore</div>
+    <p>A newborn's hands mostly stay fisted. Within about six years, that same child can button a shirt, cut along a line and write their name. This happens in a fairly predictable sequence, and OTs memorize it. The ages are always <b>ranges</b>, not deadlines. Kids vary a lot, and being a little "late" on one skill usually means nothing on its own.</p>
+    <p>One of the most useful ideas in pediatric OT is <b>"stability before mobility."</b> Fine finger control depends on a steady trunk and shoulder. That's why an OT might have a child with messy handwriting crawl through tunnels, do wheelbarrow walks or color while lying on their stomach. It looks like play, but it builds the stable base the fingers work from.</p>
+    <div class="cards">
+      <div class="card"><h4>Gross motor</h4><p>Big movements: sitting, crawling, walking, jumping, catching a ball.</p></div>
+      <div class="card"><h4>Fine motor</h4><p>Small, precise hand movements: grasping, pinching, buttoning, writing.</p></div>
+      <div class="card"><h4>Visual-motor</h4><p>Eyes and hands working together, like copying a shape or tracing a line.</p></div>
+      <div class="card"><h4>Self-care (ADLs)</h4><p>"Activities of daily living": dressing, eating, toileting, bathing, grooming.</p></div>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Check yourself: put the milestones in order</div>
+    <p>Use the arrows to arrange these from youngest to oldest. Then check.</p>
+    <ol class="order" id="order"></ol>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" id="orderCheck">Check my order</button><button class="btn ghost" id="orderReset">Shuffle again</button></div>
+    <p class="fb" id="orderFb" aria-live="polite"></p>
+  </div>
+
+  <div class="tryit">
+    <div class="tryit-head"><h3>Try it: The grip lab</h3><span class="meta">20 min · paper, pencil, winter gloves</span></div>
+    <ol>
+      <li>Write your full name five times: (a) normally, (b) holding the pencil in your fist like a toddler, (c) with your non-dominant hand, (d) wearing thick winter gloves, (e) holding the pencil at the very top of its eraser end.</li>
+      <li>Rate each one from 1 (easy) to 5 (exhausting), and time it.</li>
+      <li>Notice what your body did to cope. Did you press harder? Tense your shoulder? Lean in closer? Slow way down?</li>
+      <li>Those workarounds have a name: <b>compensations</b>. OTs watch for them in kids because they tell you where the real difficulty is.</li>
+    </ol>
+  </div>
+
+  <div class="skillbox">
+    <div class="block-label">Skill builder · Know the science</div>
+    <p>OT school starts with anatomy. Get a head start on the hand:</p>
+    <ul>
+      <li>Each hand and wrist has <b>27 bones</b>: 8 carpals (wrist), 5 metacarpals (palm) and 14 phalanges (fingers).</li>
+      <li>The fleshy pad at the base of your thumb is the <b>thenar eminence</b>. Its muscles let your thumb touch each fingertip, called <b>opposition</b>. Very few other animals can do this.</li>
+      <li>Most writing grips mature into a <b>dynamic tripod</b>: the pencil rests against the middle finger and is pinched by the thumb and index finger, with the fingers doing the moving instead of the whole arm.</li>
+    </ul>
+    <p>Challenge: without looking, touch your thumb to each fingertip in order and back again, ten times fast. Now try it on your other hand.</p>
+  </div>
+
+  <div class="reflect">
+    <label for="j-m3a">Reflect: What did the grip lab feel like? How might a 6-year-old feel doing every worksheet that way?</label>
+    <textarea class="jr" id="j-m3a" data-j="m3a" data-label="M3 · What the grip lab taught me"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+
+  <div class="foot"><button class="btn ghost done-btn" data-mod="m3">Mark module complete</button><button class="btn" data-go="m4">Next: Your eight senses →</button></div>
+</section>
+
+<!-- ================= MODULE 4 ================= -->
+<section class="page" id="p-m4" hidden style="--c: var(--p4)">
+  <div class="eyebrow"><span class="chip"><span class="dot"></span>Green · medium</span>Module 4 · Explore</div>
+  <h2>Your eight senses</h2>
+  <p class="big-idea">You learned about five senses in kindergarten. OTs work with eight, and the three extra ones explain a lot of kids' behavior.</p>
+
+  <div class="block">
+    <div class="block-label">Explore</div>
+    <div class="cards">
+      <div class="card"><h4>The famous five</h4><p>Sight, hearing, touch, taste, smell.</p></div>
+      <div class="card"><h4>Vestibular</h4><p>Balance and movement, sensed in your inner ear. It tells you whether you're upright, spinning or speeding up.</p></div>
+      <div class="card"><h4>Proprioception</h4><p>Body position, sensed by your muscles and joints. It's how you can touch your nose with your eyes closed.</p></div>
+      <div class="card"><h4>Interoception</h4><p>Signals from inside your body: hunger, thirst, needing the bathroom, a pounding heart, butterflies.</p></div>
+    </div>
+    <p>Your brain constantly turns the "volume" of each sense up or down. That's called <b>sensory processing</b>. Some kids' volume is set very high: a shirt tag feels like sandpaper, and a fire drill is physically painful. Others have it set low: they don't notice their name being called or food on their face. Some kids seek out more input, so they crash, spin, chew and climb everything.</p>
+    <p>None of these are bad behavior. They're a nervous system trying to get comfortable. A big OT tool is <b>"heavy work"</b>: pushing, pulling or carrying things. It gives the muscles and joints strong input, and that calms many kids. That's why an OT might ask a restless student to carry books to the library.</p>
+    <p class="note"><strong>Think like a scientist.</strong> Much of this work traces back to Dr. A. Jean Ayres, an OT and psychologist who developed sensory integration theory in the 1960s and 70s. Research on it is still developing. Some approaches have solid evidence and others are debated. Good OTs read the research and measure whether what they're doing actually helps each child.</p>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Check yourself: which sense is it?</div>
+    <div class="quiz" id="quiz-m4"></div>
+    <p class="score" id="score-m4"></p>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Try it: Map your own sensory profile</div>
+    <p>Everyone has a sensory profile, including you. Slide each sense toward what's true for you. There's no right answer.</p>
+    <div class="senses" id="senses"></div>
+    <p class="note" id="senseSummary"></p>
+  </div>
+
+  <div class="tryit">
+    <div class="tryit-head"><h3>Try it: Three-day sensory notice</h3><span class="meta">3 days · 5 min each evening</span></div>
+    <ol>
+      <li>Each evening, write down one thing that bugged your senses that day (a sound, texture, smell or crowd).</li>
+      <li>Write one thing that helped you feel calm or focused. Was it movement, quiet, music, a snack, a hoodie?</li>
+      <li>After three days, look for a pattern. What's your best "reset" when you're overwhelmed?</li>
+    </ol>
+  </div>
+
+  <div class="skillbox">
+    <div class="block-label">Skill builder · Curiosity over judgment</div>
+    <p>When a kid "misbehaves," an OT asks what that behavior is <i>doing for them</i>. Rewrite each of these from a judgment into a curious question:</p>
+    <ul>
+      <li>"He won't sit still in circle time." → <i>What might his body be looking for when he moves?</i></li>
+      <li>"She's such a picky eater."</li>
+      <li>"He's always crashing into people at recess."</li>
+    </ul>
+  </div>
+
+  <div class="reflect">
+    <label for="j-m4a">Reflect: What did you learn about your own senses? Write your rewrites of the two "judgment" sentences above too.</label>
+    <textarea class="jr" id="j-m4a" data-j="m4a" data-label="M4 · My sensory profile and curious rewrites"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+
+  <div class="foot"><button class="btn ghost done-btn" data-mod="m4">Mark module complete</button><button class="btn" data-go="m5">Next: Break it down →</button></div>
+</section>
+
+<!-- ================= MODULE 5 ================= -->
+<section class="page" id="p-m5" hidden style="--c: var(--p5)">
+  <div class="eyebrow"><span class="chip"><span class="dot"></span>Blue · firm</span>Module 5 · Explore</div>
+  <h2>Break it down, play it up</h2>
+  <p class="big-idea">OTs have two core skills: taking any activity apart to see what it really demands, and turning hard practice into a game a kid wants to play.</p>
+
+  <div class="block">
+    <div class="block-label">Explore: activity analysis</div>
+    <p>To you, brushing your teeth is one thing. To an OT, it's more than a dozen steps, and each one needs something different. Open the cap (two hands doing different jobs). Squeeze the right amount (controlled grip strength). Brush every surface (planning and sequencing). Tolerate the minty foam (sensory). Remember to do it at all (routine and memory). When a child struggles, the OT looks for the <b>one step</b> that's breaking down.</p>
+    <p>Once they find it, they <b>grade</b> the activity, making it a little easier or harder by changing one thing at a time. The target is the <b>"just-right challenge"</b>: hard enough that the child grows, easy enough that they succeed most of the time. Too easy is boring. Too hard leads to frustration and kids giving up.</p>
+  </div>
+
+  <div class="block wide">
+    <div class="block-label">Check yourself: the grading machine</div>
+    <p style="max-width:72ch"><b>Your client:</b> Leo, age 4. He can open and close scissors to snip paper but can't yet cut along a line. Adjust the activity until it lands in Leo's just-right zone.</p>
+    <div class="machine">
+      <label for="g-sc">Scissors<select id="g-sc"><option value="0">Spring-loaded loop scissors</option><option value="1">Small kid scissors</option><option value="2" selected>Regular adult scissors</option></select></label>
+      <label for="g-pa">Paper<select id="g-pa"><option value="0">Index card (stiff)</option><option value="1">Construction paper</option><option value="2" selected>Thin printer paper (floppy)</option></select></label>
+      <label for="g-sh">What to cut<select id="g-sh"><option value="0">Snip fringe on a strip</option><option value="1">Straight line</option><option value="2">Gentle curve</option><option value="3" selected>Circle</option><option value="4">Square with sharp corners</option></select></label>
+      <label for="g-li">Line to follow<select id="g-li"><option value="0">Thick ½-inch marker line</option><option value="1">Regular marker line</option><option value="2" selected>Thin pencil line</option></select></label>
+    </div>
+    <div class="meter-wrap">
+      <div class="needle" id="needle"></div>
+      <div class="meter"><span class="z1"></span><span class="z2"></span><span class="z3"></span></div>
+      <div class="meter-labels"><span>Too easy</span><span>Just right</span><span>Too hard</span></div>
+    </div>
+    <p class="verdict" id="verdict" aria-live="polite" style="max-width:72ch"></p>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Explore: play is the treatment</div>
+    <p>A 5-year-old won't do fifty finger-pinch exercises. They'll happily pinch fifty clothespins to "rescue" toy animals trapped in a jail made of string. OTs are experts at hiding therapy inside play:</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>The game</th><th>What it secretly builds</th></tr></thead>
+        <tbody>
+          <tr><td>Picking up pom-poms with tongs or tweezers</td><td>Pincer grasp, hand strength, eye-hand coordination</td></tr>
+          <tr><td>Digging beads out of therapy putty</td><td>Finger strength and endurance for writing</td></tr>
+          <tr><td>Animal walks: bear, crab, wheelbarrow</td><td>Shoulder and core stability (stability before mobility)</td></tr>
+          <tr><td>Obstacle courses</td><td>Motor planning: figuring out how to move your body through something new</td></tr>
+          <tr><td>Writing letters in shaving cream</td><td>Letter formation, plus touch tolerance for kids who avoid messy textures</td></tr>
+          <tr><td>Coloring on paper taped to a wall</td><td>Wrist position for writing, shoulder strength</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tryit">
+    <div class="tryit-head"><h3>Try it: Build a three-station obstacle course</h3><span class="meta">This week · 1 hour · <span class="tag-grown">with a grown-up</span></span></div>
+    <ol>
+      <li>Find a younger kid around 4–7 to play with, such as a cousin, neighbor or family friend, with their parent's OK.</li>
+      <li>Design three stations, each secretly targeting one skill: balance, hand strength, and motor planning. Use household stuff like pillows, a broom handle across two books, a laundry basket, or clothespins.</li>
+      <li>Give it a story ("cross the lava river, rescue the stuffed dog, climb the mountain").</li>
+      <li>Run it and watch. Where did they struggle? Where did they get bored? Change one thing and run it again. That's grading in real life.</li>
+    </ol>
+  </div>
+
+  <div class="skillbox">
+    <div class="block-label">Skill builder · Task analysis</div>
+    <p>Break <b>tying shoes</b> into every single step, as if you were writing instructions for a robot. Most people list 5. OTs usually find 12 or more. Then circle the step you think is hardest for a 6-year-old, and invent one way to grade it easier.</p>
+  </div>
+
+  <div class="reflect">
+    <label for="j-m5a">Your shoe-tying steps, the hardest step, and how you'd make it easier:</label>
+    <textarea class="jr" id="j-m5a" data-j="m5a" data-label="M5 · Tying shoes, broken down"></textarea>
+    <label for="j-m5b">Reflect: How did the obstacle course go? What did you change on the second run?</label>
+    <textarea class="jr short" id="j-m5b" data-j="m5b" data-label="M5 · My obstacle course"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+
+  <div class="foot"><button class="btn ghost done-btn" data-mod="m5">Mark module complete</button><button class="btn" data-go="m6">Next: The capstone →</button></div>
+</section>
+
+<!-- ================= MODULE 6 ================= -->
+<section class="page" id="p-m6" hidden style="--c: var(--p6)">
+  <div class="eyebrow"><span class="chip" style="--c: var(--p6)"><span class="dot" style="border-color: var(--p6-edge)"></span>Black · extra firm</span>Module 6 · Capstone</div>
+  <h2>Capstone: Meet Maya</h2>
+  <p class="big-idea">Now you'll do what an OT does with a new client. Observe carefully, describe what you saw, set a goal, and plan a session.</p>
+
+  <div class="case wide">
+    <div class="case-head"><span>Referral · Maya, age 6, first grade</span><span>Practice case (fictional)</span></div>
+    <div class="case-body">
+      <div><h4>From her teacher</h4><p>Avoids writing and often finishes 4 of 10 spelling words. Holds her pencil in a fist with her thumb wrapped over. Letters are large and run off the lines. Covers her ears at lunch and hides under a table during assemblies.</p></div>
+      <div><h4>From her parents</h4><p>Mornings take forever. She refuses socks because "the bumps hurt," and getting dressed ends in tears. "We want her to like school and get out the door without a fight."</p></div>
+      <div><h4>What Maya loves</h4><p>Horses (she draws them constantly with markers), her dog Biscuit, swinging at the park, and being the line leader.</p></div>
+    </div>
+  </div>
+
+  <p class="note"><strong>Why Maya is made up.</strong> Real OTs follow privacy laws (HIPAA in health care, FERPA in schools). They never share a child's name or details outside the care team. So you practice on fictional cases, just like OT students do.</p>
+
+  <div class="block">
+    <div class="block-label">Step 1 · Observation or interpretation?</div>
+    <p>An observation is something anyone in the room would agree they saw or measured. An interpretation is a guess about what it means. OTs write observations first and say clearly when they're interpreting.</p>
+    <div class="quiz" id="quiz-m6"></div>
+    <p class="score" id="score-m6"></p>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Step 2 · Write a goal</div>
+    <p>OT goals have a recipe: <b>By when</b>, <b>who</b> will <b>do what</b>, <b>how well</b>, <b>with what help</b>. Here's an example:</p>
+    <p class="note">By the end of the school year, Maya will copy 5 spelling words legibly within the lines, using a pencil grip and a slanted writing board, with no more than one reminder from her teacher.</p>
+    <p>Now write one goal for Maya's <i>mornings</i>, using what her parents said matters to them.</p>
+    <textarea class="jr short" id="j-m6a" data-j="m6a" data-label="M6 · My goal for Maya's mornings"></textarea>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Step 3 · Plan a 30-minute session</div>
+    <p>Use what Maya <i>loves</i>. That's called a <b>strengths-based</b> approach. Many OT sessions follow a three-part arc:</p>
+    <label for="j-m6b"><b>Warm-up (about 8 min).</b> Movement or heavy work to help her body feel organized. (Hint: she loves swings.)</label>
+    <textarea class="jr short" id="j-m6b" data-j="m6b" data-label="M6 · Session warm-up"></textarea>
+    <label for="j-m6c"><b>Main activity (about 15 min).</b> Target hand strength or grip, hidden inside a horse-themed game.</label>
+    <textarea class="jr short" id="j-m6c" data-j="m6c" data-label="M6 · Session main activity"></textarea>
+    <label for="j-m6d"><b>Cool-down and home tip (about 7 min).</b> Something calming, plus one idea her parents can try for the sock problem.</label>
+    <textarea class="jr short" id="j-m6d" data-j="m6d" data-label="M6 · Cool-down and home tip"></textarea>
+  </div>
+
+  <div class="skillbox">
+    <div class="block-label">Skill builder · The SOAP note</div>
+    <p>After every session, OTs write a short note in a format called SOAP:</p>
+    <ul>
+      <li><b>S · Subjective:</b> what the child or family said. <i>"Maya said, 'I want to make a horse!'"</i></li>
+      <li><b>O · Objective:</b> what you saw and measured. <i>"Picked up 12 of 20 pom-poms with tongs in 3 minutes."</i></li>
+      <li><b>A · Assessment:</b> what you think it means. <i>"Grip strength improving; tired after 2 minutes."</i></li>
+      <li><b>P · Plan:</b> what's next. <i>"Add putty warm-up; try short pencil next session."</i></li>
+    </ul>
+    <p>Imagine you just ran your session. Write a SOAP note for it below.</p>
+  </div>
+
+  <div class="reflect">
+    <label for="j-m6e">My SOAP note for Maya's session:</label>
+    <textarea class="jr" id="j-m6e" data-j="m6e" data-label="M6 · My SOAP note"></textarea>
+    <label for="j-m6f">Reflect: Now that you've tried the work, does this career feel more like you or less like you? Why?</label>
+    <textarea class="jr short" id="j-m6f" data-j="m6f" data-label="M6 · More like me, or less?"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+
+  <p class="note"><strong>Language matters.</strong> You'll hear "child with autism" (person-first) and "autistic child" (identity-first). Many autistic people prefer identity-first, and many people with other disabilities prefer person-first. The respectful move is the OT move: ask the person or family what they prefer, and use it.</p>
+
+  <div class="foot"><button class="btn ghost done-btn" data-mod="m6">Mark capstone complete</button><button class="btn" data-go="path">Next: The path →</button></div>
+</section>
+
+<!-- ================= PATH ================= -->
+<section class="page" id="p-path" hidden>
+  <div class="eyebrow">Beyond the modules · Prepare</div>
+  <h2>The path: from 13 to OTR</h2>
+  <p class="lede">"OTR" stands for Occupational Therapist, Registered. It's the credential you earn after grad school and a national exam. Here's the full route in the United States, starting where you are now.</p>
+
+  <ol class="timeline">
+    <li class="now"><div class="when"><span class="age">13–14</span><div class="stage">Now</div></div><div class="what"><h4>Explore and notice</h4><p>Finish this course. Read the books in the Field Kit. Notice the kids around you and how they move, play and cope. Babysit if you can, since time with little kids is good experience.</p></div></li>
+    <li><div class="when"><span class="age">14–18</span><div class="stage">High school</div></div><div class="what"><h4>Build the base</h4><ul><li><b>Classes:</b> biology, chemistry, anatomy &amp; physiology if offered, psychology (AP Psych is great), statistics, and lots of writing. Spanish or another language is a real asset in many communities.</li><li><b>Volunteer with kids with disabilities:</b> adaptive sports, Special Olympics, inclusive camps, buddy programs, library story time, tutoring.</li><li><b>Get certified</b> in CPR and first aid.</li><li><span class="tag-grown">with a grown-up</span> Ask to <b>shadow</b> a pediatric OT for a day.</li></ul></div></li>
+    <li><div class="when"><span class="age">18–22</span><div class="stage">College</div></div><div class="what"><h4>Bachelor's degree, any major</h4><p>Common majors are kinesiology, psychology, health science, exercise science and human development. What matters most is finishing the <b>prerequisites</b> most OT programs want: anatomy &amp; physiology I and II with labs, intro psychology, developmental (lifespan) psychology, abnormal psychology, statistics, sociology, and often medical terminology.</p><p>Collect <b>observation hours</b> with OTs in different settings, since many programs require them. Keep a strong GPA. You apply through a shared application called <b>OTCAS</b>. Some universities offer combined bachelor's-plus-master's programs that save a year.</p></div></li>
+    <li><div class="when"><span class="age">22–25</span><div class="stage">Grad school</div></div><div class="what"><h4>Master's (about 2–2.5 years) or doctorate (about 3 years)</h4><p>Both an entry-level master's (MOT/MSOT) and an entry-level doctorate (OTD) qualify you to practice. You'll study anatomy (often with a cadaver lab), neuroscience, development, mental health and treatment methods.</p><p><b>Fieldwork</b> is where you train with real clients. Level I placements are short. Level II is at least 24 weeks full-time, supervised by a licensed OT. Doctoral students also complete a 14-week capstone project.</p></div></li>
+    <li><div class="when"><span class="age">~25</span><div class="stage">Licensed</div></div><div class="what"><h4>Pass the NBCOT exam, then get a state license</h4><p>Passing the national exam from NBCOT (the National Board for Certification in Occupational Therapy) earns you "OTR." Then you apply for a license in the state where you'll work.</p></div></li>
+    <li><div class="when"><span class="age">25+</span><div class="stage">Career</div></div><div class="what"><h4>Grow into a specialist</h4><p>Start in a school, clinic, early intervention program or hospital. With experience you can earn AOTA's Board Certification in Pediatrics or get advanced training in feeding, the NICU, sensory integration, assistive technology or hippotherapy (therapy using horses). Later you might supervise, open a practice, teach or do research.</p></div></li>
+  </ol>
+
+  <div class="block">
+    <div class="block-label">The numbers</div>
+    <div class="cards">
+      <div class="card"><h4>About $96,000</h4><p>Median yearly pay for U.S. occupational therapists in May 2023 (Bureau of Labor Statistics). Pediatric and school roles often pay somewhat less than hospitals.</p></div>
+      <div class="card"><h4>Faster than average</h4><p>The BLS projects OT jobs will grow faster than the average for all jobs over the next decade.</p></div>
+      <div class="card"><h4>6–7 years after high school</h4><p>4 years of college plus 2–3 of grad school. Grad tuition varies widely, from tens of thousands of dollars to more than $100,000, so scholarships and in-state programs matter.</p></div>
+    </div>
+    <p class="fb">Numbers change. Check the latest at the <a href="https://www.bls.gov/ooh/healthcare/occupational-therapists.htm" target="_blank" rel="noopener">BLS Occupational Outlook Handbook</a>.</p>
+  </div>
+
+  <p class="note"><strong>A shorter route: the OT assistant.</strong> An occupational therapy assistant (OTA) earns about a two-year associate degree, passes their own national exam, and carries out treatment plans under an OT's supervision. Some people work as an OTA first and later go back to become an OT.</p>
+
+  <div class="reflect">
+    <label for="j-path">Plan: What's one thing you could do in the next 12 months from the "High school" list, even before you get there?</label>
+    <textarea class="jr short" id="j-path" data-j="path" data-label="Path · My next-12-months step"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+  <div class="foot"><span></span><button class="btn" data-go="kit">Next: Field kit →</button></div>
+</section>
+
+<!-- ================= FIELD KIT ================= -->
+<section class="page" id="p-kit" hidden>
+  <div class="eyebrow">Beyond the modules · Resources</div>
+  <h2>Field kit</h2>
+  <p class="lede">Tools for going further: questions to ask a real OT, a message your parent can send, things to read, and a glossary of terms.</p>
+
+  <div class="block">
+    <div class="block-label">Interview a real pediatric OT</div>
+    <p><span class="tag-grown">with a grown-up</span> Most OTs love talking to students. Ask your pediatrician's office, your school, or a local children's therapy clinic. Take notes in your journal.</p>
+    <ol>
+      <li>What made you choose pediatrics over working with adults?</li>
+      <li>Walk me through yesterday, from your first appointment to your last.</li>
+      <li>What part of the job surprised you most when you started?</li>
+      <li>What's the hardest part that people don't see?</li>
+      <li>Tell me about a kid whose progress you'll never forget (without names).</li>
+      <li>How much of your day is paperwork and documentation?</li>
+      <li>What do you wish you'd done in high school or college to prepare?</li>
+      <li>Which settings have you worked in, and which did you like best?</li>
+      <li>How do you work with parents, teachers, PTs and speech therapists?</li>
+      <li>Could I observe a session someday, if a family agreed?</li>
+    </ol>
+  </div>
+
+  <div class="block">
+    <div class="block-label">A shadowing request your parent can send</div>
+    <textarea class="copybox" id="emailDraft" readonly>Hello,
+
+My daughter Tempi is 13 and has become really interested in pediatric occupational therapy. She has been working through an introductory course on the field and would love to learn from someone who does the work.
+
+Would you be open to a 20-minute conversation with her, by phone, video or in person? If your clinic ever allows students to observe (with families' permission), we would be grateful to hear about that too.
+
+Thank you for considering it. We're happy to work around your schedule.
+
+Best,
+</textarea>
+    <div><button class="btn ghost" id="copyEmail">Copy message</button> <span class="saved" id="copyEmailMsg" aria-live="polite"></span></div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Read and explore</div>
+    <div class="cards">
+      <div class="card"><h4>Out of My Mind</h4><p>Sharon M. Draper. A novel narrated by Melody, an 11-year-old with cerebral palsy who can't speak. See what assistive technology changes for her.</p></div>
+      <div class="card"><h4>El Deafo</h4><p>Cece Bell. A graphic memoir about growing up deaf with a giant hearing aid. Funny and honest about adaptations.</p></div>
+      <div class="card"><h4>Rules</h4><p>Cynthia Lord. A 12-year-old whose brother is autistic, and the friend she makes at his therapy clinic.</p></div>
+      <div class="card"><h4>The Out-of-Sync Child</h4><p>Carol Stock Kranowitz. The classic guide to sensory processing, written for parents. A good stretch read for Module 4.</p></div>
+    </div>
+    <ul>
+      <li><a href="https://www.aota.org" target="_blank" rel="noopener">AOTA</a>: the American Occupational Therapy Association, the profession's national organization.</li>
+      <li><a href="https://www.nbcot.org" target="_blank" rel="noopener">NBCOT</a>: the board that runs the certification exam.</li>
+      <li><a href="https://www.bls.gov/ooh/healthcare/occupational-therapists.htm" target="_blank" rel="noopener">BLS Occupational Outlook</a>: pay, job growth and work settings.</li>
+      <li><a href="https://explorehealthcareers.org" target="_blank" rel="noopener">Explore Health Careers</a>: compare OT with related careers.</li>
+    </ul>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Glossary</div>
+    <dl class="gloss">
+      <dt>ADLs</dt><dd>Activities of daily living: basic self-care like dressing, eating, bathing and toileting.</dd>
+      <dt>IADLs</dt><dd>Instrumental ADLs: more complex tasks like cooking, managing money and using a phone.</dd>
+      <dt>Fine motor</dt><dd>Small, precise movements of the hands and fingers.</dd>
+      <dt>Gross motor</dt><dd>Large movements of the whole body: walking, jumping, climbing.</dd>
+      <dt>Visual-motor integration</dt><dd>Coordinating what the eyes see with what the hands do.</dd>
+      <dt>Praxis / motor planning</dt><dd>Figuring out how to do a new movement, then sequencing and carrying it out.</dd>
+      <dt>Bilateral coordination</dt><dd>Using both sides of the body together, often doing different jobs (one hand holds, one cuts).</dd>
+      <dt>Crossing midline</dt><dd>Reaching across the center of your body, like your right hand to your left side.</dd>
+      <dt>Vestibular</dt><dd>The sense of balance and movement, sensed in the inner ear.</dd>
+      <dt>Proprioception</dt><dd>The sense of where your body parts are, sensed in muscles and joints.</dd>
+      <dt>Interoception</dt><dd>The sense of internal body signals like hunger, thirst and heartbeat.</dd>
+      <dt>Heavy work</dt><dd>Pushing, pulling or carrying that gives strong proprioceptive input; often calming.</dd>
+      <dt>Grading</dt><dd>Adjusting an activity to be easier or harder by changing one part of it.</dd>
+      <dt>Just-right challenge</dt><dd>An activity hard enough to grow from, easy enough to succeed at.</dd>
+      <dt>Occupational profile</dt><dd>The OT's first picture of a client: their history, interests, routines and goals.</dd>
+      <dt>IEP</dt><dd>Individualized Education Program: a legal plan for a student who gets special education services, often including OT.</dd>
+      <dt>Early intervention</dt><dd>Services for babies and toddlers (birth to age 3) with developmental delays, usually at home.</dd>
+      <dt>SOAP note</dt><dd>A note format: Subjective, Objective, Assessment, Plan.</dd>
+      <dt>Fieldwork</dt><dd>Supervised hands-on training with real clients during OT school.</dd>
+      <dt>OTR / OTA</dt><dd>Registered occupational therapist / occupational therapy assistant.</dd>
+    </dl>
+  </div>
+  <div class="foot"><span></span><button class="btn" data-go="journal">Open my journal →</button></div>
+</section>
+
+<!-- ================= JOURNAL ================= -->
+<section class="page" id="p-journal" hidden>
+  <div class="eyebrow">Your work</div>
+  <h2>My OT journal</h2>
+  <p class="lede">Everything you've written in the course, in one place. It's saved in this browser on this device, so copy it somewhere safe from time to time, like a doc, an email to yourself or a notebook.</p>
+  <div class="journal-list" id="journalList"></div>
+  <div class="block">
+    <div class="block-label">Copy it out</div>
+    <textarea class="copybox" id="journalText" readonly></textarea>
+    <div><button class="btn" id="copyJournal">Copy my journal</button> <span class="saved" id="copyJournalMsg" aria-live="polite"></span></div>
+  </div>
+</section>
+
+    </main>
+  </div>
+</div>
