@@ -405,7 +405,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
         name: shortMonth(m) + (last && part < 1 ? " (to date)" : ""), month: m, target: target, expected: target * part,
         spent: sum(series.map(function (s) { return s.values[k]; })),
         segs: series.map(function (s) {
-          return { name: s.name, value: s.values[k], color: s.color, tv: across(s), tl: s.name, show: { title: s.name + " · " + monthName(m), lines: s.lines, month: m } };
+          return { name: s.name, value: s.values[k], color: s.color, tv: across(s), tl: s.name, show: { title: s.name + " · " + monthName(m), lines: s.lines, month: m, from: "trend" } };
         }).filter(function (x) { return x.value > 0; }),
       };
     });
@@ -413,7 +413,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
       (current.elapsed < 1 ? "; " + esc(shortMonth(current.month)) + " is month to date" : "") + "</span></div>" +
       '<div class="legend-row">' + series.map(function (s) { return '<span class="k"><span class="sw" style="background:' + s.color + '"></span>' + esc(s.name) + "</span>"; }).join("") +
       '<span><span class="tr"></span>Budget</span></div>' +
-      '<div class="chart" id="trend-chart">' + columns(items) + "</div>" +
+      '<div class="chart" id="trend-chart">' + columns(items) + "</div>" + (showing && showing.from === "trend" ? showHtml() : "") +
       '<details class="table-view"><summary>Table view</summary><table class="data"><thead><tr><th>Category</th>' + months.map(function (m) { return '<th class="n">' + esc(shortMonth(m)) + "</th>"; }).join("") + '<th class="n">Budget</th></tr></thead><tbody>' +
       per.map(function (x) { return "<tr><td>" + esc(x.c.name) + "</td>" + x.values.map(function (v) { return '<td class="n">' + usd0.format(v) + "</td>"; }).join("") + '<td class="n">' + usd0.format(x.c.target) + "</td></tr>"; }).join("") +
       "</tbody></table></details></section>";
@@ -543,7 +543,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
         : stat("Income", s.totals.income) + stat("Spending", s.totals.spend, usd0.format(s.totals.spend.expected) + " at pace")) +
         (shared() ? "" : stat("Saved", s.totals.save)) + "</div>" +
         (s.totals.transfers && s.totals.transfers.count ? '<p class="status" id="transfers">Transfers: ' + usd0.format(s.totals.transfers.out) + " moved out, " + usd0.format(s.totals.transfers.in) + " in, between your accounts (" + s.totals.transfers.count + "). Not counted in any budget.</p>" : "") : "") + "</section>" +
-      '<section aria-labelledby="h-cat"><div class="sec-head"><h2 id="h-cat">Month to date by category</h2></div>' + categoryChart() + showHtml() + "</section>" +
+      '<section aria-labelledby="h-cat"><div class="sec-head"><h2 id="h-cat">Month to date by category</h2></div>' + categoryChart() + (showing && showing.from === "trend" ? "" : showHtml()) + "</section>" +
       (b && data.trend ? trendHtml() : "") +
       (toFile.length ? '<div class="card" id="to-file"><h3>To file (' + toFile.length + ")</h3>" + toFile.map(function (t) { return txRow(t, !!b); }).join("") + "</div>" : "") +
       '<details class="card"><summary>All transactions (' + data.txns.length + ")</summary>" + (data.txns.length ? data.txns.map(function (t) { return txRow(t, !!b); }).join("") : '<p class="status">None this month.</p>') + "</details>" +
@@ -623,7 +623,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
     var sc = e.target.closest("[data-showcol]");
     if (sc) return show(colItems[sc.dataset.showcol].show);
     var go = e.target.closest("[data-go]");
-    if (go) return show({ title: "All transactions · " + monthName(go.dataset.go), lines: null, month: go.dataset.go });
+    if (go) return show({ title: "All transactions · " + monthName(go.dataset.go), lines: null, month: go.dataset.go, from: "trend" });
     var card = e.target.closest("[data-acct]");
     if (card) return pickAccount(card.dataset.acct);
     var cat = e.target.closest("[data-cat]");
@@ -642,9 +642,15 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
       (txns.map(function (t) { return txRow(t, !!data.budget); }).join("") || '<p class="status">No transactions.</p>') + "</div>";
   }
   function show(f) {
+    // The chart you clicked stays put on screen, even as a new month changes what's above it
+    var id = f.from === "trend" ? "trend-chart" : "h-cat", before = document.getElementById(id);
+    var top = before ? before.getBoundingClientRect().top : null;
     var then = f.month && f.month !== month ? load(f.month) : Promise.resolve();
     return then.then(function () {
       showing = f; tip.hidden = true; render();
+      var after = document.getElementById(id);
+      var d = after && top !== null ? after.getBoundingClientRect().top - top : 0;
+      if (d) window.scrollBy(0, d);
     });
   }
   function pickAccount(id) {
@@ -655,7 +661,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
     var el = e.target.closest && e.target.closest("[data-cat], [data-go], [data-acct], [data-showcol]");
     if (!el || e.target !== el) return;
     e.preventDefault();
-    if (el.dataset.go) show({ title: "All transactions · " + monthName(el.dataset.go), lines: null, month: el.dataset.go });
+    if (el.dataset.go) show({ title: "All transactions · " + monthName(el.dataset.go), lines: null, month: el.dataset.go, from: "trend" });
     else if (el.dataset.acct) pickAccount(el.dataset.acct);
     else if (el.dataset.showcol) show(colItems[el.dataset.showcol].show);
     else openCategory(el.dataset.cat);

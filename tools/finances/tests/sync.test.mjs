@@ -133,3 +133,20 @@ test('Claude never overwrites a rule you made', async () => {
   assert.equal(txn('SQ *BLUE').line, 'L.f2', 'Claude files it when the rule’s line is gone…');
   assert.deepEqual([table.get('LUKE', 'RULE#SQ BLUE BOTTLE COFFEE').line, table.get('LUKE', 'RULE#SQ BLUE BOTTLE COFFEE').by], ['L.gone', 'luke-sub'], '…but leaves your rule for you to fix');
 });
+
+test('an account added since the last sync gets its full history once', async () => {
+  const accounts = accountSet();
+  const card = accounts.accounts.pop(); // the card isn't connected yet
+  const net = fakeNet({ accounts });
+  const { deps } = testDeps({ net, client: fakeClaude(() => '') });
+  await runSync(deps);
+  accounts.accounts.push(card); // now it is
+  const r = await runSync(deps);
+  const pulls = net.calls.filter((c) => c.url.includes('/accounts')).map((c) => new URL(c.url).searchParams);
+  assert.equal(pulls.length, 3, 'the usual sync, then one for the new account');
+  assert.deepEqual(pulls[2].getAll('account'), ['ACT-card']);
+  assert.equal(new Date(Number(pulls[2].get('start-date')) * 1000).toISOString().slice(0, 10), '2026-07-07', '89 days back');
+  assert.equal(r.counts.backfilled, 1);
+  await runSync(deps);
+  assert.equal(net.calls.filter((c) => c.url.includes('/accounts')).length, 4, 'only once');
+});

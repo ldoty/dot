@@ -250,6 +250,19 @@ async function ingestSimplefin(deps, { existing, accounts, counts }) {
   } catch (e) {
     return { stop: e.message };
   }
+  // An account added at the Bridge since the last sync came with only the last week: fetch its
+  // full history once (89 days, SimpleFIN's limit with the end date)
+  const fresh = newest ? set.accounts.filter((a) => !accounts.has(`ACCT#${hash(a.id)}`)).map((a) => a.id) : [];
+  if (fresh.length) {
+    try {
+      const back = await fetchAccounts(access, { start: new Date(now() - 89 * DAY), end: new Date(now() + DAY), accounts: fresh, fetch: deps.fetch });
+      const full = new Map(back.accounts.map((a) => [a.id, a]));
+      set = { ...set, accounts: set.accounts.map((a) => full.get(a.id) || a) };
+      counts.backfilled = fresh.length;
+    } catch (e) {
+      set = { ...set, errors: [...set.errors, `New account history: ${e.message}`] };
+    }
+  }
 
   for (const a of set.accounts) {
     const sk = `ACCT#${hash(a.id)}`;

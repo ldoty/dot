@@ -59,6 +59,18 @@ test('clicking around never scrolls the page', async () => {
   await p.click('[data-acct]');
   await p.click('#trend-chart .col[data-go="2026-09"]');
   assert.equal(scrolled, 0);
+  // A trend click that loads another month keeps the trend chart where it was on screen
+  let top = 400, moved = null;
+  p.d.defaultView.Element.prototype.getBoundingClientRect = function () { return { top: this.id === 'trend-chart' ? top : 0 }; };
+  p.d.defaultView.scrollBy = (x, y) => { moved = y; };
+  top = 400;
+  const go = p.el('#trend-chart .col[data-go="2026-08"]');
+  top = 400; // before the click
+  const realLoad = p.d.defaultView.fetch;
+  p.d.defaultView.fetch = async (...args) => { top = 650; return realLoad(...args); }; // the new month pushes it down
+  go.click();
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(moved, 250, 'scrolled by exactly what the new month moved it');
   p.close();
 });
 
@@ -278,6 +290,7 @@ test('trend: above a column opens that month with all its transactions; a color,
   assert.ok(p.requests.includes('GET /month/2026-09'));
   assert.equal(p.el('.month h2').textContent, 'September 2026');
   assert.match(p.el('#show-txns h3').textContent, /^All transactions · September 2026 \(1\)$/);
+  assert.ok(p.el('#show-txns').closest('section').querySelector('#trend-chart'), 'listed under the trend, where you clicked');
   assert.match(p.el('#trend-chart').closest('section').querySelector('.readout').textContent, /click a color for that category’s transactions that month, or above it for the whole month/);
   // Back to October, then September's Food piece in the trend
   await p.click('#next');

@@ -38,7 +38,7 @@ export async function claim(token, { fetch = globalThis.fetch } = {}) {
 }
 
 /** GET /accounts. `start`/`end` are Date; returns SimpleFIN's AccountSet ({ errors, accounts }) */
-export async function fetchAccounts(accessUrl, { start, end, fetch = globalThis.fetch } = {}) {
+export async function fetchAccounts(accessUrl, { start, end, accounts, fetch = globalThis.fetch } = {}) {
   const u = new URL(accessUrl);
   const auth = Buffer.from(`${decodeURIComponent(u.username)}:${decodeURIComponent(u.password)}`).toString('base64');
   u.username = ''; u.password = '';
@@ -46,6 +46,7 @@ export async function fetchAccounts(accessUrl, { start, end, fetch = globalThis.
   const q = new URLSearchParams();
   if (start) q.set('start-date', String(Math.floor(start.getTime() / 1000)));
   if (end) q.set('end-date', String(Math.floor(end.getTime() / 1000)));
+  for (const id of accounts || []) q.append('account', id); // only these accounts
   const res = await fetch(`${base}/accounts?${q}`, { headers: { authorization: `Basic ${auth}` } });
   if (res.status === 403) throw Object.assign(new Error('SimpleFIN refused the access URL (revoked?). Make a new setup token at the Bridge.'), { revoked: true });
   if (!res.ok) throw new Error(`SimpleFIN answered ${res.status}.`);
