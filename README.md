@@ -23,6 +23,7 @@ tools/
   amber-finances/         amber-finances.dot-y.co: Amber's, the same way
   shared-finances/        shared-finances.dot-y.co: the joint accounts from both, against the Shared budget
   links/                  links.dot-y.co: family bookmarks by section
+  house-hunt/             house-hunt.dot-y.co: Greer neighborhoods we're weighing, with prices and shared notes
   assistant/              assistant.dot-y.co: Luke's chat with Claude (Bedrock) + calendar tools
   sms/                    Dot-y texting program: opt-in API behind dot-y.co/sms (+ /privacy, /terms)
 private/                  local only, gitignored (e.g. project_pax)

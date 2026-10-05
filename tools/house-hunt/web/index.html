@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>House Hunt</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="family.css">
+<link rel="stylesheet" href="leaflet/leaflet.css">
+<style>
+/* Layout: header, the map, shared notes, then neighborhoods in three sections (shortlist, to explore, no-go). */
+.wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 20px }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+.top a { color: var(--muted); text-decoration: none; font-size: 14px }
+h1 { font-size: clamp(32px, 6vw, 48px) }
+h2 { font-size: 22px }
+.lede { color: var(--muted); margin: -8px 0 0 }
+.status { color: var(--muted); font-size: 14px; min-height: 1.4em; margin: 0 }
+#main { display: grid; gap: 16px }
+section.group { display: grid; gap: 12px }
+.group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; border-bottom: 2px solid var(--wood); padding-bottom: 6px; margin-top: 8px }
+.group-head p { margin: 0; color: var(--muted); font-size: 13px }
+textarea, .edit input, select { background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 8px 10px; color: var(--ink); font: inherit; min-width: 0 }
+textarea:focus, .edit input:focus, select:focus { border-color: var(--pool); outline: none }
+textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 64px }
+
+/* Map */
+.map-card { padding: 0; overflow: hidden }
+#map { height: 440px; background: var(--raised) }
+@media (max-width: 640px) { #map { height: 320px } }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px 14px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line) }
+.legend span { display: inline-flex; align-items: center; gap: 6px }
+.sw { width: 11px; height: 11px; border-radius: 50%; display: inline-block }
+.sw.sq { border-radius: 3px }
+.pin { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff; font: 700 13px/1 var(--display); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35); box-sizing: border-box }
+.pin.shortlist { width: 34px; height: 34px; color: var(--on-sun) }
+.pin.nogo { opacity: .8 }
+.pin.park { width: 20px; height: 20px; border-radius: 5px }
+.pin.gym, .pin.family { border-radius: 8px }
+.pin.airport { width: 30px; height: 30px; font-size: 15px }
+.ring-label { font: 600 11px/1 var(--body); color: var(--muted); background: var(--surface); padding: 2px 5px; border-radius: 4px; white-space: nowrap }
+.leaflet-popup-content { font: 14px/1.45 var(--body) }
+.leaflet-popup-content b { font-family: var(--display); font-size: 16px }
+.pop-meta { color: #666; font-size: 12.5px }
+.unpinned { padding: 0 14px 10px; margin: 0; font-size: 12.5px; color: var(--muted) }
+
+/* Shared notes */
+.notes-card { display: grid; gap: 8px }
+.notes-card textarea { min-height: 96px }
+.save-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted) }
+.save-row .btn { padding: 5px 14px; font-size: 13px }
+.conflict { border-left: 3px solid var(--ember); padding: 6px 10px; font-size: 13px; background: var(--raised); border-radius: var(--r-sm); white-space: pre-wrap }
+
+/* Neighborhood cards */
+.hood { display: grid; gap: 10px }
+.hood.nogo { opacity: .7 }
+.hood.nogo h3 .nm { text-decoration: line-through; text-decoration-color: var(--muted) }
+.hood-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px }
+.hood-head h3 { font-size: 22px; overflow-wrap: anywhere; display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+.rank { flex: none; width: 30px; height: 30px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--sun); color: var(--on-sun); font: 700 14px/1 var(--display) }
+.price { font: 600 24px var(--display); font-variant-numeric: tabular-nums; text-align: right; flex: none }
+.price small { display: block; font: 12px var(--body); color: var(--muted) }
+.meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; color: var(--muted) }
+.tag { font-size: 12px; font-weight: 700; border-radius: var(--r-pill); padding: 2px 9px; background: var(--raised); color: var(--ink) }
+.tag.warn { background: none; border: 1.5px solid var(--ember); color: var(--ember) }
+.summary { margin: 0 }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: 14px }
+.facts dt { color: var(--muted) }
+.facts dd { margin: 0; overflow-wrap: anywhere }
+details.more summary { cursor: pointer; color: var(--pool); font-weight: 600; font-size: 14px; width: max-content }
+details.more ul { margin: 8px 0; padding-left: 20px }
+.sub { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 10px 0 6px }
+.drives { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); font-variant-numeric: tabular-nums; font-size: 14px }
+.drives dd { margin: 0; text-align: right; color: var(--muted); white-space: nowrap }
+.drives dd b { color: var(--ink) }
+.caveat { font-size: 12.5px; color: var(--muted); margin: 6px 0 0 }
+.acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap }
+.acts select { padding: 4px 8px; font-size: 13px }
+.small-btn { border: 1px solid transparent; background: none; color: var(--muted); border-radius: var(--r-pill); padding: 3px 9px; font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: none }
+.small-btn:hover { color: var(--ink); border-color: var(--line) }
+.small-btn.arm { color: var(--ember); border-color: var(--ember) }
+form.edit { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px }
+form.edit label { display: grid; gap: 3px; font-size: 12px; color: var(--muted) }
+form.edit .wide { grid-column: 1 / -1 }
+form.edit .buttons { grid-column: 1 / -1; display: flex; gap: 6px }
+.add-hood { justify-self: start; border-style: dashed }
+
+/* Drag to rank: neighborhoods by the ⠿ handle in their header, listings by theirs */
+.cards { display: grid; gap: 12px; min-height: 48px; border-radius: var(--r-md) }
+.drag { cursor: grab; touch-action: none; user-select: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 4px 2px; border: 0; background: none }
+.drag:hover { color: var(--ink) }
+.sortable-ghost { opacity: .35 }
+.sortable-chosen { box-shadow: 0 6px 20px rgba(0,0,0,.18) }
+.dropzone-hint { color: var(--muted); font-size: 13px; margin: 0; padding: 10px; border: 1.5px dashed var(--line); border-radius: var(--r-sm) }
+
+/* Listings inside each neighborhood, and the unsorted inbox */
+.listings { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px }
+.listings-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap }
+.listings-head .sub { margin: 0 }
+ol.lst { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; min-height: 36px }
+ol.lst:empty::before { content: "Drag listings here, or add one."; color: var(--muted); font-size: 13px; display: block; padding: 8px 10px; border: 1.5px dashed var(--line); border-radius: var(--r-sm) }
+.lst > li { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 2px 8px; align-items: start; padding: 8px 10px; background: var(--raised); border-radius: var(--r-sm) }
+.lst > li.unread { box-shadow: inset 3px 0 0 var(--sun) }
+.lst > li.sold, .lst > li.gone { opacity: .6 }
+.lrank { font: 700 13px/1.6 var(--display); color: var(--muted); min-width: 1.4em; text-align: right }
+.lmain { min-width: 0 }
+.lmain a, .lmain .addr { font-weight: 600; color: var(--ink); overflow-wrap: anywhere }
+.lmain a:hover { color: var(--pool) }
+.lmeta { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums }
+.lprice { font: 600 15px var(--display); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right }
+.lacts { grid-column: 3 / -1; display: flex; gap: 4px; flex-wrap: wrap; align-items: center }
+.lacts select { padding: 2px 6px; font-size: 12px }
+.lacts textarea { min-height: 48px; font-size: 13px }
+.ltag { font-size: 11px; font-weight: 700; border-radius: var(--r-pill); padding: 1px 7px; margin-left: 4px; background: var(--surface); color: var(--ink); vertical-align: 1px }
+.ltag.new { background: var(--sun); color: var(--on-sun) }
+.ltag.cut { background: var(--leaf); color: var(--on-accent) }
+.ltag.pending, .ltag.sold, .ltag.gone { background: var(--muted); color: var(--surface) }
+.lnotes { grid-column: 3 / -1 }
+form.ladd { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 6px }
+form.ladd input { background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 6px 9px; color: var(--ink); font: inherit; min-width: 0 }
+form.ladd .wide { grid-column: 1 / -1 }
+form.ladd .buttons { grid-column: 1 / -1; display: flex; gap: 6px }
+form.ladd .btn { padding: 5px 12px; font-size: 13px }
+.inbox { display: grid; gap: 8px }
+.inbox code { font: 600 14px var(--mono); background: var(--raised); padding: 1px 6px; border-radius: 4px }
+.mail-log { margin: 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--muted) }
+.empty { color: var(--muted); margin: 0 }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
+  <h1>House Hunt</h1>
+  <p class="lede">Greer neighborhoods we're weighing: our ranked shortlist, prices, drive times and notes. Shared between us; changes save for both.</p>
+  <p class="status" id="status" role="status"></p>
+  <div class="card map-card" id="map-card" hidden>
+    <div id="map" role="region" aria-label="Map of the neighborhoods"></div>
+    <div class="legend" aria-label="Legend">
+      <span><i class="sw" style="background:var(--sun)"></i>Shortlist</span>
+      <span><i class="sw" style="background:var(--pool)"></i>To explore</span>
+      <span><i class="sw" style="background:var(--muted)"></i>No-go</span>
+      <span><i class="sw sq" style="background:var(--leaf)"></i>Park or trail</span>
+      <span><i class="sw sq" style="background:var(--bloom)"></i>Family &amp; gym</span>
+      <span><i class="sw" style="background:var(--ink)"></i>GSP (rings at 3, 6, 9 mi)</span>
+    </div>
+    <p class="unpinned" id="unpinned"></p>
+  </div>
+  <div id="main"><p class="status">Loading…</p></div>
+</div>
+<script src="family-auth.js"></script>
+<script src="leaflet/leaflet.js"></script>
+<script src="sortable/Sortable.min.js"></script>
+<script>
+(function () {
+  var cfg, me = "", hoods = [], places = [], listings = [], mail = [], notes = { text: "", rev: 0 };
+  var addingListing = null, openNotes = {}, sortables = [];
+  var editing = null, armed = null, sort = "price";
+  // Notes typed but not yet saved, kept across re-renders: { "NOTES" | hoodId: text }
+  var drafts = {}, conflicts = {}, saving = {};
+  var GROUPS = [
+    { key: "shortlist", title: "Our shortlist, ranked", empty: "Nothing shortlisted yet. Drag a neighborhood here by its ⠿ handle, or pick a rank from its menu." },
+    { key: "explore", title: "To explore", empty: "Nothing left to explore." },
+    { key: "nogo", title: "No-go", empty: "Nothing ruled out." },
+  ];
+  var main = document.getElementById("main");
+  var map = null, layer = null, markers = {};
+
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function uid() { return "x" + Math.random().toString(36).slice(2, 9); }
+  function money(n) { return n == null ? "—" : "$" + Number(n).toLocaleString("en-US"); }
+  function when(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + ", " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+  function saved(o) { return o.updatedAt ? "Saved " + when(o.updatedAt) + (o.updatedByName ? " by " + o.updatedByName : "") : ""; }
+  function status(msg) {
+    var s = document.getElementById("status"); s.textContent = msg || "";
+    clearTimeout(status.t); if (msg) status.t = setTimeout(function () { s.textContent = ""; }, 5000);
+  }
+  function find(id) { return hoods.filter(function (h) { return h.id === id; })[0]; }
+  function shortlist() { return hoods.filter(function (h) { return h.status === "shortlist"; }).sort(byRank); }
+  function byRank(a, b) { return (a.rank || 99) - (b.rank || 99) || a.name.localeCompare(b.name); }
+  function byPrice(a, b) {
+    if (a.price == null || b.price == null) return (a.price == null) - (b.price == null); // unpriced last
+    return sort === "price" ? a.price - b.price : b.price - a.price;
+  }
+
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method,
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (b) {
+        if (res.status === 409) throw Object.assign(new Error("conflict"), { current: b.current });
+        if (!res.ok) throw new Error(b.error || "HTTP " + res.status);
+        return b;
+      });
+    });
+  }
+  function reload() {
+    return api("GET", "/all").then(function (all) { load(all); render(); });
+  }
+
+  function load(all) { hoods = all.hoods; places = all.places || []; listings = all.listings || []; mail = all.mail || []; notes = all.notes; }
+
+  // Saves a neighborhood with changes; on a conflict keeps the newer row and reports it.
+  function saveHood(h, changes, okMsg) {
+    var next = Object.assign({}, h, changes, { byName: me });
+    return api("PUT", "/hoods/" + h.id, next).then(function (row) {
+      hoods = hoods.filter(function (x) { return x.id !== row.id; }).concat([row]);
+      delete conflicts[row.id]; if (okMsg) status(okMsg); return row;
+    }, function (err) {
+      if (!err.current) { status("Couldn’t save: " + err.message); throw err; }
+      hoods = hoods.filter(function (x) { return x.id !== h.id; }).concat([err.current]);
+      throw err;
+    });
+  }
+
+  // Moves a neighborhood to shortlist position `rank` (1-based), "explore" or "nogo", renumbering the shortlist.
+  function placeHood(id, where) {
+    var h = find(id), list = shortlist().filter(function (x) { return x.id !== id; });
+    var rank = /^\d+$/.test(where) ? Number(where) : null;
+    if (rank) list.splice(rank - 1, 0, h);
+    var want = {};
+    list.forEach(function (x, i) { want[x.id] = { status: "shortlist", rank: i + 1 }; });
+    if (!rank) want[id] = { status: where, rank: null };
+    var todo = Object.keys(want).filter(function (k) { var x = find(k); return x.status !== want[k].status || x.rank !== want[k].rank; });
+    var label = rank ? "Shortlisted #" + rank : where === "nogo" ? "Marked no-go" : "Moved to explore";
+    todo.reduce(function (p, k) { return p.then(function () { return saveHood(find(k), want[k]); }); }, Promise.resolve())
+      .then(function () { render(); status(h.name + ": " + label); }, function (err) {
+        if (err.current) { status("Someone else changed the list just now. Here’s the latest; try again."); reload(); } else render();
+      });
+  }
+
+  // ---- map ----
+  var COLORS = { shortlist: "--sun", explore: "--pool", nogo: "--muted", park: "--leaf", gym: "--bloom", family: "--bloom", airport: "--ink" };
+  function color(kind) { return "var(" + (COLORS[kind] || "--pool") + ")"; }
+  function pin(cls, kind, glyph, size) {
+    return L.divIcon({ className: "", html: '<div class="pin ' + cls + '" style="background:' + color(kind) + '">' + glyph + "</div>", iconSize: [size, size], iconAnchor: [size / 2, size / 2], popupAnchor: [0, -size / 2] });
+  }
+  function initMap() {
+    if (map || typeof L === "undefined") return;
+    document.getElementById("map-card").hidden = false;
+    // Start over Greer; drawMap fits to the pins. Leaflet can't draw rings before a map has a view.
+    map = L.map("map", { scrollWheelZoom: false, zoomSnap: 0.5 }).setView([34.89, -82.24], 12);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+    map.attributionControl.setPrefix(false);
+    layer = L.layerGroup().addTo(map);
+  }
+  function drawMap() {
+    if (!map) return;
+    layer.clearLayers(); markers = {};
+    var bounds = [];
+    places.forEach(function (p) {
+      if (!p.ll) return;
+      if (p.kind === "airport") [3, 6, 9].forEach(function (mi) {
+        if (L.Browser.svg || L.Browser.canvas) L.circle(p.ll, { radius: mi * 1609.34, color: "#5d6b64", weight: 1.2, opacity: 0.5, fill: false, dashArray: "4 6", interactive: false }).addTo(layer);
+        L.marker([p.ll[0] + mi / 69.0, p.ll[1]], { interactive: false, icon: L.divIcon({ className: "", html: '<span class="ring-label">' + mi + " mi</span>", iconSize: null, iconAnchor: [16, 9] }) }).addTo(layer);
+      });
+      var glyph = p.kind === "airport" ? "✈" : p.kind === "family" ? "♥" : p.kind === "gym" ? "★" : "";
+      var size = p.kind === "park" ? 20 : 30;
+      L.marker(p.ll, { title: p.name, icon: pin(p.kind, p.kind, glyph, size), zIndexOffset: p.kind === "park" ? 0 : 450 })
+        .bindPopup("<b>" + esc(p.name) + "</b><br>" + esc(p.note), { maxWidth: 260 }).addTo(layer);
+      bounds.push(p.ll);
+    });
+    hoods.forEach(function (h) {
+      if (!h.ll) return;
+      var glyph = h.status === "shortlist" ? (h.rank || "") : h.status === "nogo" ? "✕" : "";
+      var size = h.status === "shortlist" ? 34 : 28;
+      var line = h.status === "shortlist" ? "Shortlist #" + h.rank : h.status === "nogo" ? "No-go" : "To explore";
+      markers[h.id] = L.marker(h.ll, { title: h.name, icon: pin(h.status, h.status, glyph, size), zIndexOffset: h.status === "shortlist" ? 500 - (h.rank || 0) * 5 : h.status === "nogo" ? 100 : 300 })
+        .bindPopup("<b>" + esc(h.name) + "</b><br>" + esc(money(h.price)) + ' median · <span class="pop-meta">' + esc(line) + (h.visited ? " · " + esc(h.visited) : "") + "</span>" +
+          (h.summary ? "<br>" + esc(h.summary) : "") + '<br><a href="#hood-' + esc(h.id) + '">See notes ↓</a>', { maxWidth: 260 }).addTo(layer);
+      bounds.push(h.ll);
+    });
+    if (bounds.length && !drawMap.fitted) { map.fitBounds(bounds, { padding: [30, 30] }); drawMap.fitted = true; }
+    var missing = hoods.filter(function (h) { return !h.ll; }).map(function (h) { return h.name; })
+      .concat(places.filter(function (p) { return !p.ll; }).map(function (p) { return p.name; }));
+    document.getElementById("unpinned").textContent = missing.length ? "Not on the map yet (add a location under Edit details): " + missing.join(", ") + "." : "";
+  }
+
+  // ---- rendering ----
+  function notesCard() {
+    var dirty = drafts.NOTES != null && drafts.NOTES !== notes.text;
+    return '<section class="card notes-card"><h2>Our notes</h2>' +
+      '<textarea data-notes="NOTES" aria-label="Shared notes" placeholder="Must-haves, questions for agents, places to drive by…">' + esc(drafts.NOTES != null ? drafts.NOTES : notes.text) + "</textarea>" +
+      conflictNote("NOTES", "these notes", conflicts.NOTES && conflicts.NOTES.text) +
+      '<div class="save-row"><button class="btn primary" data-save="NOTES"' + (dirty ? "" : " hidden") + ">Save notes</button><span>" + esc(saved(notes)) + "</span></div></section>";
+  }
+  function conflictNote(key, what, theirs) {
+    var c = conflicts[key]; if (!c) return "";
+    return '<div class="conflict">' + esc((c.updatedByName || "Someone") + " saved " + what + " while you were typing. Theirs:\n" + (theirs || "(empty)") + "\n\nYour version is still in the box; Save replaces theirs.") + "</div>";
+  }
+
+  function drivesText(h) { return (h.drives || []).map(function (d) { return d.to + ": " + d.min + " min" + (d.mi != null ? ", " + d.mi + " mi" : ""); }).join("\n"); }
+  function hoodForm(h) {
+    h = h || { status: "explore", facts: [], drives: [] };
+    function field(name, label, val, extra) {
+      extra = extra || {};
+      return "<label" + (extra.wide ? ' class="wide"' : "") + ">" + label + '<input name="' + name + '" value="' + esc(val) + '"' + (extra.attrs || "") + "></label>";
+    }
+    function area(name, label, val, ph) {
+      return '<label class="wide">' + label + '<textarea name="' + name + '" placeholder="' + esc(ph) + '">' + esc(val) + "</textarea></label>";
+    }
+    return '<form class="card edit" data-id="' + esc(h.id || "") + '">' +
+      field("name", "Neighborhood", h.name, { attrs: ' required maxlength="120"' }) +
+      field("price", "Median sale price ($)", h.price == null ? "" : h.price, { attrs: ' inputmode="numeric"' }) +
+      field("sales", "Sales counted", h.sales == null ? "" : h.sales, { attrs: ' inputmode="numeric"' }) +
+      field("summary", "One-line summary", h.summary, { wide: true, attrs: ' maxlength="300"' }) +
+      field("pool", "Pool", h.pool, { attrs: ' maxlength="200"' }) +
+      field("visited", "Visited", h.visited, { attrs: ' maxlength="40" placeholder="Sep 26, drove through…"' }) +
+      field("fitNote", "Doesn’t fit because…", h.fitNote, { attrs: ' maxlength="200" placeholder="(leave blank if it fits)"' }) +
+      field("elementary", "Elementary", h.elementary) + field("middle", "Middle", h.middle) + field("high", "High school", h.high) +
+      field("schoolNote", "School note", h.schoolNote, { wide: true, attrs: ' maxlength="300"' }) +
+      field("priceNote", "Price note", h.priceNote, { wide: true, attrs: ' maxlength="300"' }) +
+      field("ll", "Map location (lat, lng, or paste a Google Maps link)", h.ll ? h.ll.join(", ") : "", { wide: true, attrs: ' placeholder="34.8495, -82.2227"' }) +
+      area("facts", "Details (one per line)", (h.facts || []).join("\n"), "Walking trails, HOA dues, lot sizes…") +
+      area("drives", "Drive times (one per line)", drivesText(h), "Mom's house: 12 min, 5.3 mi") +
+      field("source", "Source link", h.source, { wide: true, attrs: ' placeholder="https://…"' }) +
+      '<div class="buttons"><button class="btn primary">' + (h.id ? "Save" : "Add neighborhood") + '</button><button type="button" class="btn ghost" data-cancel>Cancel</button></div></form>';
+  }
+
+  function placeMenu(h) {
+    var n = shortlist().filter(function (x) { return x.id !== h.id; }).length + 1, opts = "";
+    for (var i = 1; i <= n; i++) opts += '<option value="' + i + '"' + (h.status === "shortlist" && h.rank === i ? " selected" : "") + ">Shortlist #" + i + "</option>";
+    return '<select data-place="' + esc(h.id) + '" aria-label="Where ' + esc(h.name) + ' stands">' + opts +
+      '<option value="explore"' + (h.status === "explore" ? " selected" : "") + ">To explore</option>" +
+      '<option value="nogo"' + (h.status === "nogo" ? " selected" : "") + ">No-go</option></select>";
+  }
+
+  function hoodCard(h) {
+    if (editing === h.id) return hoodForm(h);
+    var draft = drafts[h.id], dirty = draft != null && draft !== (h.notes || "");
+    var schools = [h.elementary, h.middle, h.high].filter(Boolean).join(" / ");
+    var details = (h.facts || []).length || (h.drives || []).length || h.schoolNote;
+    return '<article class="card hood ' + esc(h.status) + '" id="hood-' + esc(h.id) + '" data-hood="' + esc(h.id) + '">' +
+      '<div class="hood-head"><h3><button class="drag" type="button" aria-label="Drag ' + esc(h.name) + ' to rank it" title="Drag to rank">⠿</button>' + (h.status === "shortlist" && h.rank ? '<span class="rank">' + h.rank + "</span>" : "") + '<span class="nm">' + esc(h.name) + "</span></h3>" +
+      '<div class="price">' + money(h.price) + "<small>" + (h.price == null ? "no price yet" : "median" + (h.sales != null ? " · " + h.sales + " sales" : "")) + "</small></div></div>" +
+      ((h.visited || h.fitNote || h.status === "nogo") ? '<div class="meta">' + (h.status === "nogo" ? '<span class="tag">Ruled out</span>' : "") +
+        (h.visited ? '<span class="tag">' + (/^drove/i.test(h.visited) ? esc(h.visited) : "Visited " + esc(h.visited)) + "</span>" : "") +
+        (h.fitNote ? '<span class="tag warn">' + esc(h.fitNote) + "</span>" : "") + "</div>" : "") +
+      (h.summary ? '<p class="summary">' + esc(h.summary) + "</p>" : "") +
+      '<dl class="facts">' +
+      (h.pool ? "<dt>Pool</dt><dd>" + esc(h.pool) + "</dd>" : "") +
+      (schools ? "<dt>Schools</dt><dd>" + esc(schools) + "</dd>" : "") +
+      (h.priceNote ? "<dt>Price</dt><dd>" + esc(h.priceNote) + "</dd>" : "") +
+      "</dl>" +
+      (details ? '<details class="more"><summary>Details &amp; drive times</summary>' +
+        ((h.facts || []).length ? "<ul>" + h.facts.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") +
+        '<p class="sub">Drive times (no traffic)</p>' + ((h.drives || []).length ? '<dl class="drives">' + h.drives.map(function (d) {
+          return "<dt>" + esc(d.to) + "</dt><dd><b>" + d.min + " min</b>" + (d.mi != null ? " · " + d.mi + " mi" : "") + "</dd>";
+        }).join("") + "</dl>" : '<p class="caveat">None yet. Add them under Edit details.</p>') +
+        (h.schoolNote ? '<p class="caveat">' + esc(h.schoolNote) + "</p>" : "") + "</details>" : "") +
+      listingsBlock(h.id) +
+      '<textarea data-notes="' + esc(h.id) + '" aria-label="Notes on ' + esc(h.name) + '" placeholder="Notes: drove by, HOA dues, listings to watch…">' + esc(draft != null ? draft : h.notes) + "</textarea>" +
+      conflictNote(h.id, "notes here", conflicts[h.id] && conflicts[h.id].notes) +
+      '<div class="save-row"><button class="btn primary" data-save="' + esc(h.id) + '"' + (dirty ? "" : " hidden") + ">Save notes</button><span>" + esc(saved(h)) + "</span></div>" +
+      '<div class="acts">' + placeMenu(h) +
+      (h.ll && map ? '<button class="small-btn" data-show="' + esc(h.id) + '">Show on map</button>' : "") +
+      '<button class="small-btn" data-edit="' + esc(h.id) + '">Edit details</button>' +
+      (h.source ? '<a class="small-btn" href="' + esc(h.source) + '" target="_blank" rel="noopener noreferrer">Source ↗</a>' : "") +
+      '<button class="small-btn" data-del="' + esc(h.id) + '">Delete</button></div></article>';
+  }
+
+  function render() {
+    var active = document.activeElement, key = active && active.dataset && active.dataset.notes, pos = key ? active.selectionStart : 0;
+    main.innerHTML = notesCard() + inboxCard() + GROUPS.map(function (g) {
+      var list = hoods.filter(function (h) { return h.status === g.key; }).sort(g.key === "shortlist" ? byRank : byPrice);
+      return '<section class="group" data-group="' + g.key + '"><div class="group-head"><h2>' + g.title + " <small>" + list.length + "</small></h2>" +
+        (g.key === "explore" ? '<select id="sort" aria-label="Sort"><option value="price"' + (sort === "price" ? " selected" : "") + '>Price: low to high</option><option value="price-desc"' + (sort === "price-desc" ? " selected" : "") + ">Price: high to low</option></select>" : "") +
+        '</div><div class="cards" data-cards="' + g.key + '">' + list.map(hoodCard).join("") + "</div>" +
+        (list.length ? "" : '<p class="empty">' + g.empty + "</p>") + "</section>";
+    }).join("") +
+      (editing === "new" ? hoodForm(null) : '<button class="btn ghost add-hood" id="add">+ Add neighborhood</button>');
+    if (key) { var t = main.querySelector('[data-notes="' + key + '"]'); if (t) { t.focus(); t.setSelectionRange(pos, pos); } }
+    var f = main.querySelector("form.edit input, form.ladd input"); if (f && !key) f.focus();
+    drawMap();
+    makeSortable();
+  }
+
+  // ---- listings ----
+  function inHood(hoodId) {
+    return listings.filter(function (l) { return (l.hoodId || null) === hoodId; })
+      .sort(function (a, b) { return (a.rank || 999) - (b.rank || 999) || String(a.firstSeenAt).localeCompare(String(b.firstSeenAt)); });
+  }
+  function findListing(id) { return listings.filter(function (l) { return l.id === id; })[0]; }
+  function unread(hoodId) { return inHood(hoodId).filter(function (l) { return !l.reviewed; }).length; }
+  // Last price change, from the alert history: "cut" with the amount, or null
+  function priceChange(l) {
+    var p = (l.history || []).map(function (h) { return h.price; }).filter(function (x) { return x != null; });
+    if (p.length < 2 || p[p.length - 1] === p[p.length - 2]) return null;
+    var d = p[p.length - 1] - p[p.length - 2];
+    return { cut: d < 0, amount: Math.abs(d) };
+  }
+  var STATUS_TAG = { pending: "Pending", sold: "Sold", gone: "Off market" };
+
+  function listingItem(l, i) {
+    var chg = priceChange(l), facts = [];
+    if (l.beds) facts.push(l.beds + " bd"); if (l.baths) facts.push(l.baths + " ba"); if (l.sqft) facts.push(Number(l.sqft).toLocaleString("en-US") + " sqft");
+    if (l.city) facts.push(l.city);
+    var tags = (!l.reviewed && l.event !== "price_cut" ? '<span class="ltag new">New</span>' : "") +
+      (chg ? '<span class="ltag ' + (chg.cut ? "cut" : "") + '">' + (chg.cut ? "Price cut " : "Price up ") + money(chg.amount) + "</span>" : "") +
+      (STATUS_TAG[l.status] ? '<span class="ltag ' + l.status + '">' + STATUS_TAG[l.status] + "</span>" : "");
+    var moveOpts = '<option value="">Unsorted</option>' + hoods.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (h) {
+      return '<option value="' + esc(h.id) + '"' + (h.id === l.hoodId ? " selected" : "") + ">" + esc(h.name) + "</option>";
+    }).join("");
+    var draft = drafts["L:" + l.id];
+    return '<li class="' + (l.reviewed ? "" : "unread ") + esc(l.status) + '" data-listing="' + esc(l.id) + '">' +
+      '<button class="drag ldrag" type="button" aria-label="Drag ' + esc(l.address) + ' to rank it" title="Drag to rank">⠿</button>' +
+      '<span class="lrank">' + (i + 1) + "</span>" +
+      '<div class="lmain">' + (l.url ? '<a href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">' + esc(l.address) + "</a>" : '<span class="addr">' + esc(l.address) + "</span>") + tags +
+      '<div class="lmeta">' + esc(facts.join(" · ")) + (l.summary ? (facts.length ? " · " : "") + esc(l.summary) : "") +
+      (l.firstSeenAt ? " · " + (l.source === "email" ? "emailed " : "added ") + esc(when(l.firstSeenAt).split(",")[0]) : "") + "</div></div>" +
+      '<span class="lprice">' + money(l.price) + "</span>" +
+      '<div class="lacts">' +
+      '<button class="small-btn" data-lreview="' + esc(l.id) + '">' + (l.reviewed ? "✓ Reviewed" : "Mark reviewed") + "</button>" +
+      '<button class="small-btn" data-lmove="' + esc(l.id) + '" data-dir="-1" aria-label="Move ' + esc(l.address) + ' up"' + (i === 0 ? " disabled" : "") + ">↑</button>" +
+      '<button class="small-btn" data-lmove="' + esc(l.id) + '" data-dir="1" aria-label="Move ' + esc(l.address) + ' down">↓</button>' +
+      '<select data-lhood="' + esc(l.id) + '" aria-label="Neighborhood for ' + esc(l.address) + '">' + moveOpts + "</select>" +
+      '<button class="small-btn" data-lnotes="' + esc(l.id) + '">' + (l.notes ? "Notes (1)" : "Notes") + "</button>" +
+      '<button class="small-btn" data-ldel="' + esc(l.id) + '">Delete</button></div>' +
+      (openNotes[l.id] ? '<div class="lnotes"><textarea data-notes="L:' + esc(l.id) + '" aria-label="Notes on ' + esc(l.address) + '" placeholder="Showing notes, questions for the agent…">' + esc(draft != null ? draft : l.notes) + "</textarea>" +
+        conflictNote("L:" + l.id, "notes on this listing", conflicts["L:" + l.id] && conflicts["L:" + l.id].notes) +
+        '<div class="save-row"><button class="btn primary" data-save="L:' + esc(l.id) + '"' + (draft != null && draft !== (l.notes || "") ? "" : " hidden") + ">Save notes</button><span>" + esc(saved(l)) + "</span></div></div>" : "") +
+      "</li>";
+  }
+  function listingsBlock(hoodId) {
+    var list = inHood(hoodId), n = unread(hoodId), key = hoodId || "";
+    return '<div class="listings"><div class="listings-head"><p class="sub">Listings' + (list.length ? " · " + list.length : "") + (n ? " · " + n + " to review" : "") + "</p>" +
+      (addingListing === key ? "" : '<button class="small-btn" data-ladd="' + esc(key) + '">+ Add listing</button>') + "</div>" +
+      (addingListing === key ? '<form class="ladd" data-hood="' + esc(key) + '"><input name="address" placeholder="Street address" aria-label="Street address" required maxlength="160">' +
+        '<input name="price" placeholder="Price" aria-label="Price" inputmode="numeric"><input class="wide" name="url" placeholder="Listing link (https://…)" aria-label="Listing link">' +
+        '<div class="buttons"><button class="btn primary">Add</button><button type="button" class="btn ghost" data-cancel-listing>Cancel</button></div></form>' : "") +
+      '<ol class="lst" data-lst="' + esc(key) + '">' + list.map(listingItem).join("") + "</ol></div>";
+  }
+  function inboxCard() {
+    var last = mail[0];
+    var unsorted = inHood(null);
+    return '<section class="card inbox"><h2>Listings inbox</h2>' +
+      '<p class="caveat" style="margin:0">Forward listing alerts (Zillow, Redfin, your agent) to <code>househunt@dot-y.co</code>. Claude files each home under its neighborhood; ones it can’t place land here. Drag any listing by its ⠿ handle to rank it or move it to a neighborhood.</p>' +
+      (mail.length ? '<ul class="mail-log">' + mail.slice(0, 3).map(function (m) {
+        return "<li>" + esc(when(m.receivedAt)) + " · " + esc(m.subject || "(no subject)") + " · " +
+          esc(m.outcome === "ok" ? m.added + " new, " + m.updated + " updated" : m.outcome) + "</li>";
+      }).join("") + "</ul>" : "") +
+      (unsorted.length || addingListing === "" ? listingsBlock(null) : "") + "</section>";
+  }
+
+  // Saves a listing with changes; on a conflict keeps the newer row
+  function saveListing(l, changes, okMsg) {
+    var next = Object.assign({}, l, changes, { byName: me });
+    return api("PUT", "/listings/" + l.id, next).then(function (row) {
+      listings = listings.filter(function (x) { return x.id !== row.id; }).concat([row]);
+      if (okMsg) status(okMsg); return row;
+    }, function (err) {
+      if (!err.current) { status("Couldn’t save: " + err.message); throw err; }
+      listings = listings.filter(function (x) { return x.id !== l.id; }).concat([err.current]);
+      throw err;
+    });
+  }
+  // Puts a listing at `index` (0-based) in a neighborhood's list (null = unsorted) and renumbers that list
+  function moveListing(id, hoodId, index) {
+    var l = findListing(id); if (!l) return;
+    var list = inHood(hoodId).filter(function (x) { return x.id !== id; });
+    index = Math.max(0, Math.min(index, list.length));
+    list.splice(index, 0, l);
+    // Renumber the list it lands in and, when it changes neighborhoods, the one it left
+    var from = l.hoodId || null;
+    var lists = [{ hood: hoodId, list: list }].concat(from !== hoodId ? [{ hood: from, list: inHood(from).filter(function (x) { return x.id !== id; }) }] : []);
+    var todo = [];
+    lists.forEach(function (g) {
+      g.list.forEach(function (x, i) {
+        if ((x.hoodId || null) !== g.hood || x.rank !== i + 1) todo.push({ l: x, ch: { hoodId: g.hood, rank: i + 1 } });
+      });
+    });
+    var moved = (l.hoodId || null) !== hoodId, h = hoodId && find(hoodId);
+    todo.reduce(function (p, t) { return p.then(function () { return saveListing(findListing(t.l.id), t.ch); }); }, Promise.resolve())
+      .then(function () { render(); status(moved ? l.address + " → " + (h ? h.name : "Unsorted") : "Ranked " + l.address + " #" + (index + 1)); }, function (err) {
+        if (err.current) { status("Someone else changed these listings just now. Here’s the latest; try again."); reload(); } else render();
+      });
+  }
+
+  // Drag to rank (SortableJS; touch works too). Every render rebuilds the lists, so rebuild these.
+  function makeSortable() {
+    sortables.forEach(function (x) { x.destroy(); }); sortables = [];
+    if (typeof Sortable === "undefined") return;
+    Array.prototype.forEach.call(main.querySelectorAll("[data-cards]"), function (el) {
+      sortables.push(Sortable.create(el, {
+        group: "hoods", handle: ".hood-head .drag", draggable: ".hood", animation: 150, delay: 120, delayOnTouchOnly: true,
+        onEnd: function (e) {
+          var id = e.item.dataset.hood, to = e.to.dataset.cards, from = e.from.dataset.cards;
+          if (to === "shortlist") placeHood(id, String(e.newDraggableIndex + 1));
+          else if (to !== from) placeHood(id, to);
+          else render(); // explore and no-go stay sorted by price
+        },
+      }));
+    });
+    Array.prototype.forEach.call(main.querySelectorAll("ol.lst"), function (el) {
+      sortables.push(Sortable.create(el, {
+        group: "listings", handle: ".ldrag", animation: 150, delay: 120, delayOnTouchOnly: true,
+        onEnd: function (e) {
+          if (e.from === e.to && e.oldIndex === e.newIndex) return;
+          moveListing(e.item.dataset.listing, e.to.dataset.lst || null, e.newIndex);
+        },
+      }));
+    });
+  }
+
+  // ---- notes ----
+  // Leaving the box and clicking Save both call this; only one save per box runs at a time
+  function saveNotes(key) {
+    var text = drafts[key]; if (text == null || saving[key]) return;
+    saving[key] = true;
+    var btn = main.querySelector('[data-save="' + key + '"]'); if (btn) btn.disabled = true;
+    if (key === "NOTES") {
+      var rev = conflicts.NOTES ? conflicts.NOTES.rev : notes.rev;
+      api("PUT", "/notes", { text: text, rev: rev, byName: me }).finally(function () { delete saving.NOTES; }).then(function (n) {
+        notes = n; delete drafts.NOTES; delete conflicts.NOTES; render(); status("Notes saved");
+      }, function (err) {
+        if (err.current) { conflicts.NOTES = err.current; notes = err.current; render(); status("Someone else saved first. Check their version below."); }
+        else { status("Couldn’t save: " + err.message); render(); }
+      });
+      return;
+    }
+    if (key.indexOf("L:") === 0) {
+      var l = findListing(key.slice(2)); if (!l) { delete saving[key]; return; }
+      saveListing(l, { notes: text }, "Notes saved").finally(function () { delete saving[key]; }).then(function () { delete drafts[key]; delete conflicts[key]; render(); }, function (err) {
+        if (err.current) { conflicts[key] = err.current; status("Someone else saved first. Check their version below."); }
+        render();
+      });
+      return;
+    }
+    var h = find(key); if (!h) { delete saving[key]; return; }
+    saveHood(h, { notes: text }, "Notes saved").finally(function () { delete saving[key]; }).then(function () { delete drafts[key]; render(); }, function (err) {
+      if (err.current) { conflicts[key] = err.current; status("Someone else saved first. Check their version below."); }
+      render();
+    });
+  }
+
+  function baseText(key) {
+    if (key === "NOTES") return notes.text;
+    if (key.indexOf("L:") === 0) return (findListing(key.slice(2)) || {}).notes || "";
+    return (find(key) || {}).notes || "";
+  }
+  main.addEventListener("input", function (e) {
+    var key = e.target.dataset.notes; if (!key) return;
+    drafts[key] = e.target.value;
+    var btn = main.querySelector('[data-save="' + key + '"]');
+    var base = baseText(key);
+    if (btn) btn.hidden = e.target.value === base && !conflicts[key];
+  });
+  // Notes save when you leave the box, or with the Save button
+  main.addEventListener("focusout", function (e) {
+    var key = e.target.dataset && e.target.dataset.notes;
+    if (!key || drafts[key] == null || conflicts[key]) return;
+    var base = baseText(key);
+    if (drafts[key] === base) { delete drafts[key]; return; }
+    setTimeout(function () { saveNotes(key); }, 0);
+  });
+  main.addEventListener("change", function (e) {
+    if (e.target.id === "sort") { sort = e.target.value; render(); return; }
+    if (e.target.dataset.place) placeHood(e.target.dataset.place, e.target.value);
+    if (e.target.dataset.lhood) moveListing(e.target.dataset.lhood, e.target.value || null, Infinity);
+  });
+
+  main.addEventListener("click", function (e) {
+    var t = e.target.closest("button"); if (!t) return;
+    if (t.dataset.save) saveNotes(t.dataset.save);
+    else if (t.id === "add") { editing = "new"; render(); }
+    else if (t.dataset.ladd != null) { addingListing = t.dataset.ladd; render(); }
+    else if (t.dataset.cancelListing != null) { addingListing = null; render(); }
+    else if (t.dataset.lreview) {
+      var lr = findListing(t.dataset.lreview);
+      saveListing(lr, { reviewed: !lr.reviewed }).then(render, function () { render(); });
+    }
+    else if (t.dataset.lmove) {
+      var lm = findListing(t.dataset.lmove), at = inHood(lm.hoodId || null).indexOf(lm);
+      moveListing(lm.id, lm.hoodId || null, at + Number(t.dataset.dir));
+    }
+    else if (t.dataset.lnotes) { openNotes[t.dataset.lnotes] = !openNotes[t.dataset.lnotes]; render(); }
+    else if (t.dataset.ldel) {
+      var lid = t.dataset.ldel;
+      if (armed !== "L:" + lid) {
+        armed = "L:" + lid; t.classList.add("arm"); t.textContent = "Delete?";
+        setTimeout(function () { if (armed === "L:" + lid) { armed = null; render(); } }, 3000);
+        return;
+      }
+      armed = null;
+      var gl = findListing(lid);
+      api("DELETE", "/listings/" + lid).then(function () {
+        listings = listings.filter(function (x) { return x.id !== lid; }); render(); status(gl.address + " deleted");
+      }).catch(function (err) { status("Couldn’t delete: " + err.message); });
+    }
+    else if (t.dataset.edit) { editing = t.dataset.edit; render(); }
+    else if (t.dataset.cancel != null) { editing = null; render(); }
+    else if (t.dataset.show) {
+      var m = markers[t.dataset.show]; if (!m) return;
+      document.getElementById("map-card").scrollIntoView({ behavior: "smooth", block: "center" });
+      map.flyTo(m.getLatLng(), 14, { duration: 0.8 }); setTimeout(function () { m.openPopup(); }, 850);
+    }
+    else if (t.dataset.del) {
+      var id = t.dataset.del;
+      if (armed !== id) {
+        armed = id; t.classList.add("arm"); t.textContent = "Delete with its notes?";
+        setTimeout(function () { if (armed === id) { armed = null; render(); } }, 3000);
+        return;
+      }
+      armed = null;
+      var gone = find(id);
+      api("DELETE", "/hoods/" + id).then(function () {
+        hoods = hoods.filter(function (h) { return h.id !== id; }); render(); status(gone.name + " deleted");
+      }).catch(function (err) { status("Couldn’t delete: " + err.message); });
+    }
+  });
+
+  function addListing(f) {
+    var el = f.elements, address = el.address.value.trim(), hoodId = f.dataset.hood || null;
+    if (!address) { el.address.focus(); return; }
+    var price = el.price.value.replace(/[$,\s]/g, "");
+    if (price && !/^\d+$/.test(price)) { el.price.focus(); status("Price should be whole dollars, like 425000."); return; }
+    var url = el.url.value.trim();
+    if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
+    var l = { id: uid(), rev: 0, address: address, hoodId: hoodId, price: price ? Number(price) : null, url: url, status: "active", source: "manual",
+      reviewed: true, rank: inHood(hoodId).length + 1, notes: "", history: [] };
+    saveListing(l, {}, address + " added").then(function () { addingListing = null; render(); }, function () {});
+  }
+
+  // "Mom's house: 12 min, 5.3 mi" -> { to, min, mi }
+  function parseDrives(text) {
+    var out = [], bad = null;
+    text.split("\n").map(function (l) { return l.trim(); }).filter(Boolean).forEach(function (l) {
+      var m = /^(.+?)\s*:\s*(\d+)\s*min(?:\w*)?(?:\s*[,·]\s*(\d+(?:\.\d+)?)\s*mi(?:\w*)?)?$/i.exec(l);
+      if (m) out.push({ to: m[1], min: Number(m[2]), mi: m[3] ? Number(m[3]) : null }); else bad = bad || l;
+    });
+    return { list: out, bad: bad };
+  }
+  // "34.85, -82.22" or a Google Maps link with "@34.85,-82.22"
+  function parseLatLng(text) {
+    var m = /(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/.exec(text);
+    return m ? [Number(m[1]), Number(m[2])] : null;
+  }
+
+  main.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (e.target.classList.contains("ladd")) { addListing(e.target); return; }
+    // Read fields via f.elements: f.name is the form’s own property
+    var f = e.target, el = f.elements;
+    function num(name) {
+      var v = el[name].value.replace(/[$,\s]/g, "");
+      if (!v) return null;
+      return /^\d+$/.test(v) ? Number(v) : NaN;
+    }
+    var price = num("price"), sales = num("sales");
+    if (Number.isNaN(price)) { el.price.focus(); status("Price should be whole dollars, like 425000."); return; }
+    if (Number.isNaN(sales)) { el.sales.focus(); status("Sales should be a whole number."); return; }
+    var ll = el.ll.value.trim() ? parseLatLng(el.ll.value) : null;
+    if (el.ll.value.trim() && !ll) { el.ll.focus(); status("Location should look like 34.8495, -82.2227 (or paste a Google Maps link)."); return; }
+    var drives = parseDrives(el.drives.value);
+    if (drives.bad) { el.drives.focus(); status("Couldn’t read “" + drives.bad + "”. Use: Place: 12 min, 5.3 mi"); return; }
+    var old = f.dataset.id && find(f.dataset.id);
+    var base = old || { id: uid(), rev: 0, status: "explore", notes: "", order: Date.now() };
+    var changes = {
+      name: el.name.value.trim(), price: price, sales: sales, summary: el.summary.value, pool: el.pool.value, visited: el.visited.value,
+      fitNote: el.fitNote.value, elementary: el.elementary.value, middle: el.middle.value, high: el.high.value, schoolNote: el.schoolNote.value,
+      priceNote: el.priceNote.value, ll: ll, facts: el.facts.value.split("\n").map(function (s) { return s.trim(); }).filter(Boolean).slice(0, 12),
+      drives: drives.list.slice(0, 8), source: el.source.value.trim(),
+    };
+    if (!changes.name) { el.name.focus(); return; }
+    saveHood(base, changes, old ? "Saved" : changes.name + " added").then(function () { editing = null; render(); }, function (err) {
+      if (err.current) { editing = null; status("Someone else changed " + base.name + " first. Here’s the latest; edit again."); render(); }
+    });
+  });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && editing) { editing = null; render(); } });
+
+  function gate(msg) {
+    main.innerHTML = '<p class="status">' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button>';
+    document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
+    me = user.given_name || "";
+    document.getElementById("signout").hidden = false;
+    document.getElementById("signout").onclick = function () { FamilyAuth.logout(); };
+    return api("GET", "/all").then(function (all) {
+      load(all);
+      initMap(); render();
+    });
+  }).catch(function (e) { gate(/forbidden/.test(e.message) ? "Your account doesn’t have access to House Hunt yet." : e.message); });
+})();
+</script>
+</body>
+</html>
