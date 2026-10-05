@@ -32,6 +32,31 @@ export function withContributionLines(lines, accounts, person) {
   ];
 }
 export const WORKING = '@working';
+// A saved version followed directly, by id ('@v:<id>'), instead of through a tag
+export const VERSION = '@v:';
+/** The version a tag or '@v:<id>' names in one doc's versions, or throws a clear 409 */
+function versionFor(all, doc, tag, label) {
+  const versions = all.versions?.[doc] || [];
+  if (tag.startsWith(VERSION)) {
+    const v = find(versions, (x) => x.id === tag.slice(VERSION.length));
+    if (!v) throw Object.assign(new Error(`That saved version of ${label} no longer exists.`), { status: 409 });
+    return v;
+  }
+  const t = find(all.tags?.[doc], (x) => x.name === tag);
+  if (!t) throw Object.assign(new Error(`${label} has no tag “${tag}”.`), { status: 409 });
+  const v = find(versions, (x) => x.id === t.versionId);
+  if (!v) throw Object.assign(new Error(`Tag “${tag}” points at a version that no longer exists.`), { status: 409 });
+  return v;
+}
+/** What can be followed in one doc: its tags (and the version each points at) and its saved versions */
+function choicesFor(all, doc) {
+  const versions = all.versions?.[doc] || [];
+  return {
+    tags: (all.tags?.[doc] || []).map((x) => x.name).sort(),
+    tagVersions: Object.fromEntries((all.tags?.[doc] || []).map((x) => [x.name, find(versions, (v) => v.id === x.versionId)?.name || null])),
+    versions: versions.map((v) => ({ id: v.id, name: v.name, savedAt: v.savedAt })),
+  };
+}
 export const SKIP_LINES = [
   { id: TRANSFER, group: 'Transfers', category: 'Transfers', name: 'Transfer (between my accounts, card payment)', kind: 'skip', target: 0 },
 ];
@@ -100,10 +125,7 @@ export function resolveSharedLines(all, { tag = 'default' } = {}) {
     if (!sh?.state) throw Object.assign(new Error('The Shared budget has no working copy yet.'), { status: 409 });
     sv = { id: `working@${sh.rev ?? 0}`, name: 'Working copy', savedAt: null, state: sh.state };
   } else {
-    const t = find(sharedTags, (x) => x.name === tag);
-    if (!t) throw Object.assign(new Error(`The Shared budget has no tag “${tag}”.`), { status: 409 });
-    sv = find(all.versions?.shared, (x) => x.id === t.versionId);
-    if (!sv) throw Object.assign(new Error(`Tag “${tag}” points at a version that no longer exists.`), { status: 409 });
+    sv = versionFor(all, 'shared', tag, 'The Shared budget');
   }
   const shared = sharedMath(sv.state || {});
   // Money in: each person's contribution, expected at their share of the split, and anything else
@@ -121,7 +143,7 @@ export function resolveSharedLines(all, { tag = 'default' } = {}) {
   lines.push(...SKIP_LINES);
   return {
     tag, version: { id: sv.id, name: sv.name, savedAt: sv.savedAt }, sharedTag: tag === WORKING ? 'working copy' : tag,
-    sharedVersion: { id: sv.id, name: sv.name, savedAt: sv.savedAt }, tags: sharedTags.map((x) => x.name).sort(), lines,
+    sharedVersion: { id: sv.id, name: sv.name, savedAt: sv.savedAt }, ...choicesFor(all, 'shared'), lines,
   };
 }
 
@@ -136,10 +158,7 @@ export function resolveLines(all, { person = 'Luke', tag = 'default' } = {}) {
     st2 = sh?.state ? { name: 'working copy' } : null;
     sv = sh?.state ? { id: `working@${sh.rev ?? 0}`, name: 'Working copy', savedAt: null, state: sh.state } : null;
   } else {
-    const t = find(myTags, (x) => x.name === tag);
-    if (!t) throw Object.assign(new Error(`${person}’s budget has no tag “${tag}”.`), { status: 409 });
-    v = find(all.versions?.[person], (x) => x.id === t.versionId);
-    if (!v) throw Object.assign(new Error(`Tag “${tag}” points at a version that no longer exists.`), { status: 409 });
+    v = versionFor(all, person, tag, `${person}’s budget`);
     const follows = (v.state || {}).follows || 'default';
     st2 = find(all.tags?.shared, (x) => x.name === follows) || find(all.tags?.shared, (x) => x.name === 'default');
     sv = st2 && find(all.versions?.shared, (x) => x.id === st2.versionId);
@@ -177,7 +196,7 @@ export function resolveLines(all, { person = 'Luke', tag = 'default' } = {}) {
     version: { id: v.id, name: v.name, savedAt: v.savedAt },
     sharedTag: st2 ? st2.name : null,
     sharedVersion: sv ? { id: sv.id, name: sv.name, savedAt: sv.savedAt } : null,
-    tags: myTags.map((x) => x.name).sort(),
+    ...choicesFor(all, person),
     lines,
   };
 }

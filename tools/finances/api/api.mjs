@@ -22,7 +22,7 @@
 import { verifyAccessToken } from './verify-token.mjs';
 import { summarize } from './summary.mjs';
 import { refreshBudget, ymd } from './sync.mjs';
-import { WORKING, withContributionLines } from './budget-lines.mjs';
+import { VERSION, WORKING, withContributionLines } from './budget-lines.mjs';
 import { OWNERS, lineFits, ownerOf, txnId, txnKey } from './store.mjs';
 import { validateManifest } from './dot-manifest.mjs';
 
@@ -158,7 +158,7 @@ export function createApi(depsOrFactory) {
         ];
         return json(200, {
           month: p.month, today,
-          budget: budget && { tag: budget.tag, version: budget.version, sharedTag: budget.sharedTag, sharedVersion: budget.sharedVersion, tags: budget.tags, fetchedAt: budget.fetchedAt },
+          budget: budget && { tag: budget.tag, version: budget.version, sharedTag: budget.sharedTag, sharedVersion: budget.sharedVersion, tags: budget.tags, tagVersions: budget.tagVersions || {}, versions: budget.versions || [], fetchedAt: budget.fetchedAt },
           budgetError,
           summary, trend,
           txns: counted.map(txnOut).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
@@ -219,7 +219,8 @@ export function createApi(depsOrFactory) {
 
       case 'PUT /settings': {
         const tag = typeof body.tag === 'string' ? body.tag : '';
-        if (tag !== WORKING && !/^[a-z0-9][a-z0-9_-]{0,29}$/.test(tag)) return json(400, { error: 'bad tag' });
+        const ok = tag === WORKING || /^[a-z0-9][a-z0-9_-]{0,29}$/.test(tag) || (tag.startsWith(VERSION) && /^[A-Za-z0-9_-]{1,40}$/.test(tag.slice(VERSION.length)));
+        if (!ok) return json(400, { error: 'bad tag' });
         let budget;
         try {
           budget = await refreshBudget(deps, { user, channel: 'web', tag });

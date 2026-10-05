@@ -293,6 +293,15 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
       (txns.map(function (t) { return txRow(t, !!data.budget); }).join("") || '<p class="status">No transactions this month.</p>') + "</div>";
   }
 
+  // What the budget can follow: the live working copy, a tag (it moves when re-tagged in Budget),
+  // or one saved version
+  function followOptions(b) {
+    var cur = data.settings.tag, opt = function (v, label) { return '<option value="' + esc(v) + '"' + (v === cur ? " selected" : "") + ">" + esc(label) + "</option>"; };
+    return opt("@working", "Working copy (live)") +
+      '<optgroup label="Tags">' + b.tags.map(function (t) { var vn = (b.tagVersions || {})[t]; return opt(t, t + (vn ? " → " + vn : "")); }).join("") + "</optgroup>" +
+      ((b.versions || []).length ? '<optgroup label="Saved versions">' + b.versions.map(function (v) { return opt("@v:" + v.id, v.name); }).join("") + "</optgroup>" : "");
+  }
+
   function stat(label, t, sub) {
     return '<div class="card stat"><div class="eyebrow">' + esc(label) + '</div><div class="big">' + usd0.format(t.spent) +
       '</div><div class="of">of ' + usd0.format(t.target) + (sub ? " · " + sub : "") + "</div></div>";
@@ -548,9 +557,8 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
       (toFile.length ? '<div class="card" id="to-file"><h3>To file (' + toFile.length + ")</h3>" + toFile.map(function (t) { return txRow(t, !!b); }).join("") + "</div>" : "") +
       '<details class="card"><summary>All transactions (' + data.txns.length + ")</summary>" + (data.txns.length ? data.txns.map(function (t) { return txRow(t, !!b); }).join("") : '<p class="status">None this month.</p>') + "</details>" +
       '<details class="card"><summary>Accounts &amp; budget</summary><div class="settings">' +
-      (b ? '<label>' + (shared() ? "Follow the Shared budget" : "Follow my budget") + ' <select id="tag"><option value="@working"' + (data.settings.tag === "@working" ? " selected" : "") + ">Working copy (live)</option>" +
-        b.tags.map(function (t) { return "<option" + (t === data.settings.tag ? " selected" : "") + ">" + esc(t) + "</option>"; }).join("") + "</select></label>" +
-        '<p class="status">' + (shared() ? "Shared “" + esc(b.version.name) + "”. Read " + esc(when(b.fetchedAt)) + ".</p>" : esc(data.settings.tag === "@working" ? "Working copy" : data.settings.tag) + " → my “" + esc(b.version.name) + "” → Shared " + esc(b.sharedTag || "") + (b.sharedVersion ? " “" + esc(b.sharedVersion.name) + "”" : "") + ". Read " + esc(when(b.fetchedAt)) + ".</p>") : "") +
+      (b ? '<label>' + (shared() ? "Follow the Shared budget" : "Follow my budget") + ' <select id="tag">' + followOptions(b) + "</select></label>" +
+        '<p class="status">' + (shared() ? "Shared “" + esc(b.version.name) + "”. Read " + esc(when(b.fetchedAt)) + ".</p>" : esc(data.settings.tag === "@working" ? "Working copy" : data.settings.tag.indexOf("@v:") === 0 ? "Saved version" : data.settings.tag) + " → my “" + esc(b.version.name) + "” → Shared " + esc(b.sharedTag || "") + (b.sharedVersion ? " “" + esc(b.sharedVersion.name) + "”" : "") + ". Read " + esc(when(b.fetchedAt)) + ".</p>") : "") +
       data.accounts.map(function (a) {
         return '<div class="acct-row"><span><strong>' + esc(a.name) + "</strong> " + '<span class="acct">' + esc(a.org) + '</span><br><span class="money">' + usd.format(a.balance) + "</span></span>" +
           (shared()
@@ -699,7 +707,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
     }
     if (e.target.id === "tag") {
       status("Reading the budget…");
-      return after(api("PUT", "/settings", { tag: e.target.value }), function (j) { return "Now following " + j.budget.tag + "."; });
+      return after(api("PUT", "/settings", { tag: e.target.value }), function (j) { return "Now following “" + j.budget.version.name + "”."; });
     }
   });
   // While a sync runs, check back until it's done

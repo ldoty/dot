@@ -360,6 +360,28 @@ test('Refresh budget re-reads it now, as the person signed in', async () => {
   p.close();
 });
 
+test('the budget can follow the working copy, a tag, or a saved version', async () => {
+  const p = await open();
+  const opts = [...p.el('#tag').options].map((o) => [o.parentElement.label || '', o.textContent]);
+  assert.deepEqual(opts, [['', 'Working copy (live)'], ['Tags', 'default → October plan'], ['Tags', 'lean → Lean'], ['Saved versions', 'October plan'], ['Saved versions', 'Lean']]);
+  await p.change('#tag', '@v:lv2');
+  assert.equal(table.get('LUKE', 'SETTINGS').tag, '@v:lv2');
+  assert.match(p.el('#status').textContent, /Now following “Lean”/);
+  assert.equal(p.el('#tag').value, '@v:lv2');
+  p.close();
+});
+
+test('the budget can follow the working copy, a tag, or a saved version', async () => {
+  const p = await open();
+  const opts = [...p.el('#tag').options].map((o) => [o.parentElement.label || '', o.textContent]);
+  assert.deepEqual(opts, [['', 'Working copy (live)'], ['Tags', 'default → October plan'], ['Tags', 'lean → Lean'], ['Saved versions', 'October plan'], ['Saved versions', 'Lean']]);
+  await p.change('#tag', '@v:lv2');
+  assert.equal(table.get('LUKE', 'SETTINGS').tag, '@v:lv2');
+  assert.match(p.el('#status').textContent, /Now following “Lean”/);
+  assert.equal(p.el('#tag').value, '@v:lv2');
+  p.close();
+});
+
 test('months: back to September, and no further than this month', async () => {
   const p = await open();
   assert.equal(p.el('#next').disabled, true);

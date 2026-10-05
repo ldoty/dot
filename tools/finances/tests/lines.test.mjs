@@ -1,7 +1,7 @@
 // Budget lines, month-to-date math, merchant keys and the SimpleFIN client
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveLines } from '../api/budget-lines.mjs';
+import { resolveLines, resolveSharedLines } from '../api/budget-lines.mjs';
 import { elapsedShare, summarize } from '../api/summary.mjs';
 import { merchantKey, classify } from '../api/categorize.mjs';
 import { claim, fetchAccounts, secretKind, PLACEHOLDER } from '../api/simplefin.mjs';
@@ -54,6 +54,28 @@ test('every category has a General line: no budget of its own, counted toward th
   const s = summarize({ month: '2026-10', today: '2026-10-15', lines: r.lines, txns: [{ line: 'LC.c1', amount: -40 }, { line: 'L.f1', amount: -10 }] });
   assert.equal(s.totals.spend.spent, 50);
   assert.equal(s.totals.spend.target, 600 + 60 + 1399.1, 'General adds nothing to the budget');
+});
+
+test('following a saved version directly, and the choices to offer', () => {
+  const r = resolveLines(budgetAll(), { tag: '@v:lv2' });
+  assert.deepEqual([r.version.name, r.sharedTag], ['Lean', 'lean'], 'that version, and the Shared tag it follows');
+  assert.deepEqual(r.versions.map((v) => v.name), ['October plan', 'Lean']);
+  assert.deepEqual(r.tagVersions, { default: 'October plan', lean: 'Lean' });
+  assert.throws(() => resolveLines(budgetAll(), { tag: '@v:gone' }), (e) => e.status === 409 && /no longer exists/.test(e.message));
+  const sh = resolveSharedLines(budgetAll(), { tag: '@v:sv2' });
+  assert.equal(sh.version.name, 'No mortgage');
+  assert.deepEqual(sh.versions.map((v) => v.name), ['Starting point', 'No mortgage']);
+});
+
+test('following a saved version directly, and the choices to offer', () => {
+  const r = resolveLines(budgetAll(), { tag: '@v:lv2' });
+  assert.deepEqual([r.version.name, r.sharedTag], ['Lean', 'lean'], 'that version, and the Shared tag it follows');
+  assert.deepEqual(r.versions.map((v) => v.name), ['October plan', 'Lean']);
+  assert.deepEqual(r.tagVersions, { default: 'October plan', lean: 'Lean' });
+  assert.throws(() => resolveLines(budgetAll(), { tag: '@v:gone' }), (e) => e.status === 409 && /no longer exists/.test(e.message));
+  const sh = resolveSharedLines(budgetAll(), { tag: '@v:sv2' });
+  assert.equal(sh.version.name, 'No mortgage');
+  assert.deepEqual(sh.versions.map((v) => v.name), ['Starting point', 'No mortgage']);
 });
 
 test('a missing tag is a clear error', () => {
