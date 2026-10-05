@@ -422,10 +422,40 @@ test('every personal budget has a fixed Shared contributions section, first, fro
   p.type('#a-Lukep', '10'); await saved();
   const stored = doc('Luke');
   assert.deepEqual(stored.categories.map((c) => c.id), ['contrib', 'Lukec']);
-  assert.deepEqual(stored.categories[0].items.map((i) => [i.id, i.calc, i.person]), [['contrib-share', 'share', 'Luke']]);
+  assert.deepEqual(stored.categories[0].items.map((i) => [i.id, i.calc, i.person]), [['contrib-share', 'share', 'Luke'], ['contrib-travel', 'travel', 'Luke']]);
   assert.ok(!stored.categories[1].items.some((i) => i.calc === 'share'));
   // The next category can't move above it
   assert.ok(p.el('[data-cmove="Lukec"][data-dir="-1"]').disabled);
+  p.close();
+});
+
+test('the fixed Travel line is each person’s part of the Shared travel fund; Share of shared costs is the rest', async () => {
+  const v1 = JSON.parse(table.get(PK, 'DOC#shared#VERSION#v1').state);
+  v1.categories.push({ id: 'c9', name: 'Travel & trips', kind: 'spend', items: [
+    { id: 't1', name: 'Trips', amount: 400, freq: 'mo', who: 'Shared' },
+    { id: 't2', name: 'Flights', amount: 100, freq: 'mo', who: 'Split', luke: 100 },
+  ] });
+  table.put({ ...table.get(PK, 'DOC#shared#VERSION#v1'), state: JSON.stringify(v1) });
+  const p = await openBudget('#luke');
+  // Luke: half of $1,400 shared ($700) + the $100 flights he alone pays = $800, of which travel is $200 + $100
+  assert.equal(p.text('ro-contrib-travel'), '$300');
+  assert.equal(p.text('ro-contrib-share'), '$500');
+  assert.match(p.text('nt-contrib-travel'), /Your part of Travel & trips/);
+  assert.equal(p.d.querySelector('[data-del="contrib-travel"]'), null, 'fixed');
+  p.close();
+  const a = await openBudget('#amber');
+  assert.equal(a.text('ro-contrib-travel'), '$200');
+  assert.equal(a.text('ro-contrib-share'), '$500');
+  a.close();
+});
+
+test('on the Shared tab, a category can be marked as the travel fund', async () => {
+  const p = await openBudget('#shared');
+  const btn = p.el('[data-cfund="c1"]');
+  assert.equal(btn.textContent, 'Not travel');
+  p.click('[data-cfund="c1"]'); await saved();
+  assert.equal(doc('shared').categories[0].fund, 'travel');
+  assert.equal(p.el('[data-cfund="c1"]').getAttribute('aria-pressed'), 'true');
   p.close();
 });
 

@@ -27,6 +27,7 @@ export const CONTRIBUTION = 'X.to';
 // Budget's fixed Shared contributions section (tools/budget: category "contrib", line "contrib-share").
 // When the person's budget has it, contributions go there and the "To <account>" lines aren't needed.
 export const CONTRIB_LINE = 'L.contrib-share';
+export const CONTRIB_TRAVEL = 'L.contrib-travel'; // its Travel line, for the shared account marked travel
 export function withContributionLines(lines, accounts, person) {
   if (lines.some((l) => l.id === CONTRIB_LINE)) return lines;
   const shared = (accounts || []).filter((a) => a.owner === 'shared');
@@ -93,15 +94,22 @@ function sharedMath(st) {
   };
   const by = { Shared: mort, Luke: 0, Amber: 0 };
   const items = [];
+  // The travel fund: categories marked fund "travel", or if none is, any with "travel" in the name
+  // (as tools/budget does). Each person's part of it is their Travel contribution line.
+  const marked = (st.categories || []).filter((c) => c.fund === 'travel');
+  const travelIds = new Set((marked.length ? marked : (st.categories || []).filter((c) => /travel/i.test(c.name || ''))).map((c) => c.id));
+  const travel = { Luke: 0, Amber: 0 };
   for (const c of st.categories || []) {
     for (const it of c.items || []) {
       const v = monthlyOf(it);
       if (it.who === 'Split') {
         const lk = lukeOf(it, v);
         by.Luke += lk; by.Amber += v - lk;
+        if (travelIds.has(c.id)) { travel.Luke += lk; travel.Amber += v - lk; }
         items.push({ c, it, whole: v, part: { Luke: lk, Amber: v - lk } });
       } else {
         by.Shared += v;
+        if (travelIds.has(c.id)) { travel.Luke += v * split / 100; travel.Amber += v * (100 - split) / 100; }
         items.push({ c, it, whole: v, part: { Luke: v * split / 100, Amber: v * (100 - split) / 100 } });
       }
     }
@@ -111,6 +119,7 @@ function sharedMath(st) {
     mort, split, items,
     shares: { Luke: by.Luke + by.Shared * lp, Amber: by.Amber + by.Shared * (1 - lp) },
     mortPart: { Luke: mort * lp, Amber: mort * (1 - lp) },
+    travel,
   };
 }
 
@@ -171,7 +180,9 @@ export function resolveLines(all, { person = 'Luke', tag = 'default' } = {}) {
   const shared = sv ? sharedMath(sv.state || {}) : null;
 
   const personalMonthly = (it) => {
-    if (it.calc === 'share') return shared ? shared.shares[it.person || person] || 0 : 0;
+    // The share of Shared, less the person's part of the travel fund, which is its own line
+    if (it.calc === 'share') return shared ? (shared.shares[it.person || person] || 0) - (shared.travel[it.person || person] || 0) : 0;
+    if (it.calc === 'travel') return shared ? shared.travel[it.person || person] || 0 : 0;
     const a = num(it.amount);
     return it.freq === 'yr' ? a / 12 : a;
   };

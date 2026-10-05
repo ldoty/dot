@@ -147,6 +147,7 @@ table.data td.n, table.data th.n { text-align: right; font-family: var(--mono); 
 
 .acct-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: center; flex-wrap: wrap }
 .acct-row label { display: flex; gap: 6px; align-items: center; font-size: 14px; color: var(--muted) }
+.acct-set { display: grid; gap: 6px; justify-items: end }
 .settings { display: grid; gap: 8px; margin-top: 10px }
 details > summary { cursor: pointer; font: 500 20px var(--display); list-style: none }
 details > summary::-webkit-details-marker { display: none }
@@ -564,9 +565,13 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
           (shared()
             // Which personal tools it comes from; marking accounts shared happens there
             ? '<span class="acct">from ' + esc((a.sources || []).join(" & ") || "—") + "</span></div>"
-            : '<label>Whose <select data-owner="' + esc(a.id) + '">' + [["mine", "Mine"], ["shared", "Shared (joint)"], ["off", "Off: not counted"]].map(function (o) {
+            : '<span class="acct-set"><label>Whose <select data-owner="' + esc(a.id) + '">' + [["mine", "Mine"], ["shared", "Shared (joint)"], ["off", "Off: not counted"]].map(function (o) {
               return '<option value="' + o[0] + '"' + (a.owner === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
-            }).join("") + "</select></label></div>");
+            }).join("") + "</select></label>" +
+            // What money moved into a shared account counts toward in my budget
+            (a.owner === "shared" ? '<label>Contributions count toward <select data-fund="' + esc(a.id) + '">' + [["household", "Shared costs"], ["travel", "Travel"]].map(function (o) {
+              return '<option value="' + o[0] + '"' + (a.fund === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
+            }).join("") + "</select></label>" : "") + "</span></div>");
       }).join("") + "</div></details>";
   }
 
@@ -701,6 +706,9 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
   main.addEventListener("change", function (e) {
     if (e.target.dataset.month) {
       return after(api("PUT", "/transactions/" + e.target.dataset.month, { month: e.target.value }), function () { return "Now counts in " + monthName(e.target.value) + "."; });
+    }
+    if (e.target.dataset.fund) {
+      return after(api("PUT", "/accounts/" + e.target.dataset.fund, { fund: e.target.value }), function () { return "Saved. The next sync files contributions to it accordingly."; });
     }
     if (e.target.dataset.owner) {
       return after(api("PUT", "/accounts/" + e.target.dataset.owner, { owner: e.target.value }), function () { return "Saved. The next sync files that account’s new transactions accordingly."; });

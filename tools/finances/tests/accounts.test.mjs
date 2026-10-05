@@ -183,3 +183,33 @@ test('with Budget’s fixed Shared contributions section, contributions go there
   assert.deepEqual([l.category, l.spent, l.target], ['Shared contributions', 500, 1399.1], 'counted against the share from the split');
   assert.ok(!claude.requests.some((r) => r.messages[0].content.includes('L.contrib-share')), 'Claude never guesses into it');
 });
+
+test('travel: the fixed Travel line is the person’s part of the travel fund, and the travel account’s contributions go there', async () => {
+  const { budgetAll } = await import('./helpers/fixtures.mjs');
+  const budget = budgetAll();
+  budget.versions.shared[0].state.categories.push({ id: 'tc', name: 'Travel & trips', items: [{ id: 'tr1', name: 'Trips', amount: 300, freq: 'mo', who: 'Shared' }] });
+  const luke = budget.versions.Luke[0].state;
+  luke.categories = [{ id: 'contrib', name: 'Shared contributions', kind: 'spend', locked: true, items: [
+    { id: 'contrib-share', name: 'Share of shared costs', calc: 'share', person: 'Luke', locked: true },
+    { id: 'contrib-travel', name: 'Travel', calc: 'travel', person: 'Luke', locked: true },
+  ] }, ...luke.categories.filter((c) => c.id !== 'c2')];
+  table.put({ pk: 'LUKE', sk: CARD, simplefinId: 'ACT-card', name: 'Rewards Card', owner: 'shared', fund: 'travel' });
+  const accounts = accountSet();
+  accounts.accounts[1].transactions.push({ id: 'C4', posted: Date.parse('2026-10-04T16:00:00Z') / 1000, amount: '500.00', description: 'TRANSFER FROM CHECKING' });
+  const t = testDeps({ net: fakeNet({ accounts, budget }), client: fakeClaude(() => '') });
+  await runSync(t.deps);
+  assert.equal(table.get('LUKE', CARD).fund, 'travel', 'the sync keeps the fund');
+  assert.equal(txn('PAYMENT TO CARD').line, 'L.contrib-travel');
+  const api = caller(createApi(t.deps), ROUTES);
+  const call = (m, p, b) => api(m, p, b, token());
+  const m = (await call('GET', '/month/2026-10')).body;
+  const line = (id) => m.summary.lines.find((l) => l.id === id);
+  assert.equal(line('L.contrib-travel').target, 150, 'half of $300 of trips');
+  assert.equal(line('L.contrib-share').target, 1399.1, 'the rest of his share ($1,549.10 less travel)');
+  assert.equal(m.accounts.find((a) => a.id === CARD.slice(5)).fund, 'travel');
+  // Back to household costs: the next sync moves it
+  assert.deepEqual((await call('PUT', `/accounts/${CARD.slice(5)}`, { fund: 'household' })).body, { id: CARD.slice(5), fund: 'household' });
+  assert.equal((await call('PUT', `/accounts/${CARD.slice(5)}`, { fund: 'fun' })).status, 400);
+  await runSync(t.deps);
+  assert.equal(txn('PAYMENT TO CARD').line, 'L.contrib-share');
+});

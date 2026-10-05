@@ -298,7 +298,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   // moved, deleted or edited: its one line is the person's share of the Shared budget (the split
   // slider on the Shared tab). It replaces wherever a share line used to live. Finances files
   // money moved into a shared account under it.
-  var CONTRIB = "contrib", CONTRIB_LINE = "contrib-share";
+  var CONTRIB = "contrib", CONTRIB_LINE = "contrib-share", CONTRIB_TRAVEL = "contrib-travel";
   function normalizePerson(d, p) {
     d.income = d.income || []; d.categories = d.categories || [];
     d.follows = d.follows || "default";
@@ -311,7 +311,10 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     });
     d.categories.unshift({
       id: CONTRIB, name: "Shared contributions", kind: "spend", locked: true,
-      items: [{ id: CONTRIB_LINE, name: "Share of shared costs", calc: "share", person: person, locked: true }],
+      items: [
+        { id: CONTRIB_LINE, name: "Share of shared costs", calc: "share", person: person, locked: true },
+        { id: CONTRIB_TRAVEL, name: "Travel", calc: "travel", person: person, locked: true },
+      ],
     });
     return d;
   }
@@ -357,28 +360,41 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   // ctx carries what calculated lines depend on: the home value and each person's share of the shared budget
   function monthly(it, ctx) {
     if (it.calc === "pctHome") return ctx.price * (Number(it.rate) || 0) / 100 / 12;
-    if (it.calc === "share") return ctx.shares[it.person] || 0;
+    // A person's share of Shared, less their part of the travel fund, which is its own line
+    if (it.calc === "share") return (ctx.shares[it.person] || 0) - ((ctx.travel || {})[it.person] || 0);
+    if (it.calc === "travel") return (ctx.travel || {})[it.person] || 0;
     var a = Number(it.amount) || 0; return it.freq === "yr" ? a / 12 : a;
   }
   function sum(items, ctx) { return items.reduce(function (s, it) { return s + monthly(it, ctx); }, 0); }
 
+  // The Shared categories that make up the travel fund: those marked Travel fund, or if none is,
+  // any with "travel" in its name. Each person's part of them is the Travel contribution line.
+  function travelCats(st) {
+    var marked = st.categories.filter(function (c) { return c.fund === "travel"; });
+    return marked.length ? marked : st.categories.filter(function (c) { return /travel/i.test(c.name || ""); });
+  }
   function sharedSummary(st) {
     var m = st.mortgage, loan = loanOf(m), mort = payment(loan, m.rate, m.years);
+    var travelIds = travelCats(st).map(function (c) { return c.id; }), tr = { Luke: 0, Amber: 0 };
     // by.Shared is the pool the global split divides (mortgage included); by.Luke / by.Amber are
     // each person's part of the items that carry their own split
     var ctx = { price: m.price, shares: {} }, by = { Shared: mort, Luke: 0, Amber: 0 }, total = mort;
+    var lp0 = st.split / 100;
     var cats = st.categories.map(function (c) {
+      var travel = travelIds.indexOf(c.id) >= 0;
       c.items.forEach(function (it) {
         var v = monthly(it, ctx);
-        if (it.who !== "Split") { by.Shared += v; return; }
+        if (it.who !== "Split") { by.Shared += v; if (travel) { tr.Luke += v * lp0; tr.Amber += v * (1 - lp0); } return; }
         var lk = lukeMonthly(it, v);
         by.Luke += lk; by.Amber += v - lk;
+        if (travel) { tr.Luke += lk; tr.Amber += v - lk; }
       });
       var t = sum(c.items, ctx); total += t;
       return { c: c, t: t };
     });
     var lp = st.split / 100;
     ctx.shares = { Luke: by.Luke + by.Shared * lp, Amber: by.Amber + by.Shared * (1 - lp) };
+    ctx.travel = tr;
     return { m: m, loan: loan, mort: mort, total: total, by: by, cats: cats, ctx: ctx, luke: ctx.shares.Luke, amber: ctx.shares.Amber };
   }
   function personSummary(pp, ctx) {
@@ -455,14 +471,15 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     if (c.locked) {
       return '<section class="cat locked" data-cat="' + c.id + '"><div class="cat-head"><h2>' + esc(c.name) + ' <span class="chip">Fixed</span></h2>' +
         '<div class="tot"><span id="t-' + c.id + '"></span> <small>/ mo</small></div></div>' + PLABELS + c.items.map(prowHtml).join("") +
-        '<p class="locked-note">Your share of the Shared budget, set by the split on the Shared tab. Money you move into a shared account is filed here in Finances.</p></section>';
+        '<p class="locked-note">Your share of the Shared budget, set by the split on the Shared tab: Travel is your part of its travel fund, the rest is shared costs. Money you move into a shared account is filed here in Finances.</p></section>';
     }
     var save = c.kind === "save";
     return '<section class="cat" data-cat="' + c.id + '"><div class="cat-head"><h2>' +
       '<input class="cat-name" id="cn-' + c.id + '" data-cname="' + c.id + '" aria-label="Category name" placeholder="Name this category" maxlength="60" value="' + esc(c.name) + '">' +
       (!personal && save ? '<span class="chip">Savings</span>' : "") + "</h2>" +
       '<div class="cat-tools">' +
-      (personal ? '<button class="kind" data-ckind="' + c.id + '" aria-pressed="' + save + '" title="Savings count toward Saving & investing instead of Spending">' + (save ? "Savings" : "Spending") + "</button>" : "") +
+      (personal ? '<button class="kind" data-ckind="' + c.id + '" aria-pressed="' + save + '" title="Savings count toward Saving & investing instead of Spending">' + (save ? "Savings" : "Spending") + "</button>"
+        : '<button class="kind" data-cfund="' + c.id + '" aria-pressed="' + (c.fund === "travel") + '" title="The travel fund: each person’s part of it is the Travel line of their Shared contributions">' + (c.fund === "travel" ? "Travel fund" : "Not travel") + "</button>") +
       '<button data-cmove="' + c.id + '" data-dir="-1" aria-label="Move ' + esc(c.name || "category") + ' up"' + (i && !afterLocked ? "" : " disabled") + ">↑</button>" +
       '<button data-cmove="' + c.id + '" data-dir="1" aria-label="Move ' + esc(c.name || "category") + ' down"' + (i < n - 1 ? "" : " disabled") + ">↓</button>" +
       '<button class="cdel" data-cdel="' + c.id + '">Delete</button></div>' +
@@ -811,7 +828,8 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     P.cats.forEach(function (x) {
       x.c.items.forEach(function (it) {
         var v = monthly(it, ctx); set("m-" + it.id, money.format(v));
-        if (it.calc === "share") { set("ro-" + it.id, money.format(v)); set("nt-" + it.id, "From Shared (" + tagName + "): " + shareNote); }
+        if (it.calc === "share") { set("ro-" + it.id, money.format(v)); set("nt-" + it.id, "From Shared (" + tagName + "): " + shareNote + (FS && FS.ctx.travel[p] ? ", less travel" : "")); }
+        if (it.calc === "travel") { set("ro-" + it.id, money.format(v)); set("nt-" + it.id, FS ? (travelCats(fs).length ? "Your part of " + travelCats(fs).map(function (c) { return c.name || "Untitled"; }).join(" & ") : "No travel category in Shared yet") : "No Shared version is tagged yet"); }
       });
       set("t-" + x.c.id, money.format(x.t));
     });
@@ -897,7 +915,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       rm.down = downTotal(rm); persist(); render();
     } else if (t.dataset.del) {
       var id = t.dataset.del;
-      if (id === CONTRIB_LINE) return;
+      if (id === CONTRIB_LINE || id === CONTRIB_TRAVEL) return;
       allLists().forEach(function (list) { for (var i = list.length - 1; i >= 0; i--) if (list[i].id === id) list.splice(i, 1); });
       persist(); render();
     } else if (t.dataset.add) {
@@ -917,6 +935,11 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       cs.splice(cj, 0, cs.splice(ci, 1)[0]); persist(); render();
       var mb = app.querySelector('[data-cmove="' + t.dataset.cmove + '"][data-dir="' + t.dataset.dir + '"]');
       if (mb && !mb.disabled) mb.focus(); else focusCat(t.dataset.cmove);
+    } else if (t.dataset.cfund) {
+      var fc = tabCats()[catIndex(t.dataset.cfund)]; if (!fc) return;
+      if (fc.fund === "travel") delete fc.fund; else fc.fund = "travel";
+      persist(); render();
+      var fb = app.querySelector('[data-cfund="' + fc.id + '"]'); if (fb) fb.focus();
     } else if (t.dataset.ckind) {
       var kc = tabCats()[catIndex(t.dataset.ckind)]; if (!kc) return;
       kc.kind = kc.kind === "save" ? "spend" : "save"; persist(); render();

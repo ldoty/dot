@@ -7,7 +7,7 @@
 //                                    the one it posted in (null = where it posted); remember = also file this
 //                                    merchant's other transactions there, now and in future syncs;
 //                                    without it, a rule Claude made for the merchant is dropped
-//   PUT  /accounts/{id}             { owner: mine | shared | off }   a shared (joint) account files
+//   PUT  /accounts/{id}             { owner: mine | shared | off } or { fund: household | travel }: a shared (joint) account files
 //                                    to Shared lines only; off leaves it out of the numbers
 //   PUT  /settings                  { tag } -> { budget }   follow another of the person's budget tags, or
 //                                    '@working' for the live working copies
@@ -78,7 +78,7 @@ const txnOut = (t) => ({
 });
 const accountOut = (a) => ({
   id: a.sk.slice(5), name: a.name, org: a.org, balance: a.balance, available: a.available,
-  balanceDate: a.balanceDate, owner: ownerOf(a), include: ownerOf(a) !== 'off', ...(a.sources ? { sources: a.sources } : {}),
+  balanceDate: a.balanceDate, owner: ownerOf(a), include: ownerOf(a) !== 'off', fund: a.fund === 'travel' ? 'travel' : 'household', ...(a.sources ? { sources: a.sources } : {}),
 });
 
 function csv(rows) {
@@ -208,10 +208,18 @@ export function createApi(depsOrFactory) {
       }
 
       case 'PUT /accounts/{id}': {
-        const owner = typeof body.include === 'boolean' ? (body.include ? 'mine' : 'off') : body.owner;
-        if (!/^[0-9a-f]{16}$/.test(p.id ?? '') || !OWNERS.includes(owner)) return json(400, { error: 'bad request' });
+        if (!/^[0-9a-f]{16}$/.test(p.id ?? '')) return json(400, { error: 'bad request' });
         const a = await store.get(`ACCT#${p.id}`);
         if (!a) return json(404, { error: 'not found' });
+        // { fund }: what contributions to a shared account count toward (household costs or travel)
+        if ('fund' in body) {
+          if (!['household', 'travel'].includes(body.fund)) return json(400, { error: 'bad fund' });
+          const { fund, ...rest } = a;
+          await store.put(body.fund === 'travel' ? { ...rest, fund: 'travel' } : rest);
+          return json(200, { id: p.id, fund: body.fund });
+        }
+        const owner = typeof body.include === 'boolean' ? (body.include ? 'mine' : 'off') : body.owner;
+        if (!OWNERS.includes(owner)) return json(400, { error: 'bad request' });
         const { include, ...rest } = a;
         await store.put({ ...rest, owner });
         return json(200, { id: p.id, owner });

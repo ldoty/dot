@@ -216,6 +216,18 @@ test('a category with many lines: its biggest five get colors, only the rest fol
   q.close();
 });
 
+test('a shared account: choose what contributions to it count toward', async () => {
+  const p = await open();
+  const card = [...p.d.querySelectorAll('[data-owner]')].find((c) => c.closest('.acct-row').textContent.includes('Rewards Card'));
+  assert.equal(p.d.querySelector(`[data-fund="${card.dataset.owner}"]`), null, 'only for shared accounts');
+  await p.change(`[data-owner="${card.dataset.owner}"]`, 'shared');
+  const fund = p.el(`[data-fund="${card.dataset.owner}"]`);
+  assert.deepEqual([...fund.options].map((o) => o.textContent), ['Shared costs', 'Travel']);
+  await p.change(`[data-fund="${card.dataset.owner}"]`, 'travel');
+  assert.equal(table.get('LUKE', `ACCT#${card.dataset.owner}`).fund, 'travel');
+  p.close();
+});
+
 test('a category opens to its lines, each stacked by merchant, with its transactions', async () => {
   const p = await open();
   await p.click('[data-cat="Luke›Food"]');
