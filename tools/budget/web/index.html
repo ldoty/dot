@@ -97,6 +97,8 @@ section.cat { margin-bottom: 26px }
 .row:hover .grip, .grip:focus-visible { opacity: 1; color: var(--pool) }
 .grip:active { cursor: grabbing }
 .row.dragging { opacity: .35 }
+.kind.fund { opacity: .75 }
+.kind.fund.on { opacity: 1; background: color-mix(in srgb, var(--pool) 14%, var(--surface)); border-color: var(--pool); color: var(--ink) }
 .cat.locked { background: color-mix(in srgb, var(--raised) 45%, transparent); border-radius: var(--r-sm); padding: 4px 10px 10px; margin: 0 -10px }
 .row.locked .fixed-name { font-weight: 500 }
 .row.locked .lock { font-size: 12px; margin-right: 6px }
@@ -466,6 +468,15 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   var LABELS = '<div class="row labels"><span>Item</span><span>Amount</span><span>Per</span><span>Paid by</span><span>Monthly</span><span></span></div>';
   var PLABELS = '<div class="row prow labels"><span>Item</span><span>Amount</span><span>Per</span><span>Monthly</span><span></span></div>';
 
+  // Shared tab: whether a category is part of the travel fund (each person's Travel contribution
+  // line). Until one is marked, categories with "travel" in the name count, and say so.
+  function fundBtn(c) {
+    var marked = c.fund === "travel", byName = !marked && travelCats(docs.shared).indexOf(c) >= 0, on = marked || byName;
+    return '<button class="kind fund' + (on ? " on" : "") + '" data-cfund="' + c.id + '" aria-pressed="' + on + '" title="' +
+      esc(on ? "Counts toward the travel fund: each person’s part of it is the Travel line in their Shared contributions. Click to " + (byName ? "mark the travel fund by hand instead" : "take it out") + "."
+        : "Not part of the travel fund. Click to count it toward each person’s Travel contribution.") + '">' +
+      (on ? "✓ Travel fund" + (byName ? " (by name)" : "") : "☐ Travel fund") + "</button>";
+  }
   // Header controls: rename in place, reorder, delete, and on personal tabs spending vs savings
   function catHtml(c, personal, i, n, afterLocked) {
     if (c.locked) {
@@ -479,7 +490,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       (!personal && save ? '<span class="chip">Savings</span>' : "") + "</h2>" +
       '<div class="cat-tools">' +
       (personal ? '<button class="kind" data-ckind="' + c.id + '" aria-pressed="' + save + '" title="Savings count toward Saving & investing instead of Spending">' + (save ? "Savings" : "Spending") + "</button>"
-        : '<button class="kind" data-cfund="' + c.id + '" aria-pressed="' + (c.fund === "travel") + '" title="The travel fund: each person’s part of it is the Travel line of their Shared contributions">' + (c.fund === "travel" ? "Travel fund" : "Not travel") + "</button>") +
+        : fundBtn(c)) +
       '<button data-cmove="' + c.id + '" data-dir="-1" aria-label="Move ' + esc(c.name || "category") + ' up"' + (i && !afterLocked ? "" : " disabled") + ">↑</button>" +
       '<button data-cmove="' + c.id + '" data-dir="1" aria-label="Move ' + esc(c.name || "category") + ' down"' + (i < n - 1 ? "" : " disabled") + ">↓</button>" +
       '<button class="cdel" data-cdel="' + c.id + '">Delete</button></div>' +
@@ -937,7 +948,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       if (mb && !mb.disabled) mb.focus(); else focusCat(t.dataset.cmove);
     } else if (t.dataset.cfund) {
       var fc = tabCats()[catIndex(t.dataset.cfund)]; if (!fc) return;
-      if (fc.fund === "travel") delete fc.fund; else fc.fund = "travel";
+      if (fc.fund === "travel") delete fc.fund; else fc.fund = "travel"; // a by-name one becomes marked by hand
       persist(); render();
       var fb = app.querySelector('[data-cfund="' + fc.id + '"]'); if (fb) fb.focus();
     } else if (t.dataset.ckind) {

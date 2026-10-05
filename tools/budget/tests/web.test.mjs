@@ -449,13 +449,26 @@ test('the fixed Travel line is each person’s part of the Shared travel fund; S
   a.close();
 });
 
+test('a category named for travel shows it counts by name until one is marked', async () => {
+  seed({ working: { ...sharedDoc(1000), categories: [...sharedDoc(1000).categories, { id: 'c9', name: 'Travel, gifts & giving', kind: 'spend', items: [] }] } });
+  const p = await openBudget('#shared');
+  assert.equal(p.el('[data-cfund="c9"]').textContent, '✓ Travel fund (by name)');
+  assert.equal(p.el('[data-cfund="c1"]').textContent, '☐ Travel fund');
+  p.click('[data-cfund="c1"]'); await saved(); // marking one by hand: the name rule stops applying
+  assert.equal(p.el('[data-cfund="c1"]').textContent, '✓ Travel fund');
+  assert.equal(p.el('[data-cfund="c9"]').textContent, '☐ Travel fund');
+  p.close();
+});
+
 test('on the Shared tab, a category can be marked as the travel fund', async () => {
   const p = await openBudget('#shared');
   const btn = p.el('[data-cfund="c1"]');
-  assert.equal(btn.textContent, 'Not travel');
+  assert.equal(btn.textContent, '☐ Travel fund');
+  assert.match(btn.title, /Not part of the travel fund/);
   p.click('[data-cfund="c1"]'); await saved();
   assert.equal(doc('shared').categories[0].fund, 'travel');
   assert.equal(p.el('[data-cfund="c1"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(p.el('[data-cfund="c1"]').textContent, '✓ Travel fund');
   p.close();
 });
 
