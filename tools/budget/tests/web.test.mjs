@@ -70,6 +70,27 @@ test('new tags are cleaned up, followable, and deletable (followers fall back to
   p.close();
 });
 
+test('a personal version can follow a saved Shared version directly, without a tag', async () => {
+  const p = await openBudget('#shared');
+  p.type('#v-name', 'Untagged plan'); p.click('#v-save'); await wait(50); // saved, not tagged
+  const sv = table.keys().find((k) => k.startsWith('DOC#shared#VERSION#') && k !== 'DOC#shared#VERSION#v1').split('#')[3];
+  await p.tab('Luke');
+  p.type('#v-name', 'Mine'); p.click('#v-save'); await wait(50);
+  const lv = table.keys().find((k) => k.startsWith('DOC#Luke#VERSION#')).split('#')[3];
+  p.click(`[data-vedit="${lv}"]`);
+  const sel = p.el('#ve-follow');
+  assert.deepEqual([...sel.querySelectorAll('optgroup')].map((g) => g.label), ['Shared tags', 'Saved Shared versions']);
+  assert.ok([...sel.options].some((o) => o.value === `@v:${sv}` && o.textContent === 'Untagged plan'));
+  p.type('#ve-follow', `@v:${sv}`, 'change');
+  assert.match(p.text('ve-follow-hint'), /Uses the Shared version “Untagged plan”, even if tags move/);
+  p.click(`[data-vsave="${lv}"]`); await saved();
+  assert.equal(doc('Luke').follows, `@v:${sv}`);
+  assert.equal(p.text('ro-contrib-share'), '$1,000', 'half of its $2,000');
+  assert.match(p.text('nt-contrib-share'), /From Shared \(“Untagged plan”\)/);
+  assert.match(p.text('v-cur'), /follows “Untagged plan”/);
+  p.close();
+});
+
 test('moving a tag from the Tags panel', async () => {
   const p = await openBudget('#shared');
   p.type('#v-name', 'Plan B'); p.type('#v-tag', 'default'); p.click('#v-save'); await wait(50);

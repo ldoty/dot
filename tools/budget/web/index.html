@@ -341,7 +341,17 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   function versionIn(doc, id) { return versions[doc].filter(function (v) { return v.id === id; })[0]; }
   function sharedVersion(id) { return versionIn("shared", id); }
   // The Shared version a personal doc follows, or null if its tag points nowhere yet
-  function followed(pd) { var t = tagFor("shared", pd.follows) || tagFor("shared", "default"); return t ? sharedVersion(t.versionId) || null : null; }
+  // What a personal budget follows: a Shared tag (moves when re-tagged) or one saved Shared version
+  // ("@v:<id>"). A tag or version that's gone falls back to default.
+  var VPREFIX = "@v:";
+  function followed(pd) {
+    if (String(pd.follows).indexOf(VPREFIX) === 0) { var fv = sharedVersion(pd.follows.slice(VPREFIX.length)); if (fv) return fv; }
+    var t = tagFor("shared", pd.follows) || tagFor("shared", "default"); return t ? sharedVersion(t.versionId) || null : null;
+  }
+  function followLabel(pd) {
+    if (String(pd.follows).indexOf(VPREFIX) === 0) { var v = sharedVersion(pd.follows.slice(VPREFIX.length)); if (v) return "“" + v.name + "”"; }
+    return tagFor("shared", pd.follows) ? pd.follows : "default";
+  }
   function cleanTag(s) { return s.trim().toLowerCase().replace(/\s+/g, "-"); }
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
   function uid() { return "x" + Math.random().toString(36).slice(2, 9); }
@@ -581,8 +591,8 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     var loaded = d.version && list.filter(function (v) { return v.name === d.version; })[0];
     var fol = "";
     if (doc !== "shared") {
-      var fv = followed(d), ft = tagFor("shared", d.follows) ? d.follows : "default";
-      fol = " · follows <strong>" + esc(ft) + "</strong>" + (fv ? " → “" + esc(fv.name) + "”" : " (nothing tagged yet)");
+      var fv = followed(d), ft = followLabel(d);
+      fol = " · follows <strong>" + esc(ft) + "</strong>" + (fv && ft.charAt(0) !== "“" ? " → “" + esc(fv.name) + "”" : fv ? "" : " (nothing tagged yet)");
     }
     cur.innerHTML = d.version ? "Working from <strong>" + esc(d.version) + "</strong>" + fol + (d.edited ? ", with unsaved changes" : "") +
       (d.edited && loaded ? '<button class="v-update" id="v-update" data-vid="' + esc(loaded.id) + '">Update “' + esc(d.version) + '”</button>' : "") :
@@ -620,7 +630,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
         '<div class="ve-add"><input id="ve-tag" list="tag-names" placeholder="Tag name" aria-label="Add a tag" maxlength="30"><button data-vaddtag="' + esc(v.id) + '">Add tag</button></div>';
     if (doc !== "shared") {
       var follows = normalizePerson(clone(v.state), tab).follows;
-      html += '<label class="v-lbl" for="ve-follow">Follows tag</label><select id="ve-follow">' + tagOptions(follows) + "</select>" +
+      html += '<label class="v-lbl" for="ve-follow">Follows</label><select id="ve-follow">' + tagOptions(follows) + "</select>" +
         '<p class="ve-hint" id="ve-follow-hint">' + esc(followHint(follows)) + "</p>";
     }
     return html +
@@ -628,15 +638,21 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       '<div class="ve-replace"><button data-vreplace="' + esc(v.id) + '">Replace with current numbers</button>' +
       '<p class="ve-hint">Overwrites this version with what’s on screen now.</p></div></li>';
   }
-  // Shared tags a personal budget can follow
+  // What a personal budget can follow: a Shared tag, or one saved Shared version
   function tagOptions(selected) {
     var names = tagList("shared").map(function (t) { return t.name; });
-    if (selected && names.indexOf(selected) < 0) names.push(selected);
-    return names.sort().map(function (n) { return "<option" + (n === selected ? " selected" : "") + ">" + esc(n) + "</option>"; }).join("");
+    if (selected && selected.indexOf(VPREFIX) !== 0 && names.indexOf(selected) < 0) names.push(selected);
+    var opt = function (v, label) { return '<option value="' + esc(v) + '"' + (v === selected ? " selected" : "") + ">" + esc(label) + "</option>"; };
+    return '<optgroup label="Shared tags">' + names.sort().map(function (n) { var t = tagFor("shared", n), v = t && sharedVersion(t.versionId); return opt(n, n + (v ? " → " + v.name : "")); }).join("") + "</optgroup>" +
+      (versions.shared.length ? '<optgroup label="Saved Shared versions">' + versions.shared.map(function (v) { return opt(VPREFIX + v.id, v.name); }).join("") + "</optgroup>" : "");
   }
   function followHint(name) {
+    if (String(name).indexOf(VPREFIX) === 0) {
+      var fv = sharedVersion(name.slice(VPREFIX.length));
+      return fv ? "Uses the Shared version “" + fv.name + "”, even if tags move" : "That Shared version is gone; falls back to default";
+    }
     var t = tagFor("shared", name), v = t && sharedVersion(t.versionId);
-    return v ? "Uses the Shared version “" + v.name + "”" : "No Shared version is tagged " + name + "; falls back to default";
+    return v ? "Uses the Shared version “" + v.name + "” (follows the tag if it moves)" : "No Shared version is tagged " + name + "; falls back to default";
   }
   function putVersion(doc, v) {
     return api("PUT", "/docs/" + doc + "/versions/" + v.id, v).then(function (res) {
@@ -667,7 +683,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       if (loaded && followsChanged) d.follows = state.follows;
       if (loaded && (name !== old.name || followsChanged)) persist(true, doc);
       editing = null; renderVersions(); totals();
-      setStatus("Saved “" + name + "”" + (followsChanged ? ", now following " + state.follows : ""));
+      setStatus("Saved “" + name + "”" + (followsChanged ? ", now following " + followLabel(state) : ""));
     }).catch(function () { setStatus("Couldn’t save the version. Try again."); });
   }
   function replaceNumbers(doc, id) {
@@ -832,7 +848,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     // Personal tabs: the share line comes from the Shared version this tab's tag points to
     var p = tab, pd = docs[p], fv = followed(pd), fs = fv ? normalizeShared(clone(fv.state)) : null;
     var FS = fs ? sharedSummary(fs) : null, pctx = FS ? FS.ctx : { price: 0, shares: {} };
-    var P = personSummary(pd, pctx), tagName = tagFor("shared", pd.follows) ? pd.follows : "default";
+    var P = personSummary(pd, pctx), tagName = followLabel(pd);
     var shareNote = FS ? (p === "Luke" ? fs.split : 100 - fs.split) + "% of " + money.format(FS.by.Shared) + " shared costs" + (FS.by[p] ? " plus " + money.format(FS.by[p]) + " from items with their own split" : "") : "No Shared version is tagged yet";
     var ctx = pctx;
     pd.income.forEach(function (it) { set("m-" + it.id, money.format(monthly(it, ctx))); });

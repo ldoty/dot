@@ -78,6 +78,16 @@ test('following a saved version directly, and the choices to offer', () => {
   assert.deepEqual(sh.versions.map((v) => v.name), ['Starting point', 'No mortgage']);
 });
 
+test('a personal version can follow a saved Shared version directly', () => {
+  const all = budgetAll();
+  all.versions.Luke[0].state.follows = '@v:sv2';
+  const r = resolveLines(all, { tag: 'default' });
+  assert.deepEqual([r.sharedVersion.name, r.sharedTag], ['No mortgage', 'No mortgage']);
+  assert.equal(line(r, 'L.h1').target, 100 + 200 * 0.6, 'the share from that version');
+  all.versions.Luke[0].state.follows = '@v:gone';
+  assert.equal(resolveLines(all, { tag: 'default' }).sharedVersion.name, 'Starting point', 'a version that’s gone falls back to default');
+});
+
 test('a missing tag is a clear error', () => {
   assert.throws(() => resolveLines(budgetAll(), { tag: 'nope' }), (e) => e.status === 409 && /no tag “nope”/.test(e.message));
 });

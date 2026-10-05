@@ -173,8 +173,15 @@ export function resolveLines(all, { person = 'Luke', tag = 'default' } = {}) {
   } else {
     v = versionFor(all, person, tag, `${person}’s budget`);
     const follows = (v.state || {}).follows || 'default';
-    st2 = find(all.tags?.shared, (x) => x.name === follows) || find(all.tags?.shared, (x) => x.name === 'default');
-    sv = st2 && find(all.versions?.shared, (x) => x.id === st2.versionId);
+    // A personal version follows a Shared tag, or one saved Shared version directly ('@v:<id>')
+    const direct = follows.startsWith(VERSION) && find(all.versions?.shared, (x) => x.id === follows.slice(VERSION.length));
+    if (direct) {
+      st2 = { name: direct.name };
+      sv = direct;
+    } else {
+      st2 = find(all.tags?.shared, (x) => x.name === follows) || find(all.tags?.shared, (x) => x.name === 'default');
+      sv = st2 && find(all.versions?.shared, (x) => x.id === st2.versionId);
+    }
   }
   const st = v.state || {};
   const shared = sv ? sharedMath(sv.state || {}) : null;
