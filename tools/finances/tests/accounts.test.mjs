@@ -162,3 +162,24 @@ test('contributions: an automatic “To <shared account>” line, counted as his
   assert.equal(txn('PAYMENT TO CARD').line, 'X.transfer', 'now a transfer between his own accounts');
   assert.ok(!(await call('GET', '/month/2026-10')).body.summary.lines.some((x) => x.id === line));
 });
+
+test('with Budget’s fixed Shared contributions section, contributions go there instead of “To <account>”', async () => {
+  const { budgetAll } = await import('./helpers/fixtures.mjs');
+  const budget = budgetAll();
+  const luke = budget.versions.Luke[0].state;
+  luke.categories = [{ id: 'contrib', name: 'Shared contributions', kind: 'spend', locked: true, items: [{ id: 'contrib-share', name: 'Share of shared costs', calc: 'share', person: 'Luke', locked: true }] },
+    ...luke.categories.filter((c) => c.id !== 'c2')];
+  table.put({ pk: 'LUKE', sk: CARD, simplefinId: 'ACT-card', name: 'Rewards Card', owner: 'shared' });
+  const accounts = accountSet();
+  accounts.accounts[1].transactions.push({ id: 'C4', posted: Date.parse('2026-10-04T16:00:00Z') / 1000, amount: '500.00', description: 'TRANSFER FROM CHECKING' });
+  const claude = fakeClaude(() => '');
+  const t = testDeps({ net: fakeNet({ accounts, budget }), client: claude });
+  await runSync(t.deps);
+  assert.deepEqual([txn('PAYMENT TO CARD').line, txn('PAYMENT TO CARD').source], ['L.contrib-share', 'contribution']);
+  const api = caller(createApi(t.deps), ROUTES);
+  const m = (await api('GET', '/month/2026-10', undefined, token())).body;
+  assert.ok(!m.summary.lines.some((l) => l.id.startsWith('X.to.')), 'no separate “To <account>” lines');
+  const l = m.summary.lines.find((x) => x.id === 'L.contrib-share');
+  assert.deepEqual([l.category, l.spent, l.target], ['Shared contributions', 500, 1399.1], 'counted against the share from the split');
+  assert.ok(!claude.requests.some((r) => r.messages[0].content.includes('L.contrib-share')), 'Claude never guesses into it');
+});

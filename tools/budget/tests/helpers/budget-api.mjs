@@ -28,7 +28,10 @@ export const sharedDoc = (amount = 1000, split = 50) => ({
 });
 export const personDoc = (p, follows = 'default') => ({
   income: [{ id: `${p}i`, name: 'Pay', amount: 3000, freq: 'mo' }],
-  categories: [{ id: `${p}c`, name: 'Needs', kind: 'spend', items: [{ id: `${p}s`, name: 'To shared', calc: 'share', person: p, freq: 'mo' }] }],
+  categories: [{ id: `${p}c`, name: 'Needs', kind: 'spend', items: [
+    { id: `${p}s`, name: 'To shared', calc: 'share', person: p, freq: 'mo' }, // moves to the fixed Shared contributions section
+    { id: `${p}p`, name: 'Phone', amount: 0, freq: 'mo' },
+  ] }],
   follows,
 });
 

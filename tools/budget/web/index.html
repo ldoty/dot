@@ -97,6 +97,10 @@ section.cat { margin-bottom: 26px }
 .row:hover .grip, .grip:focus-visible { opacity: 1; color: var(--pool) }
 .grip:active { cursor: grabbing }
 .row.dragging { opacity: .35 }
+.cat.locked { background: color-mix(in srgb, var(--raised) 45%, transparent); border-radius: var(--r-sm); padding: 4px 10px 10px; margin: 0 -10px }
+.row.locked .fixed-name { font-weight: 500 }
+.row.locked .lock { font-size: 12px; margin-right: 6px }
+.locked-note { font-size: 13px; color: var(--muted); margin: 6px 0 0 }
 .row.drop-before { box-shadow: inset 0 3px 0 var(--pool) }
 .row.drop-after { box-shadow: inset 0 -3px 0 var(--pool) }
 section.cat.drop-into { outline: 2px dashed var(--pool); outline-offset: 6px; border-radius: var(--r-sm) }
@@ -290,16 +294,37 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     }); });
     return d;
   }
-  function normalizePerson(d) {
+  // Every personal budget has a fixed Shared contributions section, first, that can't be renamed,
+  // moved, deleted or edited: its one line is the person's share of the Shared budget (the split
+  // slider on the Shared tab). It replaces wherever a share line used to live. Finances files
+  // money moved into a shared account under it.
+  var CONTRIB = "contrib", CONTRIB_LINE = "contrib-share";
+  function normalizePerson(d, p) {
     d.income = d.income || []; d.categories = d.categories || [];
     d.follows = d.follows || "default";
+    var person = p || tab;
+    d.categories = d.categories.filter(function (c) {
+      if (c.id === CONTRIB) return false;
+      var had = c.items.some(function (it) { return it.calc === "share"; });
+      c.items = c.items.filter(function (it) { return it.calc !== "share"; });
+      return !(had && !c.items.length); // a category that only held the old share line goes too
+    });
+    d.categories.unshift({
+      id: CONTRIB, name: "Shared contributions", kind: "spend", locked: true,
+      items: [{ id: CONTRIB_LINE, name: "Share of shared costs", calc: "share", person: person, locked: true }],
+    });
     return d;
   }
-  function normalizeDoc(doc, d) { return doc === "shared" ? normalizeShared(d) : normalizePerson(d); }
+  function normalizeDoc(doc, d) { return doc === "shared" ? normalizeShared(d) : normalizePerson(d, doc); }
+  function lockedCat(key) {
+    if (tab === "shared") return false;
+    var c = docs[tab].categories.filter(function (x) { return x.id === key; })[0];
+    return !!(c && c.locked);
+  }
   // The starting numbers are stored as one combined budget; split them into the three docs
   function splitCombined(d) {
     var out = { shared: normalizeShared({ categories: d.categories, mortgage: d.mortgage, split: d.split }) };
-    PEOPLE.forEach(function (p) { out[p] = normalizePerson(clone((d.people || {})[p] || {})); });
+    PEOPLE.forEach(function (p) { out[p] = normalizePerson(clone((d.people || {})[p] || {}), p); });
     return out;
   }
 
@@ -413,6 +438,8 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       freqSel(it) + who + tail(it);
   }
   function prowHtml(it) {
+    if (it.locked) return '<div class="row prow calc locked" data-id="' + it.id + '"><div class="name-cell"><span class="lock" aria-hidden="true">🔒</span><span class="fixed-name">' + esc(it.name) + '</span>' +
+      '<small class="calc-note" id="nt-' + it.id + '"></small></div><span class="amt-ro" id="ro-' + it.id + '"></span><span class="per-fixed">from Shared</span><div class="mo" id="m-' + it.id + '"></div><span></span></div>';
     if (it.calc === "share") return '<div class="row prow calc" data-id="' + it.id + '">' + nameCell(it, true) +
       '<span class="amt-ro" id="ro-' + it.id + '"></span><span class="per-fixed">from Shared</span>' + tail(it);
     return '<div class="row prow" data-id="' + it.id + '">' + nameCell(it) +
@@ -424,14 +451,19 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
   var PLABELS = '<div class="row prow labels"><span>Item</span><span>Amount</span><span>Per</span><span>Monthly</span><span></span></div>';
 
   // Header controls: rename in place, reorder, delete, and on personal tabs spending vs savings
-  function catHtml(c, personal, i, n) {
+  function catHtml(c, personal, i, n, afterLocked) {
+    if (c.locked) {
+      return '<section class="cat locked" data-cat="' + c.id + '"><div class="cat-head"><h2>' + esc(c.name) + ' <span class="chip">Fixed</span></h2>' +
+        '<div class="tot"><span id="t-' + c.id + '"></span> <small>/ mo</small></div></div>' + PLABELS + c.items.map(prowHtml).join("") +
+        '<p class="locked-note">Your share of the Shared budget, set by the split on the Shared tab. Money you move into a shared account is filed here in Finances.</p></section>';
+    }
     var save = c.kind === "save";
     return '<section class="cat" data-cat="' + c.id + '"><div class="cat-head"><h2>' +
       '<input class="cat-name" id="cn-' + c.id + '" data-cname="' + c.id + '" aria-label="Category name" placeholder="Name this category" maxlength="60" value="' + esc(c.name) + '">' +
       (!personal && save ? '<span class="chip">Savings</span>' : "") + "</h2>" +
       '<div class="cat-tools">' +
       (personal ? '<button class="kind" data-ckind="' + c.id + '" aria-pressed="' + save + '" title="Savings count toward Saving & investing instead of Spending">' + (save ? "Savings" : "Spending") + "</button>" : "") +
-      '<button data-cmove="' + c.id + '" data-dir="-1" aria-label="Move ' + esc(c.name || "category") + ' up"' + (i ? "" : " disabled") + ">↑</button>" +
+      '<button data-cmove="' + c.id + '" data-dir="-1" aria-label="Move ' + esc(c.name || "category") + ' up"' + (i && !afterLocked ? "" : " disabled") + ">↑</button>" +
       '<button data-cmove="' + c.id + '" data-dir="1" aria-label="Move ' + esc(c.name || "category") + ' down"' + (i < n - 1 ? "" : " disabled") + ">↓</button>" +
       '<button class="cdel" data-cdel="' + c.id + '">Delete</button></div>' +
       '<div class="tot"><span id="t-' + c.id + '"></span> <small>/ mo</small></div></div>' +
@@ -494,7 +526,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       PLABELS + pp.income.map(prowHtml).join("") +
       (pp.income.length ? "" : '<p class="empty">Add take-home pay to see what’s left over each month.</p>') +
       '<button class="add" data-add="inc-' + p + '">+ Add income</button></section>' +
-      pp.categories.map(function (c, i, a) { return catHtml(c, true, i, a.length); }).join("") + addCatBtn + "</div>" +
+      pp.categories.map(function (c, i, a) { return catHtml(c, true, i, a.length, !!(a[i - 1] && a[i - 1].locked)); }).join("") + addCatBtn + "</div>" +
       '<aside class="rail">' + versionsPanel(false) + tagsPanel(p) + barsPanel + "</aside></div>";
   }
 
@@ -535,7 +567,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
         meta = '<span class="v-meta">' + money.format(sm.total) + "/mo · " + (sm.loan ? "borrow " + money.format(sm.loan) : "all cash") + "</span>" +
           '<span class="v-meta">Luke ' + money.format(sm.luke) + " · Amber " + money.format(sm.amber) + "</span>";
       } else {
-        var pv = normalizePerson(clone(v.state)), fv = followed(pv);
+        var pv = normalizePerson(clone(v.state), tab), fv = followed(pv);
         var P = personSummary(pv, fv ? sharedSummary(normalizeShared(clone(fv.state))).ctx : { price: 0, shares: {} });
         meta = '<span class="v-meta">Left over ' + money.format(P.left) + "/mo · follows " + esc(pv.follows) + "</span>";
       }
@@ -559,7 +591,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       }).join("") || '<span class="ve-none">No tags</span>') + "</div>" +
         '<div class="ve-add"><input id="ve-tag" list="tag-names" placeholder="Tag name" aria-label="Add a tag" maxlength="30"><button data-vaddtag="' + esc(v.id) + '">Add tag</button></div>';
     if (doc !== "shared") {
-      var follows = normalizePerson(clone(v.state)).follows;
+      var follows = normalizePerson(clone(v.state), tab).follows;
       html += '<label class="v-lbl" for="ve-follow">Follows tag</label><select id="ve-follow">' + tagOptions(follows) + "</select>" +
         '<p class="ve-hint" id="ve-follow-hint">' + esc(followHint(follows)) + "</p>";
     }
@@ -597,7 +629,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     if (!name) { setStatus("Give the version a name."); return; }
     if (versions[doc].some(function (x) { return x.id !== id && x.name.toLowerCase() === name.toLowerCase(); })) { setStatus("Another version is already called “" + name + "”."); return; }
     var state = clone(old.state), followsChanged = false;
-    if (fsel && fsel.value !== normalizePerson(clone(old.state)).follows) { state.follows = fsel.value; followsChanged = true; }
+    if (fsel && fsel.value !== normalizePerson(clone(old.state), tab).follows) { state.follows = fsel.value; followsChanged = true; }
     if (name === old.name && !followsChanged) { editing = null; renderVersions(); return; }
     var v = { id: id, name: name, savedAt: old.savedAt, state: state };
     return putVersion(doc, v).then(function () {
@@ -759,7 +791,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       set("s-luke-pct", "Luke " + split + "%"); set("s-amber-pct", "Amber " + (100 - split) + "%");
       set("s-luke", money.format(S.luke)); set("s-luke-yr", money.format(S.luke * 12) + " / yr");
       set("s-amber", money.format(S.amber)); set("s-amber-yr", money.format(S.amber * 12) + " / yr");
-      set("s-foot", "The split applies to " + money.format(S.by.Shared) + "/mo of shared costs, mortgage included. Items set to Split use their own percentage instead (" + money.format(S.by.Luke) + " Luke, " + money.format(S.by.Amber) + " Amber). Personal tabs use the tagged version of this, not the working copy.");
+      set("s-foot", "The split applies to " + money.format(S.by.Shared) + "/mo of shared costs, mortgage included. Items set to Split use their own percentage instead (" + money.format(S.by.Luke) + " Luke, " + money.format(S.by.Amber) + " Amber). Each person’s share is the fixed Shared contributions section of their budget, from the tagged version of this, not the working copy.");
       set("k-total", money.format(S.total)); set("k-total-yr", money.format(S.total * 12) + " / yr");
       set("k-mort", money.format(S.mort)); set("k-mort-yr", S.loan ? money.format(S.loan) + " at " + m.rate + "%, " + m.years + " yr" : "No loan");
       set("k-luke", money.format(S.luke)); set("k-luke-yr", split + "% of shared" + (S.by.Luke ? " + " + money.format(S.by.Luke) + " split" : ""));
@@ -865,9 +897,11 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       rm.down = downTotal(rm); persist(); render();
     } else if (t.dataset.del) {
       var id = t.dataset.del;
+      if (id === CONTRIB_LINE) return;
       allLists().forEach(function (list) { for (var i = list.length - 1; i >= 0; i--) if (list[i].id === id) list.splice(i, 1); });
       persist(); render();
     } else if (t.dataset.add) {
+      if (lockedCat(t.dataset.add)) return;
       var list = findList(t.dataset.add); if (!list) return;
       var item = { id: uid(), name: "", amount: 0, freq: "mo", note: "" };
       if (tab === "shared") item.who = "Shared";
@@ -879,7 +913,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       tabCats().push(nc); persist(); render(); focusCat(nc.id);
     } else if (t.dataset.cmove) {
       var cs = tabCats(), ci = catIndex(t.dataset.cmove), cj = ci + Number(t.dataset.dir);
-      if (ci < 0 || cj < 0 || cj >= cs.length) return;
+      if (ci < 0 || cj < 0 || cj >= cs.length || cs[ci].locked || cs[cj].locked) return;
       cs.splice(cj, 0, cs.splice(ci, 1)[0]); persist(); render();
       var mb = app.querySelector('[data-cmove="' + t.dataset.cmove + '"][data-dir="' + t.dataset.dir + '"]');
       if (mb && !mb.disabled) mb.focus(); else focusCat(t.dataset.cmove);
@@ -888,7 +922,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
       kc.kind = kc.kind === "save" ? "spend" : "save"; persist(); render();
       var kb = app.querySelector('[data-ckind="' + kc.id + '"]'); if (kb) kb.focus();
     } else if (t.dataset.cdel) {
-      var dcs = tabCats(), di = catIndex(t.dataset.cdel); if (di < 0) return;
+      var dcs = tabCats(), di = catIndex(t.dataset.cdel); if (di < 0 || dcs[di].locked) return;
       var dc = dcs[di], n = dc.items.length;
       if (armedDel !== "cat:" + dc.id) {
         armedDel = "cat:" + dc.id; t.textContent = n ? "Delete with " + n + " item" + (n > 1 ? "s" : "") + "?" : "Confirm"; t.classList.add("arm");
@@ -982,6 +1016,7 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
     var from = locate(id), to = findList(key); if (!from || !to) return false;
     var it = from.list[from.index];
     if (key.indexOf("inc-") === 0 && it.calc) return false;
+    if (it.locked || lockedCat(key)) return false; // the fixed section takes nothing in and lets nothing out
     from.list.splice(from.index, 1);
     var at = beforeId ? to.findIndex(function (x) { return x.id === beforeId; }) : -1;
     to.splice(at < 0 ? to.length : at, 0, it);

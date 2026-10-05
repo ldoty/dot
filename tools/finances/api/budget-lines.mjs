@@ -24,7 +24,11 @@ export const TRANSFER = 'X.transfer';
 // under "Shared contributions". Money moved from one of their own accounts into a shared one is
 // filed there by the sync (matched like a transfer, but it is the person's spending).
 export const CONTRIBUTION = 'X.to';
+// Budget's fixed Shared contributions section (tools/budget: category "contrib", line "contrib-share").
+// When the person's budget has it, contributions go there and the "To <account>" lines aren't needed.
+export const CONTRIB_LINE = 'L.contrib-share';
 export function withContributionLines(lines, accounts, person) {
+  if (lines.some((l) => l.id === CONTRIB_LINE)) return lines;
   const shared = (accounts || []).filter((a) => a.owner === 'shared');
   return [
     ...lines,

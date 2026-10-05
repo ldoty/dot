@@ -15,7 +15,7 @@
 //      merchant becomes that merchant's rule (unless it has one), so a merchant costs one
 //      question; your correction replaces it (api.mjs).
 import { claim, fetchAccounts, secretKind } from './simplefin.mjs';
-import { CONTRIBUTION, MONEY_IN, resolveLines, resolveSharedLines, withContributionLines } from './budget-lines.mjs';
+import { CONTRIB_LINE, CONTRIBUTION, MONEY_IN, resolveLines, resolveSharedLines, withContributionLines } from './budget-lines.mjs';
 import { classify, merchantKey } from './categorize.mjs';
 import { hash, lineFits, ownerOf } from './store.mjs';
 import { TRANSFER } from './budget-lines.mjs';
@@ -129,8 +129,10 @@ export async function runSync(deps) {
   // 4a. A person's contribution: their side of money into a shared account goes under "To <account>",
   // over rules and Claude but never over their own filing. One that's no longer matched is released.
   if (deps.mode !== 'shared') {
+    // Into the budget's Shared contributions line if it has one, else "To <account>"
+    const fixed = budget?.lines.some((l) => l.id === CONTRIB_LINE);
     for (const t of [...existing.values()]) {
-      const to = gave.get(t.sk), line = to && `${CONTRIBUTION}.${to.slice(5)}`;
+      const to = gave.get(t.sk), line = to && (fixed ? CONTRIB_LINE : `${CONTRIBUTION}.${to.slice(5)}`);
       if (t.source === 'contribution' && !line) {
         const { asked, ...rest } = t;
         const row = { ...rest, line: null, source: null };
@@ -199,7 +201,7 @@ export async function runSync(deps) {
           if (!these.length) continue;
           const got = await classify({
             client: deps.client, model: deps.model, log,
-            lines: budget.lines.filter((l) => lineFits(kind, l) && !l.auto),
+            lines: budget.lines.filter((l) => lineFits(kind, l) && !l.auto && l.id !== CONTRIB_LINE), // contributions are matched, not guessed
             txns: these.map((t) => ({ id: t.sk, date: t.date, amount: t.amount, description: t.description, account: accounts.get(t.account)?.name || '' })),
           });
           for (const [k, v] of got) picks.set(k, v);

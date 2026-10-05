@@ -18,9 +18,9 @@ test('the page holds no budget figures until it loads them from the API', async 
 
 test('personal share comes from the tagged Shared version, not the working copy', async () => {
   const p = await openBudget('#luke');
-  assert.equal(p.text('ro-Lukes'), '$500'); // 50% of the tagged $1,000, not the working $2,000
+  assert.equal(p.text('ro-contrib-share'), '$500'); // 50% of the tagged $1,000, not the working $2,000
   assert.match(p.text('v-cur'), /follows default → “Starting point”/);
-  assert.match(p.text('nt-Lukes'), /From Shared \(default\): 50% of \$1,000/);
+  assert.match(p.text('nt-contrib-share'), /From Shared \(default\): 50% of \$1,000/);
   assert.equal(p.d.getElementById('follow'), null, 'no separate follow panel');
   p.close();
 });
@@ -33,7 +33,7 @@ test('editing Shared saves only Shared and leaves personal tabs alone until tagg
   assert.ok(p.requests.includes('PUT /docs/shared/state'));
   assert.ok(!p.requests.some((r) => /docs\/(Luke|Amber)/.test(r)));
   await p.tab('Luke');
-  assert.equal(p.text('ro-Lukes'), '$500');
+  assert.equal(p.text('ro-contrib-share'), '$500');
   p.close();
 });
 
@@ -45,7 +45,7 @@ test('save + tag default moves the tag, and personal tabs follow it', async () =
   assert.equal(tag('default'), planB);
   assert.match(p.d.querySelector('.v-item .v-tags').textContent, /default/);
   await p.tab('Luke');
-  assert.equal(p.text('ro-Lukes'), '$1,400'); // 70% of $2,000
+  assert.equal(p.text('ro-contrib-share'), '$1,400'); // 70% of $2,000
   p.close();
 });
 
@@ -61,7 +61,7 @@ test('new tags are cleaned up, followable, and deletable (followers fall back to
   p.click(`[data-vedit="${av}"]`); p.type('#ve-follow', 'stretch-goal', 'change'); p.click(`[data-vsave="${av}"]`); await saved();
   assert.equal(doc('Amber').follows, 'stretch-goal', 'editing the loaded version applies its tag');
   assert.equal(doc('Luke').follows, 'default');
-  assert.equal(p.text('ro-Ambers'), '$1,000'); // 50% of the $2,000 working copy saved as Lean
+  assert.equal(p.text('ro-contrib-share'), '$1,000'); // 50% of the $2,000 working copy saved as Lean
 
   await p.tab('shared');
   p.click('[data-tagdel="stretch-goal"]'); p.click('[data-tagdel="stretch-goal"]'); await saved();
@@ -76,7 +76,7 @@ test('moving a tag from the Tags panel', async () => {
   p.type('[data-tagsel="default"]', 'v1', 'change'); await wait(50);
   assert.equal(tag('default'), 'v1');
   await p.tab('Luke');
-  assert.equal(p.text('ro-Lukes'), '$500');
+  assert.equal(p.text('ro-contrib-share'), '$500');
   p.close();
 });
 
@@ -134,9 +134,9 @@ test('categories: rename, add, reorder, delete with items', async () => {
 
 test('categories: spending/savings toggle exists only on personal tabs, and empty savings categories survive reload', async () => {
   const p = await openBudget('#luke');
-  assert.equal(p.d.querySelectorAll('[data-ckind]').length, 1);
+  assert.equal(p.d.querySelectorAll('[data-ckind]').length, 1, 'Needs (the fixed section has none)');
   p.click('[data-ckind="Lukec"]'); await saved();
-  assert.equal(doc('Luke').categories[0].kind, 'save');
+  assert.equal(doc('Luke').categories.find((c) => c.id === 'Lukec').kind, 'save');
   p.click('#add-cat'); await wait(); p.click(`[data-ckind="${p.d.activeElement.dataset.cname}"]`); await saved();
   p.close();
   const again = await openBudget('#luke');
@@ -223,7 +223,7 @@ test('replace with current numbers: two clicks, warns who follows it, and they g
   assert.equal(version('shared', 'v1').name, 'Starting point');
   assert.equal(doc('shared').version, 'Starting point');
   await p.tab('Luke');
-  assert.equal(p.text('ro-Lukes'), '$1,400');
+  assert.equal(p.text('ro-contrib-share'), '$1,400');
   p.close();
 });
 
@@ -399,10 +399,33 @@ test('editing the tag of a version that isn’t loaded leaves the screen alone u
     .map((k) => k[3]).find((id) => version('Luke', id).name === 'Other');
   p.click(`[data-vedit="${other}"]`); p.type('#ve-follow', 'stretch', 'change'); p.click(`[data-vsave="${other}"]`); await saved();
   assert.equal(doc('Luke').follows, 'default');
-  assert.equal(p.text('ro-Lukes'), '$500');
+  assert.equal(p.text('ro-contrib-share'), '$500');
   p.click(`[data-vload="${other}"]`); await saved();
   assert.equal(doc('Luke').follows, 'stretch');
-  assert.equal(p.text('ro-Lukes'), '$1,000'); // 50% of Plan B's $2,000
+  assert.equal(p.text('ro-contrib-share'), '$1,000'); // 50% of Plan B's $2,000
+  p.close();
+});
+
+test('every personal budget has a fixed Shared contributions section, first, from the split', async () => {
+  for (const tab of ['#luke', '#amber']) {
+    const p = await openBudget(tab);
+    const first = p.d.querySelector('section.cat:not([data-cat^="inc-"])'); // first after Income
+    assert.equal(first.dataset.cat, 'contrib');
+    assert.match(first.querySelector('h2').textContent, /^Shared contributions/);
+    assert.equal(first.querySelector('.cat-name, [data-cdel], [data-cmove], [data-ckind], [data-add], [data-del], .grip, input'), null, 'nothing to rename, move, delete, add or edit');
+    assert.equal(p.text('ro-contrib-share'), '$500', 'its line is the share from the split');
+    p.close();
+  }
+  // It replaces the old share line; the category that held it keeps its other lines
+  const p = await openBudget('#luke');
+  assert.deepEqual(doc('Luke').categories.map((c) => c.id), ['Lukec'], 'stored as it was until saved');
+  p.type('#a-Lukep', '10'); await saved();
+  const stored = doc('Luke');
+  assert.deepEqual(stored.categories.map((c) => c.id), ['contrib', 'Lukec']);
+  assert.deepEqual(stored.categories[0].items.map((i) => [i.id, i.calc, i.person]), [['contrib-share', 'share', 'Luke']]);
+  assert.ok(!stored.categories[1].items.some((i) => i.calc === 'share'));
+  // The next category can't move above it
+  assert.ok(p.el('[data-cmove="Lukec"][data-dir="-1"]').disabled);
   p.close();
 });
 
@@ -410,10 +433,11 @@ test('savings and left over show yearly totals', async () => {
   const p = await openBudget('#luke'); // $3,000/mo pay, $500/mo to shared
   assert.equal(p.text('k-left'), '$2,500');
   assert.equal(p.text('k-left-yr'), '$30,000 / yr to spare');
-  p.click('[data-ckind="Lukec"]'); await wait(); // count "Needs" ($500) as saving instead
+  p.type('#a-Lukep', '500'); await wait(); // $500/mo in Needs…
+  p.click('[data-ckind="Lukec"]'); await wait(); // …counted as saving instead
   assert.equal(p.text('k-save-yr'), '$6,000 / yr · 17% of income');
-  p.type('#a-Lukei', '200'); await wait(); // income below costs
-  assert.equal(p.text('k-left-yr'), 'Over by $3,600 / yr');
+  p.type('#a-Lukei', '200'); await wait(); // income below costs ($500 shared + $500 saved)
+  assert.equal(p.text('k-left-yr'), 'Over by $9,600 / yr');
   p.close();
 });
 
@@ -559,8 +583,8 @@ test('personal share notes the Split items', async () => {
   table.put({ pk: PK, sk: 'DOC#shared#VERSION#v1', name: 'Starting point', savedAt: 1,
     state: JSON.stringify(bills([item('a', 1000, { who: 'Shared' }), item('car', 500, { who: 'Split', luke: 350 })])) });
   const p = await openBudget('#luke');
-  assert.equal(p.text('ro-Lukes'), '$850');
-  assert.match(p.text('nt-Lukes'), /50% of \$1,000 shared costs plus \$350 from items with their own split/);
+  assert.equal(p.text('ro-contrib-share'), '$850');
+  assert.match(p.text('nt-contrib-share'), /50% of \$1,000 shared costs plus \$350 from items with their own split/);
   p.close();
 });
 
