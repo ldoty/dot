@@ -6,7 +6,7 @@
   "scripts": {
     "test": "node --test \"platform/tests/*.test.mjs\" \"tools/*/tests/*.test.mjs\"",
     "test:live": "node --test \"tools/*/tests/*.live.mjs\"",
-    "build": "esbuild tools/assistant/api/handler.mjs --bundle --platform=node --target=node22 --format=esm --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\" --log-level=warning --outfile=tools/assistant/api/dist/index.mjs && esbuild tools/biomap/api/api.mjs --bundle --platform=node --target=node22 --format=esm --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\" --log-level=warning --outfile=tools/biomap/api/dist/index.mjs"
+    "build": "esbuild tools/assistant/api/handler.mjs --bundle --platform=node --target=node22 --format=esm --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\" --log-level=warning --outfile=tools/assistant/api/dist/index.mjs && esbuild tools/biomap/api/api.mjs --bundle --platform=node --target=node22 --format=esm --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\" --log-level=warning --outfile=tools/biomap/api/dist/index.mjs && esbuild tools/finances/api/index.mjs --bundle --platform=node --target=node22 --format=esm --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\" --log-level=warning --outfile=tools/finances/api/dist/index.mjs"
   },
   "devDependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.34.2",

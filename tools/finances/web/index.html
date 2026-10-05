@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finances</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="family.css">
+<style>
+/* Layout: one column. Balances, then the month (it scopes everything under it): summary tiles,
+   month-to-date by category (click one for its lines), the 3-month trend, then filing and settings.
+
+   Chart colors: the house hues, re-stepped and ordered so neighbours stay apart for colorblind
+   readers (checked with the dataviz palette validator: lightness, chroma, CVD, contrast). Green
+   beside wood sits at the CVD floor, so identity never rests on color alone: 2px surface gaps
+   between segments, a key under every bar, tooltips, and a table view. A 6th+ series folds into
+   Other. Text never wears a series color. */
+.viz { --s1: #008f99; --s2: #e9a41a; --s3: #e0607e; --s4: #a5622d; --s5: #2f9e5b; --other: #c4bdad; --track: #efeadd; --tick: #1e2a24 }
+.wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+.top a { color: var(--muted); text-decoration: none; font-size: 14px }
+h1 { font-size: clamp(32px, 6vw, 48px) }
+/* minmax(0, 1fr): a long name or a wide menu must not push the column past a phone's width */
+#main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px }
+section, .chart, .card { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0 }
+.card { display: block }
+.sec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap }
+.sec-head h2 { font-size: 24px }
+.status { color: var(--muted); font-size: 14px; min-height: 1.4em }
+.bar-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between }
+.month { display: flex; align-items: center; gap: 6px }
+.month h2 { min-width: 9.5ch; text-align: center; font-size: 26px }
+.icon-btn { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-pill); width: 34px; height: 34px; cursor: pointer; color: var(--ink) }
+.icon-btn:disabled { opacity: .35; cursor: default }
+.actions { display: flex; gap: 8px; flex-wrap: wrap }
+.btn.small { padding: 6px 14px; font-size: 14px }
+.btn:disabled { opacity: .5; cursor: default }
+.link-btn { border: 0; background: none; padding: 0; color: var(--pool); cursor: pointer; font-size: 14px; text-decoration: underline }
+.money { font-family: var(--mono); font-variant-numeric: tabular-nums }
+code { font-family: var(--mono); font-size: 13px }
+
+/* Balances */
+.bal-sum { color: var(--muted); font-size: 14px }
+.bal-sum strong { color: var(--ink); font-weight: 600 }
+.balances { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px }
+.acct-card { padding: 12px 14px; display: grid; gap: 2px }
+.acct-card { cursor: pointer }
+.acct-card:hover, .acct-card:focus-visible { border-color: var(--muted) }
+.acct-card.on { border-color: var(--pool); box-shadow: inset 0 0 0 1px var(--pool) }
+.acct-card .an { font-weight: 600; font-size: 14.5px; overflow-wrap: anywhere }
+.acct-card .ao { color: var(--muted); font-size: 12.5px }
+.acct-card .ab { font: 500 22px var(--display); margin-top: 4px }
+.acct-card .aa { color: var(--muted); font-size: 12.5px }
+
+/* Summary tiles */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px }
+.stat { padding: 14px 16px }
+.stat .big { font: 500 26px var(--display); margin-top: 4px }
+.stat .of { color: var(--muted); font-size: 14px }
+
+.chart { display: grid; gap: 8px }
+.chart h3 { margin: 12px 0 0; font-size: 13px; font-family: var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-weight: 600 }
+
+/* MTD columns: pale column = budget, spending stacked on it from the baseline (by line, or by
+   merchant inside a category), dark tick = the budget's top, faint tick = an even pace by today.
+   One y-scale per chart, with gridlines; the readout under it names the pieces of a column. */
+/* On a phone the columns keep a readable width and the plot scrolls sideways in its own box,
+   under a fixed dollar axis; the page itself never scrolls sideways. */
+.colchart { position: relative }
+.axis { position: absolute; left: 0; width: 36px; top: 22px; height: 170px; pointer-events: none }
+.axis span { position: absolute; right: 0; transform: translateY(50%); font: 11px var(--mono); color: var(--muted) }
+.scroller { margin-left: 42px; overflow-x: auto; overscroll-behavior-x: contain }
+.plot { position: relative }
+.gridlayer { position: absolute; left: 0; right: 0; top: 22px; height: 170px; pointer-events: none }
+.gl { position: absolute; left: 0; right: 0; border-top: 1px solid var(--line) }
+.gl.base { border-top-color: var(--muted) }
+.cols { display: flex; gap: 2px; align-items: flex-start }
+.col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; border-radius: var(--r-sm); padding-bottom: 6px }
+.col[data-cat] { cursor: pointer }
+.col:hover, .col:focus-visible, .col.on { background: color-mix(in srgb, var(--raised) 60%, transparent) }
+.colarea { position: relative; width: 100%; height: 192px }
+.pb { position: absolute; left: 0; right: 0; bottom: 0; height: 170px }
+.ctrack, .cstack { position: absolute; bottom: 0; left: 50%; width: 24px; max-width: 70%; transform: translateX(-50%); border-radius: 4px 4px 0 0 }
+.ctrack { background: var(--track) }
+.cstack { display: flex; flex-direction: column-reverse; overflow: hidden }
+.seg { min-height: 2px }
+.seg:not(:last-child) { box-shadow: inset 0 2px 0 var(--surface) }
+.seg:hover { filter: brightness(1.12) }
+.ctick { position: absolute; left: 50%; width: 34px; max-width: 92%; height: 2px; transform: translate(-50%, 1px); background: var(--tick) }
+.ctick.pace { opacity: .35 }
+.cval { position: absolute; left: 0; right: 0; text-align: center; font: 11.5px var(--mono); color: var(--muted); white-space: nowrap }
+.cval.over { color: var(--ink); font-weight: 700 }
+.clabel { margin-top: 6px; font-size: 12px; line-height: 1.25; text-align: center; hyphens: auto; overflow-wrap: break-word; padding: 0 3px; max-width: 100% }
+.clabel small { display: block; color: var(--muted); font-size: 11px }
+.readout { min-height: 3.2em; font-size: 13.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 4px }
+.readout strong { color: var(--ink) }
+.readout .pieces { display: flex; flex-wrap: wrap; gap: 2px 14px }
+.readout .k { display: inline-flex; align-items: center; gap: 5px }
+.sw { width: 10px; height: 10px; border-radius: 2px; flex: none }
+.legend-row { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--muted); align-items: center }
+.legend-row .k { display: inline-flex; align-items: center; gap: 5px }
+.legend-row .tk { display: inline-block; width: 14px; height: 2px; background: var(--tick); vertical-align: middle; margin-right: 5px }
+.legend-row .tk.pace { opacity: .35 }
+.legend-row .tr { display: inline-block; width: 10px; height: 14px; background: var(--track); border-radius: 3px 3px 0 0; vertical-align: middle; margin-right: 5px }
+.drill-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap }
+.drill-head h3 { margin: 0; font-size: 20px; text-transform: none; letter-spacing: 0; color: var(--ink); font-weight: 500 }
+
+
+.tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 10px; box-shadow: 0 4px 16px rgb(30 42 36 / 12%); font-size: 13px; display: grid; max-width: 260px }
+.tip strong { font-family: var(--mono); font-size: 14px }
+.tip span { color: var(--muted) }
+table.data { width: 100%; border-collapse: collapse; font-size: 14px }
+table.data th, table.data td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line) }
+table.data td.n, table.data th.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums }
+
+/* Transactions */
+.tx { display: grid; grid-template-columns: 4em 1fr auto; gap: 4px 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; align-items: center }
+.tx:last-child { border-bottom: 0 }
+.tx .d { color: var(--muted); font-family: var(--mono); font-size: 13px }
+.tx .desc { overflow-wrap: anywhere }
+.acct { color: var(--muted); font-size: 13px }
+.tx .amt.in { color: var(--leaf) }
+.tx .file { grid-column: 2 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0 }
+.tx .file select { flex: 1 1 12em }
+.tx select, .settings select, .pick { max-width: 100%; min-width: 0; background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 5px 8px; color: var(--ink) }
+.tx label { font-size: 13px; color: var(--muted); display: flex; gap: 4px; align-items: center; white-space: nowrap }
+.src { font-size: 12px; color: var(--muted) }
+/* Filing picker: a button showing the current line; it opens a search box over a list of
+   categories (pickable, for the whole category) and their lines */
+.picker { position: relative; flex: 1 1 14em; min-width: 0 }
+.pick { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; cursor: pointer; font-size: 14px }
+.pick-v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.pick-panel { position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; width: min(340px, 86vw); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); box-shadow: 0 8px 24px rgb(30 42 36 / 14%); padding: 6px }
+.pick-q { width: 100%; border: 1.5px solid var(--line); border-radius: var(--r-sm); padding: 6px 8px; font-size: 14px; color: var(--ink); background: var(--surface) }
+.pick-q:focus { border-color: var(--pool); outline: none }
+.pick-list { list-style: none; margin: 6px 0 0; padding: 0; max-height: 260px; overflow-y: auto; font-size: 14px }
+.pick-list li { padding: 5px 8px; border-radius: 6px; cursor: pointer }
+.pick-list li.head { font-weight: 600; margin-top: 4px }
+.pick-list li.child { padding-left: 22px }
+.pick-list li[aria-disabled="true"] { cursor: default; color: var(--muted) }
+.pick-list li.active, .pick-list li[data-choice]:hover { background: var(--raised) }
+.pick-list li[aria-selected="true"]::after { content: " ✓"; color: var(--pool) }
+.pick-list small { color: var(--muted) }
+.moved { font-size: 12px; color: var(--ink); background: var(--raised); border-radius: var(--r-pill); padding: 1px 8px; white-space: nowrap }
+
+.acct-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: center; flex-wrap: wrap }
+.acct-row label { display: flex; gap: 6px; align-items: center; font-size: 14px; color: var(--muted) }
+.settings { display: grid; gap: 8px; margin-top: 10px }
+details > summary { cursor: pointer; font: 500 20px var(--display); list-style: none }
+details > summary::-webkit-details-marker { display: none }
+details > summary::before { content: "▸ "; color: var(--muted) }
+details[open] > summary::before { content: "▾ " }
+details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
+@media (max-width: 520px) {
+  .tx { grid-template-columns: 1fr auto }
+  .tx .d { grid-column: 1 / -1 }
+  .tx .file { grid-column: 1 / -1 }
+}
+</style>
+</head>
+<body>
+<div class="wrap viz" id="app">
+  <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
+  <h1 id="title">Finances</h1>
+  <div id="main"><p class="status">Loading…</p></div>
+</div>
+<div class="tip" id="tip" hidden></div>
+<script src="family-auth.js"></script>
+<script>
+(function () {
+  var cfg, data = null, month = null, drill = null, acct = null, busy = false;
+  var main = document.getElementById("main"), tip = document.getElementById("tip");
+  var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  var SLOTS = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)"], OTHER = "var(--other)";
+  var usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+  var usd0 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function status(msg) { var s = document.getElementById("status"); if (s) s.textContent = msg || ""; }
+  function monthName(m) { var p = m.split("-"); return MONTHS[Number(p[1]) - 1] + " " + p[0]; }
+  function shortMonth(m) { return MONTHS[Number(m.slice(5, 7)) - 1].slice(0, 3); }
+  function shift(m, by) { var p = m.split("-").map(Number), d = new Date(Date.UTC(p[0], p[1] - 1 + by, 1)); return d.toISOString().slice(0, 7); }
+  function when(iso) { return iso ? new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""; }
+  function pct(v, scale) { return (Math.max(0, v) / scale * 100).toFixed(2) + "%"; }
+  function titleCase(s) { return String(s || "").toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); }) || "Unknown"; }
+
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method,
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    });
+  }
+  function load(m) {
+    if (m !== month) drill = null;
+    month = m;
+    if (location.hash !== "#" + m) history.replaceState(null, "", "#" + m);
+    return api("GET", "/month/" + m).then(function (res) {
+      if (res.status === 403) { gate("Your account doesn’t have access to " + (cfg.title || "this tool") + "."); return; }
+      if (!res.ok) throw new Error("Couldn’t load (" + res.status + "). Reload to try again.");
+      return res.json().then(function (d) { data = d; render(); });
+    });
+  }
+
+  // --- The data, shaped for the charts ------------------------------------------
+
+  // Spending categories (income and transfers aren't spending), in budget order, each with its lines
+  function categories() {
+    var cats = [], by = {};
+    data.summary.lines.forEach(function (l) {
+      if (l.kind !== "spend" && l.kind !== "save") return;
+      var key = l.group + "›" + l.category;
+      if (!by[key]) { by[key] = { key: key, group: l.group, name: l.category, lines: [], target: 0, spent: 0, expected: 0 }; cats.push(by[key]); }
+      var c = by[key];
+      c.lines.push(l); c.target += l.target; c.spent += l.spent; c.expected += l.expected;
+    });
+    return cats;
+  }
+  // Up to five colored pieces in a fixed order, the rest folded into Other
+  function pieces(items) {
+    var out = items.slice(0, SLOTS.length).map(function (it, i) { return { name: it.name, value: it.value, color: SLOTS[i] }; });
+    var rest = items.slice(SLOTS.length).reduce(function (s, it) { return s + it.value; }, 0);
+    if (rest > 0) out.push({ name: "Other (" + (items.length - SLOTS.length) + ")", value: rest, color: OTHER });
+    return out;
+  }
+  // A category's segments: the lines with spending. The five with the most get colors (kept in budget
+  // order, so the column reads bottom-up like the budget); any others fold into Other.
+  function lineSegments(c) {
+    var spent = c.lines.filter(function (l) { return l.spent > 0; });
+    var top = spent.slice().sort(function (a, b) { return b.spent - a.spent; }).slice(0, SLOTS.length);
+    var segs = spent.filter(function (l) { return top.indexOf(l) >= 0; }).map(function (l, i) { return { name: l.name, value: l.spent, color: SLOTS[i] }; });
+    var rest = spent.filter(function (l) { return top.indexOf(l) < 0; });
+    if (rest.length) segs.push({ name: "Other lines (" + rest.length + ")", value: rest.reduce(function (s, l) { return s + l.spent; }, 0), color: OTHER });
+    return segs;
+  }
+  // A line's segments: its merchants this month, biggest first
+  function merchantSegments(lineId) {
+    var by = {};
+    data.txns.forEach(function (t) {
+      if (t.line !== lineId || !counted(t)) return;
+      var k = t.merchant || t.description;
+      by[k] = (by[k] || 0) - t.amount;
+    });
+    var items = Object.keys(by).map(function (k) { return { name: titleCase(k), value: by[k] }; })
+      .filter(function (x) { return x.value > 0; }).sort(function (a, b) { return b.value - a.value; });
+    return pieces(items);
+  }
+  // My view leaves the Shared household out; it will get a view of its own
+  // A person's view: their own categories (the Shared household is Shared Finances'). Shared Finances: the household's.
+  function shared() { return cfg && cfg.mode === "shared"; }
+  function myCategories() { return categories().filter(function (c) { return (c.group === "Shared") === shared(); }); }
+  function counted(t) { var a = accountOf(t.account); return !a || a.owner !== "off"; }
+  function accountOf(id) { return data.accounts.filter(function (x) { return x.id === id; })[0]; }
+
+  // --- Pieces of the page ---------------------------------------------------------
+
+  function balancesHtml() {
+    // Only my own accounts: shared (joint) and off ones are in the Accounts & budget list only
+    var accts = data.accounts.filter(function (a) { return a.owner === (shared() ? "shared" : "mine"); }).sort(function (a, b) { return (b.balance >= 0) - (a.balance >= 0) || Math.abs(b.balance) - Math.abs(a.balance); });
+    if (!accts.length) return "";
+    var cash = 0, owed = 0, asOf = "";
+    accts.forEach(function (a) {
+      if (a.balance >= 0) cash += a.balance; else owed -= a.balance;
+      if (a.balanceDate > asOf) asOf = a.balanceDate;
+    });
+    return '<section aria-labelledby="h-bal"><div class="sec-head"><h2 id="h-bal">Balances</h2>' +
+      '<span class="bal-sum">Cash <strong>' + usd0.format(cash) + "</strong> · Cards owed <strong>" + usd0.format(owed) + "</strong> · Net <strong>" + usd0.format(cash - owed) + "</strong>" +
+      (asOf ? " · as of " + esc(new Date(asOf).toLocaleDateString("en-US", { month: "short", day: "numeric" })) : "") + "</span></div>" +
+      '<div class="balances">' + accts.map(function (a) {
+        // Some banks send 0 when they have no available figure
+        var avail = a.balance < 0 ? "owed" : a.available > 0 && a.available !== a.balance ? usd.format(a.available) + " available" : "";
+        return '<div class="card acct-card' + (acct === a.id ? " on" : "") + '" data-acct="' + esc(a.id) + '" role="button" tabindex="0" aria-pressed="' + (acct === a.id) + '" aria-label="' + esc(a.name + ": show its transactions") + '">' +
+          '<span class="an">' + esc(a.name) + '</span><span class="ao">' + esc(a.org) + "</span>" +
+          '<span class="ab">' + usd.format(a.balance) + '</span><span class="aa">' + esc(avail) + "</span></div>";
+      }).join("") + "</div>" + accountTxns() + "</section>";
+  }
+  // The chosen account's transactions this month, with the usual filing controls
+  function accountTxns() {
+    var a = acct && accountOf(acct);
+    if (!a) return "";
+    var txns = data.txns.filter(function (t) { return t.account === acct; });
+    return '<div class="card" id="acct-txns"><div class="sec-head"><h3>' + esc(a.name) + " · " + esc(monthName(month)) + " (" + txns.length + ")</h3>" +
+      '<button class="link-btn" id="all-accts">All accounts</button></div>' +
+      (txns.map(function (t) { return txRow(t, !!data.budget); }).join("") || '<p class="status">No transactions this month.</p>') + "</div>";
+  }
+
+  function stat(label, t, sub) {
+    return '<div class="card stat"><div class="eyebrow">' + esc(label) + '</div><div class="big">' + usd0.format(t.spent) +
+      '</div><div class="of">of ' + usd0.format(t.target) + (sub ? " · " + sub : "") + "</div></div>";
+  }
+
+  // Clean y-axis steps (1, 2 or 5 × a power of ten), three or four gridlines
+  function niceScale(max) {
+    var raw = Math.max(max, 1) / 3, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+    var step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+    return { top: Math.ceil(Math.max(max, 1) / step) * step, step: step };
+  }
+  function compact(v) { return v >= 10000 ? "$" + Math.round(v / 1000) + "k" : v >= 1000 ? "$" + (v / 1000).toFixed(1).replace(/\.0$/, "") + "k" : "$" + Math.round(v); }
+  function stateOf(o) { var left = o.target - o.spent; return !o.target ? "No budget" : left >= 0 ? usd0.format(left) + " left" : usd0.format(-left) + " over"; }
+
+  // A column chart: one column per item ({ key?, name, target, spent, expected, segs }), one scale
+  var colItems = [];
+  function columns(items) {
+    var sc = niceScale(Math.max.apply(null, items.map(function (o) { return Math.max(o.target, o.spent); })));
+    var showPace = data.summary.elapsed > 0 && data.summary.elapsed < 1;
+    var grid = "", axis = "";
+    for (var v = 0; v <= sc.top + 1e-9; v += sc.step) {
+      grid += '<div class="gl' + (v === 0 ? " base" : "") + '" style="bottom:' + pct(v, sc.top) + '"></div>';
+      axis += '<span style="bottom:' + pct(v, sc.top) + '">' + esc(compact(v)) + "</span>";
+    }
+    return '<div class="colchart"><div class="axis" aria-hidden="true">' + axis + '</div><div class="scroller"><div class="plot" style="min-width:' + items.length * 74 + 'px">' +
+      '<div class="gridlayer" aria-hidden="true">' + grid + '</div><div class="cols">' + items.map(function (o) {
+      var i = colItems.push(o) - 1, total = o.segs.reduce(function (s, x) { return s + x.value; }, 0);
+      var over = o.target > 0 && o.spent > o.target;
+      var label = o.name + ": " + usd0.format(o.spent) + " of " + usd0.format(o.target) + ", " + stateOf(o) + ". " +
+        o.segs.slice().sort(function (a, b) { return b.value - a.value; }).map(function (x) { return x.name + " " + usd0.format(x.value); }).join(", ");
+      return '<div class="col" data-col="' + i + '"' + (o.key ? ' data-cat="' + esc(o.key) + '" role="button"' : o.month ? ' data-go="' + esc(o.month) + '" role="button"' : "") + ' tabindex="0" aria-label="' + esc(label) + '">' +
+        '<div class="colarea" aria-hidden="true"><div class="pb">' +
+        (o.target ? '<span class="ctrack" style="height:' + pct(o.target, sc.top) + '"></span>' : "") +
+        '<span class="cstack" style="height:' + pct(total, sc.top) + '">' + o.segs.map(function (x) {
+          return '<span class="seg" style="flex:' + x.value + ' 0 0;background:' + x.color + '" data-tv="' + esc(x.tv || usd.format(x.value)) + '" data-tl="' + esc(x.tl || x.name + " · " + o.name) + '"></span>';
+        }).join("") + "</span>" +
+        (o.target ? '<span class="ctick" style="bottom:' + pct(o.target, sc.top) + '" data-tv="' + esc(usd0.format(o.target)) + '" data-tl="Budget for the month"></span>' : "") +
+        (showPace && o.target ? '<span class="ctick pace" style="bottom:' + pct(o.expected, sc.top) + '" data-tv="' + esc(usd0.format(o.expected)) + '" data-tl="An even pace by today"></span>' : "") +
+        '<span class="cval' + (over ? " over" : "") + '" style="bottom:calc(' + pct(Math.max(o.spent, o.target), sc.top) + ' + 4px)">' + esc(compact(Math.max(0, o.spent))) + "</span>" +
+        '</div></div><div class="clabel">' + esc(o.name) + "<small>" + (o.target ? "of " + esc(compact(o.target)) : "no budget") + "</small></div></div>";
+    }).join("") + '</div></div></div></div><div class="readout" aria-live="polite">Point at or tab to a column to see what it’s made of' + (items.some(function (o) { return o.month; }) ? "; click it to open that month." : items.some(function (o) { return o.key; }) ? "; click it to open the category." : ".") + "</div>";
+  }
+  function readout(col) {
+    var o = colItems[Number(col.dataset.col)], box = col.closest(".chart").querySelector(".readout");
+    if (!o || !box) return;
+    main.querySelectorAll(".col.on").forEach(function (c) { c.classList.remove("on"); });
+    col.classList.add("on");
+    var pieces = o.segs.slice().sort(function (a, b) { return b.value - a.value; });
+    box.innerHTML = "<div><strong>" + esc(o.name) + "</strong> · " + usd0.format(o.spent) + " of " + usd0.format(o.target) + " · <strong>" + esc(stateOf(o)) + "</strong></div>" +
+      '<div class="pieces">' + (pieces.map(function (x) { return '<span class="k"><span class="sw" style="background:' + x.color + '"></span>' + esc(x.name) + " " + usd0.format(x.value) + "</span>"; }).join("") || "Nothing spent yet") + "</div>";
+  }
+  var LEGEND = '<div class="legend-row"><span><span class="tr"></span>Budget</span><span><span class="tk"></span>Top of budget</span><span><span class="tk pace"></span>Even pace today</span></div>';
+
+  function categoryChart() {
+    var cats = myCategories();
+    colItems = [];
+    if (!cats.length) return '<p class="status">Category columns appear once the budget is read.</p>';
+    if (drill) {
+      var c = cats.filter(function (x) { return x.key === drill; })[0];
+      if (c) return drillHtml(c);
+      drill = null;
+    }
+    var groups = [], by = {};
+    cats.forEach(function (c) { if (!by[c.group]) { by[c.group] = []; groups.push(c.group); } by[c.group].push(c); });
+    return LEGEND + groups.map(function (g) {
+      return '<div class="chart"><h3>' + esc(shared() ? "Household" : "My budget") + "</h3>" + columns(by[g].map(function (c) {
+        return { key: c.key, name: c.name, target: c.target, spent: c.spent, expected: c.expected, segs: lineSegments(c) };
+      })) + "</div>";
+    }).join("") + tableView(cats);
+  }
+
+  function drillHtml(c) {
+    var txns = data.txns.filter(function (t) { return c.lines.some(function (l) { return l.id === t.line; }); });
+    return '<div class="drill-head"><button class="link-btn" id="undrill">‹ All categories</button><h3>' + esc(c.group === "Shared" ? "Shared · " + c.name : c.name) + "</h3>" +
+      '<span class="status">' + usd0.format(c.spent) + " of " + usd0.format(c.target) + "</span></div>" + LEGEND +
+      '<div class="chart">' + columns(c.lines.filter(function (l) { return !l.general || l.count; }).map(function (l) {
+        return { name: l.name, target: l.target, spent: l.spent, expected: l.expected, segs: merchantSegments(l.id) };
+      })) + "</div>" +
+      '<div class="card"><h3>' + esc(c.name) + " transactions (" + txns.length + ")</h3>" +
+      (txns.map(function (t) { return txRow(t, true); }).join("") || '<p class="status">Nothing filed here this month.</p>') + "</div>";
+  }
+
+  function tableView(cats) {
+    return '<details class="table-view"><summary>Table view</summary><table class="data"><thead><tr><th>Category</th><th class="n">Spent</th><th class="n">Budget</th><th class="n">At pace</th></tr></thead><tbody>' +
+      cats.map(function (c) { return "<tr><td>" + esc((c.group === "Shared" ? "Shared · " : "") + c.name) + '</td><td class="n">' + usd0.format(c.spent) + '</td><td class="n">' + usd0.format(c.target) + '</td><td class="n">' + usd0.format(c.expected) + "</td></tr>"; }).join("") +
+      "</tbody></table></details>";
+  }
+
+  // Trend: one column per month, stacked by top-level category, on the month's total budget.
+  // The five categories with the most spending over the three months get colors, in budget
+  // order; the rest fold into Other. Hovering a color shows that category in every month.
+  function trendHtml() {
+    var cats = myCategories(), months = data.trend.map(function (t) { return t.month; });
+    var current = data.trend[data.trend.length - 1];
+    var per = cats.map(function (c) {
+      return { c: c, values: data.trend.map(function (t) { return Math.max(0, c.lines.reduce(function (s, l) { return s + (t.spent[l.id] || 0); }, 0)); }) };
+    });
+    var sum = function (a) { return a.reduce(function (s, v) { return s + v; }, 0); };
+    var top = per.filter(function (x) { return sum(x.values) > 0; }).sort(function (a, b) { return sum(b.values) - sum(a.values); }).slice(0, SLOTS.length);
+    var series = per.filter(function (x) { return top.indexOf(x) >= 0; }).map(function (x, i) { return { name: x.c.name, color: SLOTS[i], values: x.values }; });
+    var rest = per.filter(function (x) { return top.indexOf(x) < 0 && sum(x.values) > 0; });
+    if (rest.length) series.push({ name: "Other (" + rest.length + ")", color: OTHER, values: months.map(function (m, k) { return sum(rest.map(function (x) { return x.values[k]; })); }) });
+    var target = sum(cats.map(function (c) { return c.target; }));
+    var across = function (s) { return months.map(function (m, j) { return shortMonth(m) + " " + usd0.format(s.values[j]); }).join(" · "); };
+    var items = months.map(function (m, k) {
+      var last = k === months.length - 1, part = last ? current.elapsed : 1;
+      return {
+        name: shortMonth(m) + (last && part < 1 ? " (to date)" : ""), month: m, target: target, expected: target * part,
+        spent: sum(series.map(function (s) { return s.values[k]; })),
+        segs: series.map(function (s) { return { name: s.name, value: s.values[k], color: s.color, tv: across(s), tl: s.name }; }).filter(function (x) { return x.value > 0; }),
+      };
+    });
+    return '<section aria-labelledby="h-trend"><div class="sec-head"><h2 id="h-trend">Last three months</h2><span class="status">' + (shared() ? "The household’s" : "My budget’s") + ' spending by category, against its monthly total' +
+      (current.elapsed < 1 ? "; " + esc(shortMonth(current.month)) + " is month to date" : "") + "</span></div>" +
+      '<div class="legend-row">' + series.map(function (s) { return '<span class="k"><span class="sw" style="background:' + s.color + '"></span>' + esc(s.name) + "</span>"; }).join("") +
+      '<span><span class="tr"></span>Budget</span></div>' +
+      '<div class="chart" id="trend-chart">' + columns(items) + "</div>" +
+      '<details class="table-view"><summary>Table view</summary><table class="data"><thead><tr><th>Category</th>' + months.map(function (m) { return '<th class="n">' + esc(shortMonth(m)) + "</th>"; }).join("") + '<th class="n">Budget</th></tr></thead><tbody>' +
+      per.map(function (x) { return "<tr><td>" + esc(x.c.name) + "</td>" + x.values.map(function (v) { return '<td class="n">' + usd0.format(v) + "</td>"; }).join("") + '<td class="n">' + usd0.format(x.c.target) + "</td></tr>"; }).join("") +
+      "</tbody></table></details></section>";
+  }
+
+  // --- Filing picker: search, then pick a category (its General line) or one of its lines -------
+
+  function lineById(id) { return data.summary.lines.filter(function (l) { return l.id === id; })[0]; }
+  function lineLabel(id) {
+    var l = id && lineById(id);
+    if (!id) return "Not filed";
+    if (!l) return "Not in this budget";
+    if (l.kind === "skip") return "Transfers";
+    return l.general ? l.category : l.category + " › " + l.name;
+  }
+  // The picker's entries: Not filed, then each category (pickable: its General line) with its lines,
+  // then Transfers. A shared account's transactions only see Shared lines.
+  function pickEntries(owner, q) {
+    q = (q || "").trim().toLowerCase();
+    var has = function (text) { return !q || text.toLowerCase().indexOf(q) >= 0; };
+    var out = [], cats = [], by = {}, transfer = null;
+    data.summary.lines.forEach(function (l) {
+      if (owner === "shared" && l.group !== "Shared" && l.kind !== "skip") return;
+      if (l.kind === "skip") { transfer = l; return; }
+      if (!by[l.category]) { by[l.category] = { general: null, lines: [] }; cats.push(l.category); }
+      if (l.general) by[l.category].general = l; else by[l.category].lines.push(l);
+    });
+    if (has("Not filed")) out.push({ id: "", label: "Not filed" });
+    cats.forEach(function (c) {
+      var g = by[c], all = has(c), kids = all ? g.lines : g.lines.filter(function (l) { return has(l.name); });
+      if (!all && !kids.length) return;
+      out.push({ id: g.general ? g.general.id : null, label: c, header: true });
+      kids.forEach(function (l) { out.push({ id: l.id, label: l.name, child: true, category: c }); });
+    });
+    if (transfer && (has("Transfers") || has(transfer.name))) out.push({ id: transfer.id, label: "Transfers", hint: "between my accounts, card payments" });
+    return out;
+  }
+  function picker(t, owner) {
+    return '<div class="picker" data-owner-of="' + esc(owner || "mine") + '"><button type="button" class="pick" data-pick="' + esc(t.id) + '" aria-haspopup="listbox" aria-expanded="false" aria-label="Budget line for ' + esc(t.description) + ": " + esc(lineLabel(t.line)) + '">' +
+      '<span class="pick-v">' + esc(lineLabel(t.line)) + '</span><span aria-hidden="true">▾</span></button></div>';
+  }
+  var open = null; // { picker, id, current, active }
+  function closePicker(focusButton) {
+    if (!open) return;
+    var btn = open.picker.querySelector(".pick"), panel = open.picker.querySelector(".pick-panel");
+    if (panel) panel.remove();
+    btn.setAttribute("aria-expanded", "false");
+    if (focusButton) btn.focus();
+    open = null;
+  }
+  function renderPickList() {
+    var q = open.picker.querySelector(".pick-q").value, ul = open.picker.querySelector(".pick-list");
+    var entries = pickEntries(open.picker.dataset.ownerOf, q);
+    open.choices = entries.filter(function (x) { return x.id !== null; });
+    if (open.active >= open.choices.length) open.active = open.choices.length - 1;
+    var n = 0;
+    ul.innerHTML = entries.map(function (x) {
+      var pickable = x.id !== null, i = pickable ? n++ : -1;
+      return '<li role="option" id="pick-o' + i + '"' + (pickable ? ' data-choice="' + i + '"' : ' aria-disabled="true"') +
+        ' class="' + (x.header ? "head" : x.child ? "child" : "top") + (i === open.active ? " active" : "") + '"' +
+        ' aria-selected="' + (pickable && x.id === (open.current || "") ) + '">' + esc(x.label) + (x.hint ? ' <small>' + esc(x.hint) + "</small>" : "") + "</li>";
+    }).join("") || '<li class="none" aria-disabled="true">Nothing matches</li>';
+    var q2 = open.picker.querySelector(".pick-q");
+    if (open.active >= 0) q2.setAttribute("aria-activedescendant", "pick-o" + open.active); else q2.removeAttribute("aria-activedescendant");
+    var act = ul.querySelector(".active"); if (act && act.scrollIntoView) act.scrollIntoView({ block: "nearest" });
+  }
+  function openPicker(btn) {
+    closePicker(false);
+    var pk = btn.closest(".picker"), id = btn.dataset.pick, t = data.txns.filter(function (x) { return x.id === id; })[0];
+    open = { picker: pk, id: id, current: t ? t.line : null, active: -1, choices: [] };
+    btn.setAttribute("aria-expanded", "true");
+    pk.insertAdjacentHTML("beforeend", '<div class="pick-panel"><input type="search" class="pick-q" placeholder="Search categories and lines" aria-label="Search categories and lines" role="combobox" aria-expanded="true" aria-controls="pick-list" autocomplete="off"><ul class="pick-list" id="pick-list" role="listbox"></ul></div>');
+    renderPickList();
+    pk.querySelector(".pick-q").focus();
+  }
+  function choose(i) {
+    var c = open && open.choices[i];
+    if (!c) return;
+    var id = open.id, rem = open.picker.closest(".file").querySelector("[data-remember]");
+    closePicker(false);
+    after(api("PUT", "/transactions/" + id, { line: c.id || null, remember: !!(rem && rem.checked) }), function (j) {
+      return j.updated > 1 ? "Filed, and " + (j.updated - 1) + " more from the same merchant." : "Filed.";
+    });
+  }
+
+  var SOURCES = { you: "filed by you", rule: "your rule", claude: "filed by Claude", transfer: "matched transfer", contribution: "contribution" };
+  function txRow(t, withFile) {
+    var amt = t.amount, a = accountOf(t.account);
+    return '<div class="tx"><span class="d">' + esc(t.date.slice(5).replace("-", "/")) + "</span>" +
+      '<span><span class="desc">' + esc(t.description) + '</span> <span class="acct">· ' + esc(a ? a.name : "") + "</span>" +
+      (t.moved ? ' <span class="moved">counts in ' + esc(shortMonth(t.month)) + "</span>" : "") + "</span>" +
+      '<span class="money amt' + (amt > 0 ? " in" : "") + '">' + (amt > 0 ? "+" : "") + usd.format(amt) + "</span>" +
+      (withFile ? '<div class="file">' + picker(t, a && a.owner) +
+        '<label><input type="checkbox" data-remember="' + esc(t.id) + '" checked> same merchant from now on</label>' +
+        '<label>Counts in <select data-month="' + esc(t.id) + '" aria-label="Month ' + esc(t.description) + ' counts in">' + [-1, 0, 1].map(function (n) {
+          var m = shift(t.date.slice(0, 7), n);
+          return '<option value="' + m + '"' + (m === t.month ? " selected" : "") + ">" + esc(shortMonth(m)) + (n ? "" : " (posted)") + "</option>";
+        }).join("") + "</select></label>" +
+        (t.source ? '<span class="src">' + esc(SOURCES[t.source] || t.source) + "</span>" : "") + "</div>" : "") +
+      "</div>";
+  }
+
+  function render() {
+    open = null; // a re-render replaces any open picker
+    var s = data.summary, b = data.budget, sync = data.sync, now = data.today.slice(0, 7);
+    var notes = "";
+    if (!sync) notes += '<p class="note">No sync has run yet. Paste your SimpleFIN setup token into the SSM parameter <code>/family/luke-finances/simplefin</code>, then press Sync now.</p>';
+    else if (!sync.ok && !sync.running) notes += '<p class="note bad">' + esc(sync.message) + "</p>";
+    (sync && sync.errors || []).forEach(function (e) { notes += '<p class="note bad">' + esc(e) + "</p>"; });
+    if (!b) notes += '<p class="note">The budget hasn’t been read yet. It’s read on each sync.</p>';
+    if (data.budgetError) notes += '<p class="note">' + esc(data.budgetError) + "</p>";
+
+    var ids = {}; s.lines.forEach(function (l) { ids[l.id] = true; });
+    var toFile = data.txns.filter(function (t) { return !t.line || !ids[t.line]; });
+    var pace = s.elapsed > 0 && s.elapsed < 1 ? Math.round(s.elapsed * 100) + "% of the month gone" : "";
+
+    main.innerHTML = balancesHtml() +
+      '<section aria-labelledby="h-month"><div class="bar-row"><div class="month"><button class="icon-btn" id="prev" aria-label="Previous month">‹</button><h2 id="h-month">' + esc(monthName(month)) + "</h2>" +
+      '<button class="icon-btn" id="next" aria-label="Next month"' + (month >= now ? " disabled" : "") + ">›</button></div>" +
+      '<div class="actions"><button class="btn ghost small" id="sync"' + (sync && sync.running ? " disabled" : "") + ">" + (sync && sync.running ? "Syncing…" : "Sync now") + "</button>" +
+      '<button class="btn ghost small" id="csv">Download CSV</button></div></div>' +
+      '<p class="status" id="status">' + (sync && sync.at ? "Last synced " + esc(when(sync.at)) : "") + (pace ? " · " + pace : "") +
+      (toFile.length ? ' · <button class="link-btn" id="goto-file">' + toFile.length + " to file</button>" : "") + "</p>" + notes +
+      (b ? '<div class="stats">' + (shared()
+        ? stat("Money in", s.totals.income) + stat("Household spending", s.totals.shared, usd0.format(s.totals.shared.expected) + " at pace")
+        : stat("Income", s.totals.income) + stat("Spending", s.totals.spend, usd0.format(s.totals.spend.expected) + " at pace")) +
+        (shared() ? "" : stat("Saved", s.totals.save)) + "</div>" +
+        (s.totals.transfers && s.totals.transfers.count ? '<p class="status" id="transfers">Transfers: ' + usd0.format(s.totals.transfers.out) + " moved out, " + usd0.format(s.totals.transfers.in) + " in, between your accounts (" + s.totals.transfers.count + "). Not counted in any budget.</p>" : "") : "") + "</section>" +
+      '<section aria-labelledby="h-cat"><div class="sec-head"><h2 id="h-cat">Month to date by category</h2></div>' + categoryChart() + "</section>" +
+      (b && data.trend ? trendHtml() : "") +
+      (toFile.length ? '<div class="card" id="to-file"><h3>To file (' + toFile.length + ")</h3>" + toFile.map(function (t) { return txRow(t, !!b); }).join("") + "</div>" : "") +
+      '<details class="card"><summary>All transactions (' + data.txns.length + ")</summary>" + (data.txns.length ? data.txns.map(function (t) { return txRow(t, !!b); }).join("") : '<p class="status">None this month.</p>') + "</details>" +
+      '<details class="card"><summary>Accounts &amp; budget</summary><div class="settings">' +
+      (b ? '<label>' + (shared() ? "Follow the Shared budget" : "Follow my budget") + ' <select id="tag"><option value="@working"' + (data.settings.tag === "@working" ? " selected" : "") + ">Working copy (live)</option>" +
+        b.tags.map(function (t) { return "<option" + (t === data.settings.tag ? " selected" : "") + ">" + esc(t) + "</option>"; }).join("") + "</select></label>" +
+        '<p class="status">' + (shared() ? "Shared “" + esc(b.version.name) + "”. Read " + esc(when(b.fetchedAt)) + ".</p>" : esc(data.settings.tag === "@working" ? "Working copy" : data.settings.tag) + " → my “" + esc(b.version.name) + "” → Shared " + esc(b.sharedTag || "") + (b.sharedVersion ? " “" + esc(b.sharedVersion.name) + "”" : "") + ". Read " + esc(when(b.fetchedAt)) + ".</p>") : "") +
+      data.accounts.map(function (a) {
+        return '<div class="acct-row"><span><strong>' + esc(a.name) + "</strong> " + '<span class="acct">' + esc(a.org) + '</span><br><span class="money">' + usd.format(a.balance) + "</span></span>" +
+          (shared()
+            // Which personal tools it comes from; marking accounts shared happens there
+            ? '<span class="acct">from ' + esc((a.sources || []).join(" & ") || "—") + "</span></div>"
+            : '<label>Whose <select data-owner="' + esc(a.id) + '">' + [["mine", "Mine"], ["shared", "Shared (joint)"], ["off", "Off: not counted"]].map(function (o) {
+              return '<option value="' + o[0] + '"' + (a.owner === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
+            }).join("") + "</select></label></div>");
+      }).join("") + "</div></details>";
+  }
+
+  // --- Tooltips: one for the page, filled with textContent ----------------------
+
+  main.addEventListener("pointermove", function (e) {
+    var t = e.target.closest && e.target.closest("[data-tv]");
+    if (!t) { tip.hidden = true; return; }
+    var v = document.createElement("strong"), l = document.createElement("span");
+    v.textContent = t.getAttribute("data-tv"); l.textContent = t.getAttribute("data-tl");
+    tip.replaceChildren(v, l);
+    tip.hidden = false;
+    var x = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8), y = e.clientY + 16;
+    if (y + tip.offsetHeight > window.innerHeight - 8) y = e.clientY - tip.offsetHeight - 12;
+    tip.style.left = x + "px"; tip.style.top = y + "px";
+  });
+  main.addEventListener("pointerleave", function () { tip.hidden = true; });
+  main.addEventListener("pointerover", function (e) { var c = e.target.closest && e.target.closest(".col"); if (c) readout(c); });
+  main.addEventListener("focusin", function (e) { if (e.target.classList && e.target.classList.contains("col")) readout(e.target); });
+
+  // --- Actions -----------------------------------------------------------------
+
+  function after(p, ok) {
+    busy = true;
+    return p.then(function (res) {
+      if (!res.ok) return res.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.error || "Failed (" + res.status + ")"); });
+      return res.json();
+    }).then(function (j) { return load(month).then(function () { if (ok) status(ok(j)); }); })
+      .catch(function (e) { status(e.message); }).then(function () { busy = false; });
+  }
+  function openCategory(key) {
+    drill = key; tip.hidden = true; render();
+    var h = document.getElementById("h-cat"); if (h && h.scrollIntoView) h.scrollIntoView({ block: "start" });
+  }
+
+  main.addEventListener("click", function (e) {
+    if (e.target.closest("select, input, label")) return;
+    if (e.target.id === "prev") return load(shift(month, -1));
+    if (e.target.id === "next") return load(shift(month, 1));
+    if (e.target.id === "undrill") { drill = null; return render(); }
+    if (e.target.id === "goto-file") { var f = document.getElementById("to-file"); if (f && f.scrollIntoView) f.scrollIntoView({ block: "start" }); return; }
+    if (e.target.id === "sync") {
+      e.target.disabled = true;
+      return after(api("POST", "/sync"), function () { setTimeout(poll, 8000); return "Syncing… this takes a minute."; });
+    }
+    if (e.target.id === "csv") {
+      return api("GET", "/export/" + month).then(function (res) { if (!res.ok) throw new Error(); return res.blob(); }).then(function (blob) {
+        var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = (cfg.tool || "finances") + "-" + month + ".csv"; a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+      }).catch(function () { status("Couldn’t download. Try again."); });
+    }
+    if (e.target.id === "all-accts") { acct = null; return render(); }
+    var go = e.target.closest("[data-go]");
+    if (go) return goToMonth(go.dataset.go);
+    var card = e.target.closest("[data-acct]");
+    if (card) return pickAccount(card.dataset.acct);
+    var cat = e.target.closest("[data-cat]");
+    if (cat) openCategory(cat.dataset.cat);
+  });
+  function goToMonth(m) {
+    return load(m).then(function () { var h = document.getElementById("h-month"); if (h && h.scrollIntoView) h.scrollIntoView({ block: "start" }); });
+  }
+  function pickAccount(id) {
+    acct = acct === id ? null : id; tip.hidden = true; render();
+    var box = document.getElementById("acct-txns"); if (box && box.scrollIntoView) box.scrollIntoView({ block: "nearest" });
+  }
+  main.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    var el = e.target.closest && e.target.closest("[data-cat], [data-go], [data-acct]");
+    if (!el || e.target !== el) return;
+    e.preventDefault();
+    if (el.dataset.go) goToMonth(el.dataset.go); else if (el.dataset.acct) pickAccount(el.dataset.acct); else openCategory(el.dataset.cat);
+  });
+  // The filing picker: open, search, arrows + Enter, Escape, or click
+  main.addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest("[data-pick]");
+    if (btn) { e.stopPropagation(); return open && open.picker === btn.closest(".picker") ? closePicker(true) : openPicker(btn); }
+    var li = e.target.closest && e.target.closest("[data-choice]");
+    if (li) { e.stopPropagation(); return choose(Number(li.dataset.choice)); }
+  }, true);
+  document.addEventListener("click", function (e) { if (open && !open.picker.contains(e.target)) closePicker(false); });
+  main.addEventListener("input", function (e) { if (open && e.target.classList.contains("pick-q")) { open.active = e.target.value ? 0 : -1; renderPickList(); } });
+  main.addEventListener("keydown", function (e) {
+    if (!open || !e.target.classList || !e.target.classList.contains("pick-q")) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      var n = open.choices.length;
+      if (n) open.active = e.key === "ArrowDown" ? (open.active + 1) % n : (open.active <= 0 ? n - 1 : open.active - 1);
+      renderPickList();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      choose(open.active >= 0 ? open.active : 0);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closePicker(true);
+    }
+  });
+  main.addEventListener("change", function (e) {
+    if (e.target.dataset.month) {
+      return after(api("PUT", "/transactions/" + e.target.dataset.month, { month: e.target.value }), function () { return "Now counts in " + monthName(e.target.value) + "."; });
+    }
+    if (e.target.dataset.owner) {
+      return after(api("PUT", "/accounts/" + e.target.dataset.owner, { owner: e.target.value }), function () { return "Saved. The next sync files that account’s new transactions accordingly."; });
+    }
+    if (e.target.id === "tag") {
+      status("Reading the budget…");
+      return after(api("PUT", "/settings", { tag: e.target.value }), function (j) { return "Now following " + j.budget.tag + "."; });
+    }
+  });
+  // While a sync runs, check back until it's done
+  function poll() {
+    if (busy) return setTimeout(poll, 3000);
+    load(month).then(function () { if (data.sync && data.sync.running) setTimeout(poll, 5000); });
+  }
+
+  function gate(msg) {
+    main.innerHTML = '<p class="status">' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button>';
+    document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    // "Luke’s Finances" → Luke’s <em>Finances</em>
+    if (c.title) {
+      document.title = c.title;
+      var words = c.title.split(" "), last = words.pop();
+      document.getElementById("title").innerHTML = (words.length ? esc(words.join(" ")) + " " : "") + "<em>" + esc(last) + "</em>";
+    }
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
+    document.getElementById("signout").hidden = false;
+    document.getElementById("signout").onclick = function () { FamilyAuth.logout(); };
+    // #2026-10 opens that month; otherwise this month
+    var d = new Date(), h = /^#(\d{4}-(0[1-9]|1[0-2]))$/.exec(location.hash);
+    return load(h ? h[1] : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 7));
+  }).catch(function (e) { gate(e.message); });
+})();
+</script>
+</body>
+</html>

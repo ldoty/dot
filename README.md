@@ -18,6 +18,10 @@ platform/                 what every tool builds on
   tests/                  platform tests + shared test helpers
 tools/
   budget/                 budget.dot-y.co (see its README)
+  finances/               the finances tool's code + infra module, deployed three times:
+  luke-finances/          luke-finances.dot-y.co: Luke's accounts (SimpleFIN) filed under his budget, MTD
+  amber-finances/         amber-finances.dot-y.co: Amber's, the same way
+  shared-finances/        shared-finances.dot-y.co: the joint accounts from both, against the Shared budget
   links/                  links.dot-y.co: family bookmarks by section
   assistant/              assistant.dot-y.co: Luke's chat with Claude (Bedrock) + calendar tools
   sms/                    Dot-y texting program: opt-in API behind dot-y.co/sms (+ /privacy, /terms)
