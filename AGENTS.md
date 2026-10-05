@@ -22,7 +22,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/links` | links.dot-y.co | `family_links` | Family bookmarks |
 | `tools/biomap` | biomap.dot-y.co | `lukes_biomap` | Field-guide flashcards from a private photo collection |
 | `tools/tempi` | tempi.dot-y.co | `family_tempi` | An OT course, served to members only |
-| `tools/house-hunt` | house-hunt.dot-y.co | `family_house_hunt` | Neighborhoods on a map (may still be in progress) |
+| `tools/house-hunt` | house-hunt.dot-y.co | `family_house_hunt` | Neighborhoods on a map, ranked listings; listing emails to househunt@dot-y.co are filed by Claude |
 | `tools/sms` | (API only) | | SMS opt-in consent records for the Dot-y texting program |
 | `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail |
 | `platform/billing` | | | Account-wide $75/mo budget + cost anomaly alerts |
@@ -208,6 +208,8 @@ later `schedule`. Defaults: `mode = "personal"`, `delegates = ["dot", "shared_fi
   replace its value (the live access URL). The module keeps it byte-for-byte.
 
 ### Others
+- **House Hunt**: `rev`-checked writes; SES → bucket → ingest Lambda (`api/ingest.mjs`, bundled by `npm run build`) that accepts
+  allowed senders with DMARC passing and has Claude extract listings as untrusted data into a fixed schema.
 - **Links**: sections + http(s)-only links. **Tempi**: the course HTML is in the Lambda, served only to
   members. **Biomap**: `collection/` is gitignored; `scripts/publish.sh` builds the deck and syncs photos
   to a private bucket. **SMS**: consent text in `api/program.mjs` must match `portal/sms.html` (tested);
