@@ -260,14 +260,41 @@ test('moving a transaction to the next month from the page', async () => {
   p.close();
 });
 
-test('clicking a month in the trend opens that month', async () => {
+test('trend: above a column opens that month with all its transactions; a color, just that category', async () => {
   const p = await open();
-  const sep = [...p.el('#trend-chart').querySelectorAll('.col')].find((c) => c.dataset.go === '2026-09');
-  assert.equal(sep.getAttribute('role'), 'button');
   await p.click('#trend-chart .col[data-go="2026-09"]');
   assert.ok(p.requests.includes('GET /month/2026-09'));
   assert.equal(p.el('.month h2').textContent, 'September 2026');
-  assert.match(p.el('#trend-chart').closest('section').querySelector('.readout').textContent, /click it to open that month/);
+  assert.match(p.el('#show-txns h3').textContent, /^All transactions · September 2026 \(1\)$/);
+  assert.match(p.el('#trend-chart').closest('section').querySelector('.readout').textContent, /click a color for that category’s transactions that month, or above it for the whole month/);
+  // Back to October, then September's Food piece in the trend
+  await p.click('#next');
+  const food = [...p.el('#trend-chart').querySelectorAll('.seg[data-show]')].find((x) => x.dataset.tl === 'Food' && x.closest('.col').dataset.go === '2026-09');
+  await p.click(`#trend-chart .seg[data-show="${food.dataset.show}"]`);
+  assert.equal(p.el('.month h2').textContent, 'September 2026');
+  assert.match(p.el('#show-txns h3').textContent, /^Food · September 2026 \(1, \$7\)$/);
+  assert.match(p.el('#show-txns').textContent, /SQ \*BLUE BOTTLE COFFEE/);
+  await p.click('#clear-show');
+  assert.equal(p.d.querySelector('#show-txns'), null);
+  p.close();
+});
+
+test('month to date: a color shows that line’s transactions; inside a category, a color is a merchant and above it the line', async () => {
+  const p = await open();
+  const seg = p.el('.col[data-cat="Luke›Food"] .seg[data-show]');
+  await p.click(`.seg[data-show="${seg.dataset.show}"]`);
+  assert.match(p.el('#show-txns h3').textContent, /^Food › Coffee \(1, \$7\)$/);
+  assert.ok(p.el('#show-txns [data-pick]'), 'filable right there');
+  // Above a column still opens the category
+  await p.click('#clear-show');
+  await p.click('[data-cat="Luke›Food"] .clabel');
+  assert.ok(p.el('.drill-head'));
+  const coffee = [...p.el('#h-cat').closest('section').querySelectorAll('.chart .col')].find((c) => c.querySelector('.clabel').firstChild.textContent === 'Coffee');
+  await p.click(`.seg[data-show="${coffee.querySelector('.seg').dataset.show}"]`);
+  assert.match(p.el('#show-txns h3').textContent, /^Food › Coffee › Sq Blue Bottle Coffee \(1, \$7\)$/);
+  const coffee2 = [...p.el('#h-cat').closest('section').querySelectorAll('.chart .col')].find((c) => c.querySelector('.clabel').firstChild.textContent === 'Coffee');
+  await p.click(`.col[data-showcol="${coffee2.dataset.showcol}"] .clabel`);
+  assert.match(p.el('#show-txns h3').textContent, /^Food › Coffee \(1, \$7\)$/);
   p.close();
 });
 

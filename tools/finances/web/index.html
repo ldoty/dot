@@ -86,6 +86,8 @@ code { font-family: var(--mono); font-size: 13px }
 .seg { min-height: 2px }
 .seg:not(:last-child) { box-shadow: inset 0 2px 0 var(--surface) }
 .seg:hover { filter: brightness(1.12) }
+.seg[data-show] { cursor: pointer }
+.col[data-showcol] { cursor: pointer }
 .ctick { position: absolute; left: 50%; width: 34px; max-width: 92%; height: 2px; transform: translate(-50%, 1px); background: var(--tick) }
 .ctick.pace { opacity: .35 }
 .cval { position: absolute; left: 0; right: 0; text-align: center; font: 11.5px var(--mono); color: var(--muted); white-space: nowrap }
@@ -168,7 +170,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
 <script src="family-auth.js"></script>
 <script>
 (function () {
-  var cfg, data = null, month = null, drill = null, acct = null, busy = false;
+  var cfg, data = null, month = null, drill = null, acct = null, showing = null, busy = false;
   var main = document.getElementById("main"), tip = document.getElementById("tip");
   var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   var SLOTS = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)"], OTHER = "var(--other)";
@@ -194,7 +196,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
     });
   }
   function load(m) {
-    if (m !== month) drill = null;
+    if (m !== month) { drill = null; showing = null; }
     month = m;
     if (location.hash !== "#" + m) history.replaceState(null, "", "#" + m);
     return api("GET", "/month/" + m).then(function (res) {
@@ -220,9 +222,9 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
   }
   // Up to five colored pieces in a fixed order, the rest folded into Other
   function pieces(items) {
-    var out = items.slice(0, SLOTS.length).map(function (it, i) { return { name: it.name, value: it.value, color: SLOTS[i] }; });
-    var rest = items.slice(SLOTS.length).reduce(function (s, it) { return s + it.value; }, 0);
-    if (rest > 0) out.push({ name: "Other (" + (items.length - SLOTS.length) + ")", value: rest, color: OTHER });
+    var out = items.slice(0, SLOTS.length).map(function (it, i) { return { name: it.name, value: it.value, color: SLOTS[i], keys: [it.key] }; });
+    var rest = items.slice(SLOTS.length);
+    if (rest.length) out.push({ name: "Other (" + rest.length + ")", value: rest.reduce(function (s, it) { return s + it.value; }, 0), color: OTHER, keys: rest.map(function (it) { return it.key; }) });
     return out;
   }
   // A category's segments: the lines with spending. The five with the most get colors (kept in budget
@@ -230,22 +232,27 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
   function lineSegments(c) {
     var spent = c.lines.filter(function (l) { return l.spent > 0; });
     var top = spent.slice().sort(function (a, b) { return b.spent - a.spent; }).slice(0, SLOTS.length);
-    var segs = spent.filter(function (l) { return top.indexOf(l) >= 0; }).map(function (l, i) { return { name: l.name, value: l.spent, color: SLOTS[i] }; });
+    var segs = spent.filter(function (l) { return top.indexOf(l) >= 0; }).map(function (l, i) {
+      return { name: l.name, value: l.spent, color: SLOTS[i], show: { title: c.name + " › " + l.name, lines: [l.id] } };
+    });
     var rest = spent.filter(function (l) { return top.indexOf(l) < 0; });
-    if (rest.length) segs.push({ name: "Other lines (" + rest.length + ")", value: rest.reduce(function (s, l) { return s + l.spent; }, 0), color: OTHER });
+    if (rest.length) {
+      segs.push({ name: "Other lines (" + rest.length + ")", value: rest.reduce(function (s, l) { return s + l.spent; }, 0), color: OTHER,
+        show: { title: c.name + " › other lines", lines: rest.map(function (l) { return l.id; }) } });
+    }
     return segs;
   }
   // A line's segments: its merchants this month, biggest first
-  function merchantSegments(lineId) {
+  function merchantSegments(lineId, title) {
     var by = {};
     data.txns.forEach(function (t) {
       if (t.line !== lineId || !counted(t)) return;
       var k = t.merchant || t.description;
       by[k] = (by[k] || 0) - t.amount;
     });
-    var items = Object.keys(by).map(function (k) { return { name: titleCase(k), value: by[k] }; })
+    var items = Object.keys(by).map(function (k) { return { name: titleCase(k), value: by[k], key: k }; })
       .filter(function (x) { return x.value > 0; }).sort(function (a, b) { return b.value - a.value; });
-    return pieces(items);
+    return pieces(items).map(function (x) { return Object.assign(x, { show: { title: title + " › " + x.name, lines: [lineId], merchants: x.keys } }); });
   }
   // My view leaves the Shared household out; it will get a view of its own
   // A person's view: their own categories (the Shared household is Shared Finances'). Shared Finances: the household's.
@@ -316,17 +323,17 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
       var over = o.target > 0 && o.spent > o.target;
       var label = o.name + ": " + usd0.format(o.spent) + " of " + usd0.format(o.target) + ", " + stateOf(o) + ". " +
         o.segs.slice().sort(function (a, b) { return b.value - a.value; }).map(function (x) { return x.name + " " + usd0.format(x.value); }).join(", ");
-      return '<div class="col" data-col="' + i + '"' + (o.key ? ' data-cat="' + esc(o.key) + '" role="button"' : o.month ? ' data-go="' + esc(o.month) + '" role="button"' : "") + ' tabindex="0" aria-label="' + esc(label) + '">' +
+      return '<div class="col" data-col="' + i + '"' + (o.key ? ' data-cat="' + esc(o.key) + '" role="button"' : o.month ? ' data-go="' + esc(o.month) + '" role="button"' : o.show ? ' data-showcol="' + i + '" role="button"' : "") + ' tabindex="0" aria-label="' + esc(label) + '">' +
         '<div class="colarea" aria-hidden="true"><div class="pb">' +
         (o.target ? '<span class="ctrack" style="height:' + pct(o.target, sc.top) + '"></span>' : "") +
-        '<span class="cstack" style="height:' + pct(total, sc.top) + '">' + o.segs.map(function (x) {
-          return '<span class="seg" style="flex:' + x.value + ' 0 0;background:' + x.color + '" data-tv="' + esc(x.tv || usd.format(x.value)) + '" data-tl="' + esc(x.tl || x.name + " · " + o.name) + '"></span>';
+        '<span class="cstack" style="height:' + pct(total, sc.top) + '">' + o.segs.map(function (x, j) {
+          return '<span class="seg" style="flex:' + x.value + ' 0 0;background:' + x.color + '"' + (x.show ? ' data-show="' + i + ":" + j + '"' : "") + ' data-tv="' + esc(x.tv || usd.format(x.value)) + '" data-tl="' + esc(x.tl || x.name + " · " + o.name) + '"></span>';
         }).join("") + "</span>" +
         (o.target ? '<span class="ctick" style="bottom:' + pct(o.target, sc.top) + '" data-tv="' + esc(usd0.format(o.target)) + '" data-tl="Budget for the month"></span>' : "") +
         (showPace && o.target ? '<span class="ctick pace" style="bottom:' + pct(o.expected, sc.top) + '" data-tv="' + esc(usd0.format(o.expected)) + '" data-tl="An even pace by today"></span>' : "") +
         '<span class="cval' + (over ? " over" : "") + '" style="bottom:calc(' + pct(Math.max(o.spent, o.target), sc.top) + ' + 4px)">' + esc(compact(Math.max(0, o.spent))) + "</span>" +
         '</div></div><div class="clabel">' + esc(o.name) + "<small>" + (o.target ? "of " + esc(compact(o.target)) : "no budget") + "</small></div></div>";
-    }).join("") + '</div></div></div></div><div class="readout" aria-live="polite">Point at or tab to a column to see what it’s made of' + (items.some(function (o) { return o.month; }) ? "; click it to open that month." : items.some(function (o) { return o.key; }) ? "; click it to open the category." : ".") + "</div>";
+    }).join("") + '</div></div></div></div><div class="readout" aria-live="polite">Point at or tab to a column to see what it’s made of' + (items.some(function (o) { return o.month; }) ? "; click a color for that category’s transactions that month, or above it for the whole month." : items.some(function (o) { return o.key; }) ? "; click a color for that line’s transactions, or above it to open the category." : items.some(function (o) { return o.show; }) ? "; click a color for that merchant, or above it for the whole line." : items.some(function (o) { return o.key; }) ? "; click it to open the category." : ".") + "</div>";
   }
   function readout(col) {
     var o = colItems[Number(col.dataset.col)], box = col.closest(".chart").querySelector(".readout");
@@ -362,7 +369,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
     return '<div class="drill-head"><button class="link-btn" id="undrill">‹ All categories</button><h3>' + esc(c.group === "Shared" ? "Shared · " + c.name : c.name) + "</h3>" +
       '<span class="status">' + usd0.format(c.spent) + " of " + usd0.format(c.target) + "</span></div>" + LEGEND +
       '<div class="chart">' + columns(c.lines.filter(function (l) { return !l.general || l.count; }).map(function (l) {
-        return { name: l.name, target: l.target, spent: l.spent, expected: l.expected, segs: merchantSegments(l.id) };
+        return { name: l.name, target: l.target, spent: l.spent, expected: l.expected, segs: merchantSegments(l.id, c.name + " › " + l.name), show: { title: c.name + " › " + l.name, lines: [l.id] } };
       })) + "</div>" +
       '<div class="card"><h3>' + esc(c.name) + " transactions (" + txns.length + ")</h3>" +
       (txns.map(function (t) { return txRow(t, true); }).join("") || '<p class="status">Nothing filed here this month.</p>') + "</div>";
@@ -385,9 +392,10 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
     });
     var sum = function (a) { return a.reduce(function (s, v) { return s + v; }, 0); };
     var top = per.filter(function (x) { return sum(x.values) > 0; }).sort(function (a, b) { return sum(b.values) - sum(a.values); }).slice(0, SLOTS.length);
-    var series = per.filter(function (x) { return top.indexOf(x) >= 0; }).map(function (x, i) { return { name: x.c.name, color: SLOTS[i], values: x.values }; });
+    var ids = function (xs) { return xs.reduce(function (a, x) { return a.concat(x.c.lines.map(function (l) { return l.id; })); }, []); };
+    var series = per.filter(function (x) { return top.indexOf(x) >= 0; }).map(function (x, i) { return { name: x.c.name, color: SLOTS[i], values: x.values, lines: ids([x]) }; });
     var rest = per.filter(function (x) { return top.indexOf(x) < 0 && sum(x.values) > 0; });
-    if (rest.length) series.push({ name: "Other (" + rest.length + ")", color: OTHER, values: months.map(function (m, k) { return sum(rest.map(function (x) { return x.values[k]; })); }) });
+    if (rest.length) series.push({ name: "Other (" + rest.length + ")", color: OTHER, values: months.map(function (m, k) { return sum(rest.map(function (x) { return x.values[k]; })); }), lines: ids(rest) });
     var target = sum(cats.map(function (c) { return c.target; }));
     var across = function (s) { return months.map(function (m, j) { return shortMonth(m) + " " + usd0.format(s.values[j]); }).join(" · "); };
     var items = months.map(function (m, k) {
@@ -395,7 +403,9 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
       return {
         name: shortMonth(m) + (last && part < 1 ? " (to date)" : ""), month: m, target: target, expected: target * part,
         spent: sum(series.map(function (s) { return s.values[k]; })),
-        segs: series.map(function (s) { return { name: s.name, value: s.values[k], color: s.color, tv: across(s), tl: s.name }; }).filter(function (x) { return x.value > 0; }),
+        segs: series.map(function (s) {
+          return { name: s.name, value: s.values[k], color: s.color, tv: across(s), tl: s.name, show: { title: s.name + " · " + monthName(m), lines: s.lines, month: m } };
+        }).filter(function (x) { return x.value > 0; }),
       };
     });
     return '<section aria-labelledby="h-trend"><div class="sec-head"><h2 id="h-trend">Last three months</h2><span class="status">' + (shared() ? "The household’s" : "My budget’s") + ' spending by category, against its monthly total' +
@@ -532,7 +542,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
         : stat("Income", s.totals.income) + stat("Spending", s.totals.spend, usd0.format(s.totals.spend.expected) + " at pace")) +
         (shared() ? "" : stat("Saved", s.totals.save)) + "</div>" +
         (s.totals.transfers && s.totals.transfers.count ? '<p class="status" id="transfers">Transfers: ' + usd0.format(s.totals.transfers.out) + " moved out, " + usd0.format(s.totals.transfers.in) + " in, between your accounts (" + s.totals.transfers.count + "). Not counted in any budget.</p>" : "") : "") + "</section>" +
-      '<section aria-labelledby="h-cat"><div class="sec-head"><h2 id="h-cat">Month to date by category</h2></div>' + categoryChart() + "</section>" +
+      '<section aria-labelledby="h-cat"><div class="sec-head"><h2 id="h-cat">Month to date by category</h2></div>' + categoryChart() + showHtml() + "</section>" +
       (b && data.trend ? trendHtml() : "") +
       (toFile.length ? '<div class="card" id="to-file"><h3>To file (' + toFile.length + ")</h3>" + toFile.map(function (t) { return txRow(t, !!b); }).join("") + "</div>" : "") +
       '<details class="card"><summary>All transactions (' + data.txns.length + ")</summary>" + (data.txns.length ? data.txns.map(function (t) { return txRow(t, !!b); }).join("") : '<p class="status">None this month.</p>') + "</details>" +
@@ -606,15 +616,37 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
       }).catch(function () { status("Couldn’t download. Try again."); });
     }
     if (e.target.id === "all-accts") { acct = null; return render(); }
+    if (e.target.id === "clear-show") { showing = null; return render(); }
+    // A colored piece: its transactions. The empty space of a column: the whole column's.
+    var seg = e.target.closest("[data-show]");
+    if (seg) { var ij = seg.dataset.show.split(":"); return show(colItems[ij[0]].segs[ij[1]].show); }
+    var sc = e.target.closest("[data-showcol]");
+    if (sc) return show(colItems[sc.dataset.showcol].show);
     var go = e.target.closest("[data-go]");
-    if (go) return goToMonth(go.dataset.go);
+    if (go) return show({ title: "All transactions · " + monthName(go.dataset.go), lines: null, month: go.dataset.go });
     var card = e.target.closest("[data-acct]");
     if (card) return pickAccount(card.dataset.acct);
     var cat = e.target.closest("[data-cat]");
     if (cat) openCategory(cat.dataset.cat);
   });
-  function goToMonth(m) {
-    return load(m).then(function () { var h = document.getElementById("h-month"); if (h && h.scrollIntoView) h.scrollIntoView({ block: "start" }); });
+  // A chart piece's transactions: a line, a few lines, a merchant within a line, or a whole month
+  function showHtml() {
+    if (!showing) return "";
+    var f = showing, txns = data.txns.filter(function (t) {
+      if (f.lines && f.lines.indexOf(t.line) < 0) return false;
+      return !f.merchants || f.merchants.indexOf(t.merchant || t.description) >= 0;
+    });
+    var total = txns.reduce(function (s, t) { return s - t.amount; }, 0);
+    return '<div class="card" id="show-txns"><div class="sec-head"><h3>' + esc(f.title) + " (" + txns.length + (f.lines ? ", " + usd0.format(total) : "") + ")</h3>" +
+      '<button class="link-btn" id="clear-show">Clear</button></div>' +
+      (txns.map(function (t) { return txRow(t, !!data.budget); }).join("") || '<p class="status">No transactions.</p>') + "</div>";
+  }
+  function show(f) {
+    var then = f.month && f.month !== month ? load(f.month) : Promise.resolve();
+    return then.then(function () {
+      showing = f; tip.hidden = true; render();
+      var box = document.getElementById("show-txns"); if (box && box.scrollIntoView) box.scrollIntoView({ block: "start" });
+    });
   }
   function pickAccount(id) {
     acct = acct === id ? null : id; tip.hidden = true; render();
@@ -622,10 +654,13 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
   }
   main.addEventListener("keydown", function (e) {
     if (e.key !== "Enter" && e.key !== " ") return;
-    var el = e.target.closest && e.target.closest("[data-cat], [data-go], [data-acct]");
+    var el = e.target.closest && e.target.closest("[data-cat], [data-go], [data-acct], [data-showcol]");
     if (!el || e.target !== el) return;
     e.preventDefault();
-    if (el.dataset.go) goToMonth(el.dataset.go); else if (el.dataset.acct) pickAccount(el.dataset.acct); else openCategory(el.dataset.cat);
+    if (el.dataset.go) show({ title: "All transactions · " + monthName(el.dataset.go), lines: null, month: el.dataset.go });
+    else if (el.dataset.acct) pickAccount(el.dataset.acct);
+    else if (el.dataset.showcol) show(colItems[el.dataset.showcol].show);
+    else openCategory(el.dataset.cat);
   });
   // The filing picker: open, search, arrows + Enter, Escape, or click
   main.addEventListener("click", function (e) {
