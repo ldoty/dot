@@ -13,19 +13,27 @@ const inner = globalThis.fetch;
 globalThis.fetch = (url, opts) => inner(url === `${POOL_ISSUER}/.well-known/jwks.json` ? `${ISSUER}/.well-known/jwks.json` : url, opts);
 
 process.env.HOME_CLIENT_PARAM = '/family/core/home-client-id';
-process.env.DELEGATION_KEY = 'arn:aws:kms:us-east-1:1:key/dot';
+process.env.DELEGATION_SIGNERS = JSON.stringify({
+  dot: { key: 'arn:aws:kms:us-east-1:1:key/dot' },
+  luke_finances: { key: 'arn:aws:kms:us-east-1:1:key/finances', users: ['luke-sub'] },
+});
 const rule = (r) => ({ Parameter: { Value: JSON.stringify(r) } });
 const ssm = mockClient(SSMClient);
 ssm.on(GetParameterCommand).rejects(Object.assign(new Error('nope'), { name: 'ParameterNotFound' }));
 ssm.on(GetParameterCommand, { Name: '/family/core/home-client-id' }).resolves({ Parameter: { Value: 'home-client' } });
 ssm.on(GetParameterCommand, { Name: '/family/apps/biomap-client' }).resolves(rule({ app: 'lukes_biomap', group: 'lukes_biomap', returns: ['https://biomap.dot-y.co/'] }));
 ssm.on(GetParameterCommand, { Name: '/family/apps/budget-client' }).resolves(rule({ app: 'family_budget', group: 'family_budget' }));
-ssm.on(GetParameterCommand, { Name: '/family/apps/budget-dot' }).resolves(rule({ app: 'family_budget', group: 'family_budget', delegated: true }));
+ssm.on(GetParameterCommand, { Name: '/family/apps/budget-dot' }).resolves(rule({ app: 'family_budget', group: 'family_budget', delegated: true, delegates: ['dot', 'luke_finances'] }));
+ssm.on(GetParameterCommand, { Name: '/family/apps/links-dot' }).resolves(rule({ app: 'family_links', group: 'family_links', delegated: true }));
 
-// Dot's signing key (stands in for KMS), and an unrelated key
+// Dot's and Luke's Finances' signing keys (stand in for KMS), and an unrelated key
 const dot = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const fin = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const other = generateKeyPairSync('rsa', { modulusLength: 2048 });
-mockClient(KMSClient).on(GetPublicKeyCommand).resolves({ PublicKey: dot.publicKey.export({ format: 'der', type: 'spki' }) });
+const der = (k) => ({ PublicKey: k.publicKey.export({ format: 'der', type: 'spki' }) });
+const kms = mockClient(KMSClient);
+kms.on(GetPublicKeyCommand, { KeyId: 'arn:aws:kms:us-east-1:1:key/dot' }).resolves(der(dot));
+kms.on(GetPublicKeyCommand, { KeyId: 'arn:aws:kms:us-east-1:1:key/finances' }).resolves(der(fin));
 const assertion = (over = {}, key = dot.privateKey) => signAssertion({
   clientId: 'budget-dot', sub: 'luke-sub', username: 'luke-sub', channel: 'web',
   sign: async (b) => sign('RSA-SHA256', b, key), ...over,
@@ -94,4 +102,25 @@ test('normal clients never accept Dot’s assertion, so Dot can’t get a writab
 
 test('an unregistered client accepts nothing', async () => {
   assert.equal(await answer(home(), 'luke-sub', 'mystery-client'), false);
+});
+
+// --- Other signers: Luke's Finances reads the budget as Luke ---
+
+const finance = (over = {}, key = fin.privateKey) => assertion({ issuer: 'luke_finances', channel: 'sync', ...over }, key);
+
+test('another signer: accepted on a client that lists it, for a user it may act for', async () => {
+  assert.equal(await answer(await finance(), 'luke-sub', 'budget-dot'), true);
+});
+
+test('another signer: refused on clients that don’t list it, for other users, and with the wrong key', async () => {
+  assert.equal(await answer(await finance({ clientId: 'links-dot' }), 'luke-sub', 'links-dot'), false); // links only takes Dot
+  assert.equal(await answer(await finance({ sub: 'amber-sub', username: 'amber-sub' }), 'amber-sub', 'budget-dot'), false); // only Luke
+  assert.equal(await answer(await finance({}, dot.privateKey), 'luke-sub', 'budget-dot'), false); // Dot's key can't sign as finance
+  assert.equal(await answer(await assertion({}, fin.privateKey), 'luke-sub', 'budget-dot'), false); // finance's key can't pass as Dot
+  assert.equal(await answer(await finance({ issuer: 'mallory' }, other.privateKey), 'luke-sub', 'budget-dot'), false); // unknown signer
+  assert.equal(await answer(await finance({ issuer: 'hasOwnProperty' }), 'luke-sub', 'budget-dot'), false);
+});
+
+test('Dot still works on clients that don’t name their signers', async () => {
+  assert.equal(await answer(await assertion({ clientId: 'links-dot' }), 'luke-sub', 'links-dot'), true);
 });

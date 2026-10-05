@@ -231,8 +231,8 @@ resource "aws_lambda_function" "sso" {
   timeout          = 5
   environment {
     variables = {
-      HOME_CLIENT_PARAM = "/family/core/home-client-id"
-      DELEGATION_KEY    = aws_kms_key.delegation.arn
+      HOME_CLIENT_PARAM  = "/family/core/home-client-id"
+      DELEGATION_SIGNERS = jsonencode(local.delegation_signers)
     }
   }
 }
@@ -273,12 +273,52 @@ resource "aws_ssm_parameter" "delegation_key" {
   value = aws_kms_key.delegation.arn
 }
 
+# Other tools that may act for a family member, read-only, the same way Dot does: each gets its own
+# signing key (its role alone is granted kms:Sign, in the tool's infra) and may act only for the
+# listed users (Cognito subs). A tool accepts a signer only if its family-app `delegates` names it.
+variable "delegation_signers" {
+  type = map(object({ users = list(string) }))
+  default = {
+    luke_finances   = { users = ["44f8c468-4011-70b8-76aa-ec2b68b0b004"] }                                         # Luke
+    amber_finances  = { users = ["74c8b418-e0b1-7075-7ae5-ca791980dd07"] }                                         # Amber
+    shared_finances = { users = ["44f8c468-4011-70b8-76aa-ec2b68b0b004", "74c8b418-e0b1-7075-7ae5-ca791980dd07"] } # reads each personal tool as its owner
+  }
+}
+
+resource "aws_kms_key" "signer" {
+  for_each                 = var.delegation_signers
+  description              = "${each.key}'s signing key for reading other tools as ${join(", ", each.value.users)}"
+  key_usage                = "SIGN_VERIFY"
+  customer_master_key_spec = "RSA_2048"
+  deletion_window_in_days  = 7
+}
+
+resource "aws_kms_alias" "signer" {
+  for_each      = aws_kms_key.signer
+  name          = "alias/family-${replace(each.key, "_", "-")}-delegation"
+  target_key_id = each.value.key_id
+}
+
+resource "aws_ssm_parameter" "signer_key" {
+  for_each = aws_kms_key.signer
+  name     = "/family/core/signers/${each.key}"
+  type     = "String"
+  value    = each.value.arn
+}
+
+locals {
+  delegation_signers = merge(
+    { dot = { key = aws_kms_key.delegation.arn } },
+    { for k, v in var.delegation_signers : k => { key = aws_kms_key.signer[k].arn, users = v.users } },
+  )
+}
+
 resource "aws_iam_role_policy" "sso_delegation" {
   role = aws_iam_role.sso.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      { Effect = "Allow", Action = "kms:GetPublicKey", Resource = aws_kms_key.delegation.arn },
+      { Effect = "Allow", Action = "kms:GetPublicKey", Resource = [for s in local.delegation_signers : s.key] },
       {
         # Each app's rule says whether its client takes dot-y.co sign-ins or Dot's assertions
         Effect   = "Allow"

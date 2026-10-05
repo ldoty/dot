@@ -49,6 +49,12 @@ variable "delegated" {
   description = "true = Dot may use this app on behalf of whoever asks it (read-only, members only)."
 }
 
+variable "delegates" {
+  type        = list(string)
+  default     = ["dot"]
+  description = "Signers whose assertions this app's delegated client accepts (core's delegation_signers, plus dot)."
+}
+
 variable "tile" {
   type = object({
     title       = string
@@ -153,6 +159,7 @@ resource "aws_ssm_parameter" "delegated_rule" {
     app       = var.name
     group     = var.open_to_all_family ? "*" : var.name
     delegated = true
+    delegates = var.delegates
   })
 }
 

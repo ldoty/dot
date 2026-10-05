@@ -5,25 +5,31 @@
 //   unexpired home-client access token for the same user.
 // - Dot on your behalf: on a tool's *delegated* client, the answer must instead be an assertion
 //   signed by Dot's KMS key, for that client and user (see platform/api/delegation.mjs).
+//   Other signers (DELEGATION_SIGNERS, e.g. luke_finances) work the same way, but only on
+//   clients whose rule lists them in `delegates`, and only for the users core allows them.
 //
 // Each client accepts only its own kind, so a dot-y.co session can't get a delegated token and
 // Dot can't get a regular one. Either way the pre-token gate still requires the tool's group.
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { KMSClient, GetPublicKeyCommand } from '@aws-sdk/client-kms';
 import { verifyAccessToken } from './verify-token.mjs';
-import { verifyAssertion, publicKeyFromDer } from './delegation.mjs';
+import { assertionIssuer, verifyAssertion, publicKeyFromDer } from './delegation.mjs';
 
 const ssm = new SSMClient({});
 const kms = new KMSClient({});
-let homeClientId = null, dotKey = null;
-const rules = new Map();
+// { "<issuer>": { "key": "<KMS key ARN>", "users": ["<sub>", ...] (omitted = anyone) } }
+const signers = JSON.parse(process.env.DELEGATION_SIGNERS || '{}');
+let homeClientId = null;
+const rules = new Map(), publicKeys = new Map();
 async function homeClient() {
   homeClientId ??= (await ssm.send(new GetParameterCommand({ Name: process.env.HOME_CLIENT_PARAM }))).Parameter.Value;
   return homeClientId;
 }
-async function dotPublicKey() {
-  dotKey ??= publicKeyFromDer((await kms.send(new GetPublicKeyCommand({ KeyId: process.env.DELEGATION_KEY }))).PublicKey);
-  return dotKey;
+async function signerKey(issuer) {
+  if (!publicKeys.has(issuer)) {
+    publicKeys.set(issuer, publicKeyFromDer((await kms.send(new GetPublicKeyCommand({ KeyId: signers[issuer].key }))).PublicKey));
+  }
+  return publicKeys.get(issuer);
 }
 /** The app's access rule, or null if it isn't registered */
 async function ruleFor(clientId) {
@@ -63,12 +69,19 @@ export const verify = async (event) => {
   const answer = event.request.challengeAnswer || '';
   const rule = await ruleFor(clientId);
   if (rule?.delegated) {
-    try {
-      const c = verifyAssertion(answer, { publicKey: await dotPublicKey(), clientId, username: event.userName, sub: event.request.userAttributes?.sub });
-      console.log(JSON.stringify({ delegation: rule.app, user: event.userName, channel: c.channel }));
-      ok = true;
-    } catch (e) {
-      console.warn('delegation: rejected', e.message);
+    const issuer = assertionIssuer(answer), sub = event.request.userAttributes?.sub;
+    const signer = Object.hasOwn(signers, issuer) ? signers[issuer] : null;
+    if (!signer) console.warn('delegation: rejected', 'unknown signer');
+    else if (!(rule.delegates ?? ['dot']).includes(issuer)) console.warn('delegation: rejected', `${rule.app} doesn't accept ${issuer}`);
+    else if (signer.users && !signer.users.includes(sub)) console.warn('delegation: rejected', `${issuer} may not act for this user`);
+    else {
+      try {
+        const c = verifyAssertion(answer, { publicKey: await signerKey(issuer), issuer, clientId, username: event.userName, sub });
+        console.log(JSON.stringify({ delegation: rule.app, by: issuer, user: event.userName, channel: c.channel }));
+        ok = true;
+      } catch (e) {
+        console.warn('delegation: rejected', e.message);
+      }
     }
   } else if (rule) {
     try {
