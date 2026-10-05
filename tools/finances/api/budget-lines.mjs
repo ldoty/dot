@@ -20,6 +20,17 @@
 // The math mirrors tools/budget/web/index.html (sharedSummary, personSummary).
 
 export const TRANSFER = 'X.transfer';
+// A person's contributions to the household: one automatic line per shared account, "To <account>",
+// under "Shared contributions". Money moved from one of their own accounts into a shared one is
+// filed there by the sync (matched like a transfer, but it is the person's spending).
+export const CONTRIBUTION = 'X.to';
+export function withContributionLines(lines, accounts, person) {
+  const shared = (accounts || []).filter((a) => a.owner === 'shared');
+  return [
+    ...lines,
+    ...shared.map((a) => ({ id: `${CONTRIBUTION}.${a.sk.slice(5)}`, group: person, category: 'Shared contributions', name: `To ${a.name}`, kind: 'spend', target: 0, auto: true })),
+  ];
+}
 export const WORKING = '@working';
 export const SKIP_LINES = [
   { id: TRANSFER, group: 'Transfers', category: 'Transfers', name: 'Transfer (between my accounts, card payment)', kind: 'skip', target: 0 },

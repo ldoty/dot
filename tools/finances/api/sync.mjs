@@ -15,7 +15,7 @@
 //      merchant becomes that merchant's rule (unless it has one), so a merchant costs one
 //      question; your correction replaces it (api.mjs).
 import { claim, fetchAccounts, secretKind } from './simplefin.mjs';
-import { MONEY_IN, resolveLines, resolveSharedLines } from './budget-lines.mjs';
+import { CONTRIBUTION, MONEY_IN, resolveLines, resolveSharedLines, withContributionLines } from './budget-lines.mjs';
 import { classify, merchantKey } from './categorize.mjs';
 import { hash, lineFits, ownerOf } from './store.mjs';
 import { TRANSFER } from './budget-lines.mjs';
@@ -88,11 +88,12 @@ export async function runSync(deps) {
   const ownerOfTxn = (t) => ownerOf(accounts.get(t.account));
   const sides = [];
   const contributions = new Set(); // the shared side of money from my account into a shared one
+  const gave = new Map(); // my side of it -> the shared account it went to
   for (const [o, i] of matchTransfers([...existing.values()].filter((t) => ownerOfTxn(t) !== 'off'))) {
     if (ownerOfTxn(o) === ownerOfTxn(i)) sides.push(o, i);
     else {
       sides.push(ownerOfTxn(o) === 'shared' ? o : i);
-      if (ownerOfTxn(i) === 'shared') contributions.add(i.sk);
+      if (ownerOfTxn(i) === 'shared') { contributions.add(i.sk); gave.set(o.sk, i.account); }
     }
   }
   // A transfer matched earlier that no longer qualifies (e.g. the other account was since made
@@ -125,6 +126,24 @@ export async function runSync(deps) {
     if (r?.by === 'claude' && r.line !== TRANSFER) { rules.delete(t.merchant); await store.putRule(t.merchant, null); }
   }
 
+  // 4a. A person's contribution: their side of money into a shared account goes under "To <account>",
+  // over rules and Claude but never over their own filing. One that's no longer matched is released.
+  if (deps.mode !== 'shared') {
+    for (const t of [...existing.values()]) {
+      const to = gave.get(t.sk), line = to && `${CONTRIBUTION}.${to.slice(5)}`;
+      if (t.source === 'contribution' && !line) {
+        const { asked, ...rest } = t;
+        const row = { ...rest, line: null, source: null };
+        existing.set(t.sk, row); await store.put(row);
+        counts.released = (counts.released || 0) + 1;
+      } else if (line && t.source !== 'you' && t.line !== line) {
+        const row = { ...t, line, source: 'contribution' };
+        existing.set(t.sk, row); await store.put(row);
+        counts.contribution = (counts.contribution || 0) + 1;
+      }
+    }
+  }
+
   // 4b. Shared Finances: a contribution (money one of them moved in from their own account) goes
   // under "From <name>", over rules and Claude but never over your own filing
   if (deps.mode === 'shared' && budget) {
@@ -141,6 +160,7 @@ export async function runSync(deps) {
 
   // 5. File what's unfiled
   if (budget) {
+    if (deps.mode !== 'shared') budget = { ...budget, lines: withContributionLines(budget.lines, [...accounts.values()], deps.person) };
     const lineById = new Map(budget.lines.map((l) => [l.id, l]));
     const fits = (t, id) => lineById.has(id) && lineFits(ownerOfTxn(t), lineById.get(id));
     // A personal tool never files under Shared lines, nor Shared Finances under personal ones: such
@@ -179,7 +199,7 @@ export async function runSync(deps) {
           if (!these.length) continue;
           const got = await classify({
             client: deps.client, model: deps.model, log,
-            lines: budget.lines.filter((l) => lineFits(kind, l)),
+            lines: budget.lines.filter((l) => lineFits(kind, l) && !l.auto),
             txns: these.map((t) => ({ id: t.sk, date: t.date, amount: t.amount, description: t.description, account: accounts.get(t.account)?.name || '' })),
           });
           for (const [k, v] of got) picks.set(k, v);

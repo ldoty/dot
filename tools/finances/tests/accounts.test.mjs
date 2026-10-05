@@ -109,7 +109,7 @@ test('making an account shared releases my side of transfers matched before: it�
   table.put({ ...table.get('LUKE', CARD), owner: 'shared' });
   const r = await runSync(deps);
   assert.equal(r.counts.released, 1);
-  assert.deepEqual([txn('PAYMENT TO CARD').line, txn('PAYMENT TO CARD').source], ['L.h1', 'rule'], 'filed like spending, here by his rule');
+  assert.deepEqual([txn('PAYMENT TO CARD').line, txn('PAYMENT TO CARD').source], [`X.to.${CARD.slice(5)}`, 'contribution'], 'his contribution, to that account, over his rule');
   assert.equal(txn('TRANSFER FROM').line, 'X.transfer', 'the shared side stays a transfer');
 });
 
@@ -133,4 +133,32 @@ test('filings and rules under the other budget’s lines are cleared, even hand-
   await runSync(deps);
   assert.equal(table.get('LUKE', blue.sk).line, null);
   assert.equal(table.get('LUKE', 'RULE#ACME CORP PAYROLL'), undefined);
+});
+
+test('contributions: an automatic “To <shared account>” line, counted as his spending; hand-filing wins; undone if the account isn’t shared', async () => {
+  table.put({ pk: 'LUKE', sk: CARD, simplefinId: 'ACT-card', name: 'Rewards Card', owner: 'shared' });
+  const accounts = accountSet();
+  accounts.accounts[1].transactions.push({ id: 'C4', posted: Date.parse('2026-10-04T16:00:00Z') / 1000, amount: '500.00', description: 'TRANSFER FROM CHECKING' });
+  const t = testDeps({ net: fakeNet({ accounts }), client: fakeClaude(() => '') });
+  await runSync(t.deps);
+  const line = `X.to.${CARD.slice(5)}`;
+  assert.deepEqual([txn('PAYMENT TO CARD').line, txn('PAYMENT TO CARD').source], [line, 'contribution']);
+  const api = caller(createApi(t.deps), ROUTES);
+  const call = (m, p, b) => api(m, p, b, token());
+  const m = (await call('GET', '/month/2026-10')).body;
+  const l = m.summary.lines.find((x) => x.id === line);
+  assert.deepEqual([l.category, l.name, l.kind, l.spent], ['Shared contributions', 'To Rewards Card', 'spend', 500]);
+  assert.equal(m.summary.totals.spend.spent, 500, 'his spending includes it (the coffee is on the shared card now)');
+  // Hand-filing wins, and survives a sync
+  const id = m.txns.find((x) => x.description === 'PAYMENT TO CARD 1234').id;
+  assert.equal((await call('PUT', `/transactions/${id}`, { line: 'L.h1' })).status, 200);
+  await runSync(t.deps);
+  assert.equal(txn('PAYMENT TO CARD').line, 'L.h1');
+  assert.equal((await call('PUT', `/transactions/${id}`, { line })).status, 200, 'and it can be chosen by hand');
+  // The account isn't shared any more: no contribution line, and an automatic filing is undone
+  table.put({ ...txn('PAYMENT TO CARD'), source: 'contribution' });
+  table.put({ ...table.get('LUKE', CARD), owner: 'mine' });
+  const r = await runSync(t.deps);
+  assert.equal(txn('PAYMENT TO CARD').line, 'X.transfer', 'now a transfer between his own accounts');
+  assert.ok(!(await call('GET', '/month/2026-10')).body.summary.lines.some((x) => x.id === line));
 });

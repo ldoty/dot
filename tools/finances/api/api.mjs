@@ -22,7 +22,7 @@
 import { verifyAccessToken } from './verify-token.mjs';
 import { summarize } from './summary.mjs';
 import { refreshBudget, ymd } from './sync.mjs';
-import { WORKING } from './budget-lines.mjs';
+import { WORKING, withContributionLines } from './budget-lines.mjs';
 import { OWNERS, lineFits, ownerOf, txnId, txnKey } from './store.mjs';
 import { validateManifest } from './dot-manifest.mjs';
 
@@ -148,7 +148,8 @@ export function createApi(depsOrFactory) {
         const included = new Set(accounts.filter((a) => ownerOf(a) === view).map((a) => a.sk));
         const counted = txns.filter((t) => included.has(t.account));
         const today = ymd(deps.now(), deps.timeZone);
-        const lines = budget?.lines || [];
+        // A person's lines, plus the automatic "To <shared account>" contribution lines
+        const lines = deps.mode === 'shared' ? budget?.lines || [] : withContributionLines(budget?.lines || [], accounts, deps.person);
         const brief = (s) => ({ month: s.month, elapsed: s.elapsed, spent: Object.fromEntries(s.lines.filter((l) => l.count).map((l) => [l.id, l.spent])), unassigned: s.unassigned.out });
         const summary = summarize({ month: p.month, today, lines, txns: counted });
         const trend = [
@@ -186,7 +187,8 @@ export function createApi(depsOrFactory) {
         const line = body.line === null || body.line === '' ? null : body.line;
         if (line !== null && typeof line !== 'string') return json(400, { error: 'bad line' });
         const budget = await store.budget();
-        const target = line && budget?.lines.find((l) => l.id === line);
+        const allLines = deps.mode === 'shared' ? budget?.lines || [] : withContributionLines(budget?.lines || [], await store.accounts(), deps.person);
+        const target = line && allLines.find((l) => l.id === line);
         if (line && !target) return json(400, { error: 'no such budget line' });
         if (target && !lineFits(ownerOf(await store.get(t.account)), target)) return json(400, { error: 'a shared account’s transactions go under Shared lines or Transfers' });
         await store.put({ ...row, line, source: line ? 'you' : null });
@@ -243,7 +245,7 @@ export function createApi(depsOrFactory) {
         ]);
         const mine = new Set(accounts.filter((a) => ownerOf(a) === (deps.mode === 'shared' ? 'shared' : 'mine')).map((a) => a.sk));
         const txns = posted.flat().filter((t) => mine.has(t.account) && (p.month === 'all' || monthOf(t) === p.month));
-        const lines = new Map((budget?.lines || []).map((l) => [l.id, l]));
+        const lines = new Map((deps.mode === 'shared' ? budget?.lines || [] : withContributionLines(budget?.lines || [], accounts, deps.person)).map((l) => [l.id, l]));
         const names = new Map(accounts.map((a) => [a.sk, a]));
         const rows = [['date', 'counts_in', 'account', 'institution', 'owner', 'description', 'amount', 'group', 'category', 'line', 'filed_by', 'included']];
         for (const t of txns) {
