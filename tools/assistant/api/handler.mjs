@@ -7,10 +7,11 @@
 //   GET    /audit               -> [{ at, user, username, channel, tool, action, outcome, detail? }]
 //          what Dot did with people's access: everyone's for family_assistant:admin, otherwise your own
 // Every request needs a family_assistant access token, verified here. Dot then acts as that
-// person: their name and calendars (PEOPLE), and their own access to other tools (delegation).
+// person: their name and calendars (PEOPLE), and their own access to other tools (delegation):
+// Budget through read_budget, and any family tool that describes itself (discovery.mjs).
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
+import { SSMClient, GetParameterCommand, GetParametersByPathCommand } from '@aws-sdk/client-ssm';
 import { KMSClient, SignCommand } from '@aws-sdk/client-kms';
 import Anthropic, { BetaFallbackState, betaRefusalFallbackMiddleware } from '@anthropic-ai/sdk';
 import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
@@ -18,6 +19,7 @@ import { verifyAccessToken } from './verify-token.mjs';
 import { makeStore } from './store.mjs';
 import { makeDelegation } from './delegation.mjs';
 import { makeBudget } from './budget.mjs';
+import { makeDiscovery } from './discovery.mjs';
 import { makeGoogleAuth } from './google.mjs';
 import { makeCalendar } from './calendar.mjs';
 import { makeTools } from './tools.mjs';
@@ -49,6 +51,21 @@ export function liveDeps(env = process.env) {
     }))).Signature),
   });
   const store = makeStore({ db: DynamoDBDocumentClient.from(new DynamoDBClient({})), table: env.TABLE });
+  // Family tools published for Dot: SSM /family/delegation/<app> = { api_url, client_id }
+  const discovery = makeDiscovery({
+    tokenFor,
+    log: (entry) => console.log(JSON.stringify(entry)),
+    listApps: async () => {
+      const out = [];
+      let NextToken;
+      do {
+        const r = await ssm.send(new GetParametersByPathCommand({ Path: env.DELEGATION_PATH || '/family/delegation', NextToken }));
+        for (const p of r.Parameters) out.push({ app: p.Name.split('/').pop(), ...JSON.parse(p.Value) });
+        NextToken = r.NextToken;
+      } while (NextToken);
+      return out;
+    },
+  });
   return {
     auth: { issuer: env.ISSUER, clientId: env.CLIENT_ID, group: env.GROUP },
     store,
@@ -60,8 +77,8 @@ export function liveDeps(env = process.env) {
       awsRegion: env.AWS_REGION,
       middleware: env.FALLBACK_MODEL ? [betaRefusalFallbackMiddleware([{ model: env.FALLBACK_MODEL }])] : [],
     }),
-    /** Dot for one person: their name, their calendars, and their own access to the budget */
-    forUser(claims, channel = 'web') {
+    /** Dot for one person: their name, their calendars, and their own access to the family's tools */
+    async forUser(claims, channel = 'web') {
       const userId = claims.sub || claims.username;
       const me = people[userId] || {};
       const calendars = me.calendars || {};
@@ -75,6 +92,7 @@ export function liveDeps(env = process.env) {
             tokenFor, apiUrl: budgetApp.api_url, clientId: budgetApp.client_id,
             user: { sub: claims.sub, username: claims.username }, channel, audit,
           }),
+          discovered: await discovery.forUser({ user: { sub: claims.sub, username: claims.username }, channel, audit }),
         }),
       };
     },
@@ -132,7 +150,7 @@ export function createHandler(depsOrFactory) {
       const out = open(200, 'application/x-ndjson');
       const send = (e) => out.write(JSON.stringify(e) + '\n');
       try {
-        const forUser = deps.forUser ? deps.forUser(claims) : {};
+        const forUser = deps.forUser ? await deps.forUser(claims) : {};
         await runTurn({ ...deps, ...forUser, fallbackState: new BetaFallbackState(), userId, conversationId: body.conversationId, text, onEvent: send });
       } catch (e) {
         console.error('turn failed', e);

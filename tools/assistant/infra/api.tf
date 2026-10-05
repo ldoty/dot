@@ -96,6 +96,12 @@ resource "aws_iam_role_policy" "api" {
         Resource = "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter${local.google_key_param}"
       },
       {
+        # Discovery: the family tools published for Dot (/family/delegation/<app> = API + delegated client)
+        Effect   = "Allow"
+        Action   = "ssm:GetParametersByPath"
+        Resource = "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter/family/delegation"
+      },
+      {
         # Only Dot may vouch for someone; the trigger checks this key's signature
         Effect   = "Allow"
         Action   = "kms:Sign"
@@ -137,6 +143,7 @@ resource "aws_lambda_function" "api" {
       PEOPLE           = jsonencode(var.people)
       DELEGATION_KEY   = data.aws_ssm_parameter.delegation_key.value
       BUDGET           = data.aws_ssm_parameter.budget.value
+      DELEGATION_PATH  = "/family/delegation"
       TIME_ZONE        = "America/New_York"
     }
   }

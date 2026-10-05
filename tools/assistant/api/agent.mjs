@@ -6,7 +6,7 @@
 //   onEvent receives { type: 'conversation' | 'text' | 'tool' | 'error' , ... } as the turn runs.
 
 /** Dot's instructions for one person. Stable per person, so prompt caching still works. */
-export function systemPrompt({ name, calendars = false, budget = false } = {}) {
+export function systemPrompt({ name, calendars = false, budget = false, connected = [] } = {}) {
   const who = name || 'a member of the family';
   const parts = [`You are Dot (short for Dorothy), the Doty family's assistant, named after the family's dot-y.co. You're talking with ${who}. They reach you from a private web page, and later by phone, so keep replies short and plain; they're often on their phone.
 
@@ -19,7 +19,10 @@ Before creating an event, make sure you know which calendar, the title, the day 
   if (budget) {
     parts.push(`You can read the household budget with read_budget, but not change it. Answer from the numbers it returns, and say whether you're reading the working copy or a saved version. If they want something changed, tell them to edit it at budget.dot-y.co.`);
   }
-  if (!calendars && !budget) parts.push(`You don't have any tools for them yet. Say so if they ask for their calendar or budget.`);
+  if (connected.length) {
+    parts.push(`You can also read these family tools, with their access (you can't change anything in them):\n${connected.map((c) => `- ${c.title} (${c.tools.join(', ')}): ${c.description}`).join('\n')}\nAnswer from what they return. For changes, point them to that tool's page.`);
+  }
+  if (!calendars && !budget && !connected.length) parts.push(`You don't have any tools for them yet. Say so if they ask for their calendar or budget.`);
   return parts.join('\n\n');
 }
 
@@ -61,7 +64,7 @@ export async function runTurn({
   await append({ role: 'user', content: [{ type: 'text', text: stamp(now(), timeZone) }, { type: 'text', text }] });
 
   const has = (name) => tools.definitions.some((d) => d.name === name);
-  const system = systemPrompt({ name: person.name, calendars: has('list_events'), budget: has('read_budget') });
+  const system = systemPrompt({ name: person.name, calendars: has('list_events'), budget: has('read_budget'), connected: tools.connected || [] });
   let reply = '', stopReason = null;
   for (let step = 0; step < MAX_STEPS; step++) {
     const stream = client.beta.messages.stream({

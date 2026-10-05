@@ -25,7 +25,7 @@ if (!sub) throw new Error(`--as must be one of: ${Object.values(people).map((p) 
 
 const table = fakeTable(); // the store and audit log below write to memory only
 const deps = liveDeps(env);
-const { tools, person } = deps.forUser({ sub, username: sub }, 'e2e-check');
+const { tools, person } = await deps.forUser({ sub, username: sub }, 'e2e-check');
 const ran = [];
 const r = await runTurn({
   ...deps, person, fallbackState: new BetaFallbackState(),

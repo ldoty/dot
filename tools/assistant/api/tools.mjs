@@ -1,10 +1,11 @@
-// The tools Claude can call for one person: calendar tools for their calendars (if they have any)
-// and read_budget (if Budget is set up for Dot; it reads with their own access). Each tool's input
+// The tools Claude can call for one person: calendar tools for their calendars (if they have any),
+// read_budget (if Budget is set up for Dot; it reads with their own access), and whatever family
+// tools discovery found for them (discovery.mjs: { definitions, connected, handlers }). Each tool's input
 // is checked here before anything runs, and a failure comes back to Claude as an error result.
 
 const dateTime = 'Date "YYYY-MM-DD" or local time "YYYY-MM-DDTHH:MM" (the calendar’s time zone unless an offset is given)';
 
-export function makeTools({ calendar, calendarNames = [], budget }) {
+export function makeTools({ calendar, calendarNames = [], budget, discovered = { definitions: [], connected: [], handlers: {} } }) {
   const cal = { type: 'string', enum: calendarNames, description: 'Which calendar' };
   const calendarTools = [
     {
@@ -91,7 +92,7 @@ export function makeTools({ calendar, calendarNames = [], budget }) {
       additionalProperties: false,
     },
   }] : [];
-  const definitions = [...(calendarNames.length ? calendarTools : []), ...budgetTools];
+  const definitions = [...(calendarNames.length ? calendarTools : []), ...budgetTools, ...discovered.definitions];
 
   const handlers = {
     read_budget: (i) => budget.read(i),
@@ -100,6 +101,7 @@ export function makeTools({ calendar, calendarNames = [], budget }) {
     create_event: (i) => calendar.createEvent(i),
     update_event: (i) => calendar.updateEvent(i),
     delete_event: (i) => calendar.deleteEvent(i),
+    ...discovered.handlers,
   };
 
   /** Minimal schema check: required fields, known fields, and basic types */
@@ -120,6 +122,8 @@ export function makeTools({ calendar, calendarNames = [], budget }) {
 
   return {
     definitions,
+    /** Family tools found by discovery, for the system prompt: [{ title, description, tools }] */
+    connected: discovered.connected,
     /** Runs one tool_use block; always resolves to a tool_result block */
     async run(block) {
       const def = definitions.find((d) => d.name === block.name);
@@ -129,7 +133,7 @@ export function makeTools({ calendar, calendarNames = [], budget }) {
       if (problem) return fail(`Invalid input: ${problem}`);
       try {
         const out = await handlers[block.name](block.input);
-        return { type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(out) };
+        return { type: 'tool_result', tool_use_id: block.id, content: typeof out === 'string' ? out : JSON.stringify(out) };
       } catch (e) {
         return fail(e.message);
       }
