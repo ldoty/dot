@@ -291,6 +291,18 @@ test('clicking an account shows its transactions for the month; again (or All ac
   p.close();
 });
 
+test('Refresh budget re-reads it now, as the person signed in', async () => {
+  const p = await open();
+  t.borrowed.length = 0;
+  table.put({ ...table.get('LUKE', 'BUDGET'), lines: table.get('LUKE', 'BUDGET').lines.filter((l) => l.id !== 'L.f2') });
+  await p.click('#refresh-budget');
+  assert.ok(p.requests.includes('PUT /settings'));
+  assert.deepEqual(t.borrowed.map((b) => b.channel), ['web']);
+  assert.match(p.el('#status').textContent, /Budget refreshed: “October plan”/);
+  assert.ok(table.get('LUKE', 'BUDGET').lines.some((l) => l.id === 'L.f2'), 'the fresh lines are stored');
+  p.close();
+});
+
 test('months: back to September, and no further than this month', async () => {
   const p = await open();
   assert.equal(p.el('#next').disabled, true);

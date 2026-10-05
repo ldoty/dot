@@ -523,6 +523,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
       '<section aria-labelledby="h-month"><div class="bar-row"><div class="month"><button class="icon-btn" id="prev" aria-label="Previous month">‹</button><h2 id="h-month">' + esc(monthName(month)) + "</h2>" +
       '<button class="icon-btn" id="next" aria-label="Next month"' + (month >= now ? " disabled" : "") + ">›</button></div>" +
       '<div class="actions"><button class="btn ghost small" id="sync"' + (sync && sync.running ? " disabled" : "") + ">" + (sync && sync.running ? "Syncing…" : "Sync now") + "</button>" +
+      (b ? '<button class="btn ghost small" id="refresh-budget" title="Read the budget again now">Refresh budget</button>' : "") +
       '<button class="btn ghost small" id="csv">Download CSV</button></div></div>' +
       '<p class="status" id="status">' + (sync && sync.at ? "Last synced " + esc(when(sync.at)) : "") + (pace ? " · " + pace : "") +
       (toFile.length ? ' · <button class="link-btn" id="goto-file">' + toFile.length + " to file</button>" : "") + "</p>" + notes +
@@ -591,6 +592,12 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
     if (e.target.id === "sync") {
       e.target.disabled = true;
       return after(api("POST", "/sync"), function () { setTimeout(poll, 8000); return "Syncing… this takes a minute."; });
+    }
+    if (e.target.id === "refresh-budget") {
+      // Re-reads the budget now (the same as choosing the tag it already follows)
+      e.target.disabled = true;
+      status("Reading the budget…");
+      return after(api("PUT", "/settings", { tag: data.settings.tag }), function (j) { return "Budget refreshed: “" + j.budget.version.name + "”."; });
     }
     if (e.target.id === "csv") {
       return api("GET", "/export/" + month).then(function (res) { if (!res.ok) throw new Error(); return res.blob(); }).then(function (blob) {
