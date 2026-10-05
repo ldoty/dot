@@ -371,8 +371,9 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
       '<div class="chart">' + columns(c.lines.filter(function (l) { return !l.general || l.count; }).map(function (l) {
         return { name: l.name, target: l.target, spent: l.spent, expected: l.expected, segs: merchantSegments(l.id, c.name + " › " + l.name), show: { title: c.name + " › " + l.name, lines: [l.id] } };
       })) + "</div>" +
-      '<div class="card"><h3>' + esc(c.name) + " transactions (" + txns.length + ")</h3>" +
-      (txns.map(function (t) { return txRow(t, true); }).join("") || '<p class="status">Nothing filed here this month.</p>') + "</div>";
+      // Something more specific chosen inside the category (a line or a merchant): only its list shows
+      (showing ? "" : '<div class="card"><h3>' + esc(c.name) + " transactions (" + txns.length + ")</h3>" +
+        (txns.map(function (t) { return txRow(t, true); }).join("") || '<p class="status">Nothing filed here this month.</p>') + "</div>");
   }
 
   function tableView(cats) {
@@ -590,7 +591,6 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
   }
   function openCategory(key) {
     drill = key; tip.hidden = true; render();
-    var h = document.getElementById("h-cat"); if (h && h.scrollIntoView) h.scrollIntoView({ block: "start" });
   }
 
   main.addEventListener("click", function (e) {
@@ -645,12 +645,10 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
     var then = f.month && f.month !== month ? load(f.month) : Promise.resolve();
     return then.then(function () {
       showing = f; tip.hidden = true; render();
-      var box = document.getElementById("show-txns"); if (box && box.scrollIntoView) box.scrollIntoView({ block: "start" });
     });
   }
   function pickAccount(id) {
     acct = acct === id ? null : id; tip.hidden = true; render();
-    var box = document.getElementById("acct-txns"); if (box && box.scrollIntoView) box.scrollIntoView({ block: "nearest" });
   }
   main.addEventListener("keydown", function (e) {
     if (e.key !== "Enter" && e.key !== " ") return;

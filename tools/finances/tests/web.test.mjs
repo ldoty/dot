@@ -50,6 +50,18 @@ async function open(hash = '#2026-10') {
   return { d, el, change, requests, click: async (sel) => { el(sel).click(); await wait(80); }, close: () => dom.window.close() };
 }
 
+test('clicking around never scrolls the page', async () => {
+  const p = await open();
+  let scrolled = 0;
+  p.d.defaultView.Element.prototype.scrollIntoView = () => { scrolled++; };
+  await p.click('.col[data-cat="Luke›Food"] .seg[data-show]');
+  await p.click('[data-cat="Luke›Food"] .clabel');
+  await p.click('[data-acct]');
+  await p.click('#trend-chart .col[data-go="2026-09"]');
+  assert.equal(scrolled, 0);
+  p.close();
+});
+
 test('balances first, then the month with its summary tiles', async () => {
   const p = await open();
   assert.equal(p.d.title, 'Luke’s Finances');
@@ -292,6 +304,11 @@ test('month to date: a color shows that line’s transactions; inside a category
   const coffee = [...p.el('#h-cat').closest('section').querySelectorAll('.chart .col')].find((c) => c.querySelector('.clabel').firstChild.textContent === 'Coffee');
   await p.click(`.seg[data-show="${coffee.querySelector('.seg').dataset.show}"]`);
   assert.match(p.el('#show-txns h3').textContent, /^Food › Coffee › Sq Blue Bottle Coffee \(1, \$7\)$/);
+  assert.ok(![...p.d.querySelectorAll('.card h3')].some((h) => /^Food transactions/.test(h.textContent)), 'the category’s own list hides while something narrower is shown');
+  await p.click('#clear-show');
+  assert.ok([...p.d.querySelectorAll('.card h3')].some((h) => /^Food transactions/.test(h.textContent)), 'and comes back on Clear');
+  const coffeeAgain = [...p.el('#h-cat').closest('section').querySelectorAll('.chart .col')].find((c) => c.querySelector('.clabel').firstChild.textContent === 'Coffee');
+  await p.click(`.seg[data-show="${coffeeAgain.querySelector('.seg').dataset.show}"]`);
   const coffee2 = [...p.el('#h-cat').closest('section').querySelectorAll('.chart .col')].find((c) => c.querySelector('.clabel').firstChild.textContent === 'Coffee');
   await p.click(`.col[data-showcol="${coffee2.dataset.showcol}"] .clabel`);
   assert.match(p.el('#show-txns h3').textContent, /^Food › Coffee \(1, \$7\)$/);
