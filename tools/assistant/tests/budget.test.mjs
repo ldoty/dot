@@ -12,6 +12,10 @@ const ALL = {
     start: '2026-11', months: 24, balance: 5000,
     steps: [{ from: '2026-11', tag: 'default' }, { from: '2027-03', tag: 'gone' }],
     oneOffs: [{ id: 'o1', month: '2026-12', label: 'Check', amount: 200000 }],
+  } }, { id: 'p2', name: 'With accounts', rev: 1, plan: {
+    start: '2026-11', months: 12, balance: 0, steps: [{ from: '2026-11', tag: 'default' }],
+    accounts: [{ id: 'm', name: 'Marcus', balance: 200000, rate: 3.5, savings: true }, { id: 'h', name: 'HELOC', balance: -223000, rate: 8.74, paidBy: 'HELOC' }],
+    oneOffs: [{ id: 'o1', month: '2026-11', label: 'Pay down', amount: 200000, account: 'm', to: 'h' }],
   } }],
 };
 
@@ -72,9 +76,15 @@ test('tools: no calendars means no calendar tools; read_budget checks which budg
 test('the shared budget comes with the plans, steps named by the version their tag points to', async () => {
   const { budget } = setup();
   assert.deepEqual((await budget.read({ doc: 'shared' })).plans, [{
-    name: 'Pay HELOC', start: '2026-11', months: 24, starting_balance: 5000,
+    name: 'Pay HELOC', start: '2026-11', months: 24,
+    accounts: [{ name: 'Shared accounts', balance: 5000, rate: 0, savings: true }], // an older plan's one starting balance
     steps: [{ from: '2026-11', tag: 'default', version: 'Starting point' }, { from: '2027-03', tag: 'gone', version: null }],
-    one_offs: [{ month: '2026-12', label: 'Check', amount: 200000 }],
+    one_offs: [{ month: '2026-12', label: 'Check', amount: 200000, account: 'Shared accounts' }],
+  }, {
+    name: 'With accounts', start: '2026-11', months: 12,
+    accounts: [{ name: 'Marcus', balance: 200000, rate: 3.5, savings: true }, { name: 'HELOC', balance: -223000, rate: 8.74, paid_by: 'HELOC' }],
+    steps: [{ from: '2026-11', tag: 'default', version: 'Starting point' }],
+    one_offs: [{ month: '2026-11', label: 'Pay down', amount: 200000, account: 'Marcus', moved_to: 'HELOC' }],
   }]);
   assert.equal((await budget.read({ doc: 'Luke' })).plans, undefined);
   assert.equal((await budget.read({ version: 'default' })).plans, undefined);

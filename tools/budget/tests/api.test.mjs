@@ -145,7 +145,7 @@ test('plans start empty, save by id with a name and rev, and come back in GET /a
   await call('PUT', '/plans/p1', { name: '  Keep cash ', plan: plan({ balance: 1 }), rev: null });
   const { body } = await call('GET', '/all');
   assert.deepEqual(body.plans.map((p) => [p.id, p.name, p.rev]), [['p1', 'Keep cash', 1], ['p2', 'Pay HELOC', 1]]);
-  assert.deepEqual(body.plans[1].plan, plan());
+  assert.deepEqual(body.plans[1].plan, { ...plan(), accounts: [] });
 });
 
 test('plans are independent, and a stale save gets 409 with that plan’s current copy', async () => {
@@ -180,6 +180,23 @@ test('a malformed plan or name is refused and extra fields are dropped', async (
   const stored = JSON.parse(table.get(PK, 'PLAN#p1').plan);
   assert.deepEqual(stored.steps, [{ from: '2026-11', tag: 'default' }]);
   assert.equal(stored.extra, undefined);
+});
+
+test('plans keep accounts (balance, rate, paid by, savings) and one-offs that land in or move between them', async () => {
+  const accounts = [
+    { id: 'shared', name: 'Shared checking', balance: 6270, rate: 0, savings: true },
+    { id: 'heloc', name: 'HELOC', balance: -223000, rate: 8.74, paidBy: 'HELOC', junk: 1 },
+  ];
+  const oneOffs = [{ id: 'o1', month: '2026-11', label: 'Pay down', amount: 200000, account: 'shared', to: 'heloc' }];
+  assert.equal((await call('PUT', '/plans/p1', { name: 'A', plan: plan({ accounts, oneOffs }), rev: null })).status, 200);
+  const stored = JSON.parse(table.get(PK, 'PLAN#p1').plan);
+  assert.deepEqual(stored.accounts[1], { id: 'heloc', name: 'HELOC', balance: -223000, rate: 8.74, paidBy: 'HELOC' });
+  assert.deepEqual(stored.oneOffs, oneOffs);
+  for (const bad of [
+    plan({ accounts: [{ id: 'a', name: 'x', balance: 'lots', rate: 1 }] }), plan({ accounts: [{ id: 'a', name: 'x', balance: 1, rate: 500 }] }),
+    plan({ accounts: [{ id: 'bad id', name: 'x', balance: 1, rate: 1 }] }), plan({ accounts: 'x' }),
+    plan({ oneOffs: [{ id: 'o1', month: '2026-12', label: 'x', amount: 1, to: 'bad id' }] }),
+  ]) assert.equal((await call('PUT', '/plans/p2', { name: 'A', plan: bad, rev: null })).status, 400, JSON.stringify(bad));
 });
 
 test('Dot can read plans but not change or delete them', async () => {

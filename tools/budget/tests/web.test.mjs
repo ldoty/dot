@@ -696,6 +696,7 @@ function seedPlan(over = {}) {
 const planRows = (p) => [...p.d.querySelectorAll('#p-rows tr')].map((tr) => [...tr.children].map((td) => td.textContent));
 const planKeys = () => table.keys().filter((k) => k.startsWith('PLAN#'));
 const savedPlan = (id = 'p1') => JSON.parse(table.get(PK, `PLAN#${id}`).plan);
+const BAL = '[data-p="acct-balance"][data-id="shared"]';
 const pick = (p) => [...p.d.querySelectorAll('#p-pick option')].map((o) => o.textContent);
 
 test('Planning: each month uses its step’s tag; savings and one-offs build the running total', async () => {
@@ -704,10 +705,10 @@ test('Planning: each month uses its step’s tag; savings and one-offs build the
   assert.equal(p.el('[data-tab="plan"]').getAttribute('aria-selected'), 'true');
   const rows = planRows(p);
   assert.equal(rows.length, 12);
-  assert.deepEqual(rows[0], ['Jan 2027', 'default → Starting point', '$1,000', '$0', '', '$2,000']);
-  assert.deepEqual(rows[1], ['Feb 2027', 'default → Starting point', '$1,000', '$0', '$10,000', '$12,000']);
-  assert.deepEqual(rows[3], ['Apr 2027', 'stretch → Bigger', '$1,500', '$300', '', '$12,300']);
-  assert.equal(rows[11][5], '$14,700'); // 12,000 + 9 × 300
+  assert.deepEqual(rows[0], ['Jan 2027', 'default → Starting point', '$1,000', '$0', '$0', '', '$2,000']);
+  assert.deepEqual(rows[1], ['Feb 2027', 'default → Starting point', '$1,000', '$0', '$0', '$10,000', '$12,000']);
+  assert.deepEqual(rows[3], ['Apr 2027', 'stretch → Bigger', '$1,500', '$300', '$0', '', '$12,300']);
+  assert.equal(rows[11][6], '$14,700'); // 12,000 + 9 × 300
   assert.equal(p.text('pk-end'), '$14,700');
   assert.equal(p.text('pk-saved'), '$2,700');
   assert.equal(p.d.querySelectorAll('#p-chart g[data-month]').length, 12);
@@ -731,7 +732,7 @@ test('Planning: changes, one-offs and settings save to the plan’s row with its
   seedPlan();
   const p = await openBudget('#plan');
   p.type('[data-p="step-from"][data-i="1"]', '2027-06', 'change');
-  p.type('#p-balance', '500');
+  p.type(BAL, '500');
   p.click('[data-pact="once-add"]'); await wait();
   const id = [...p.d.querySelectorAll('[data-p="once-label"]')].pop().dataset.id;
   p.type(`[data-p="once-label"][data-id="${id}"]`, 'Closing');
@@ -741,10 +742,11 @@ test('Planning: changes, one-offs and settings save to the plan’s row with its
   const sp = savedPlan();
   assert.equal(table.get(PK, 'PLAN#p1').rev, 2);
   assert.deepEqual(sp.steps, [{ from: '2027-01', tag: 'default' }, { from: '2027-06', tag: 'stretch' }]);
-  assert.equal(sp.balance, 500);
+  assert.deepEqual(sp.accounts, [{ id: 'shared', name: 'Shared accounts', balance: 500, rate: 0, savings: true }], 'the old starting balance became an account');
+  assert.equal(sp.balance, 0);
   assert.deepEqual(sp.oneOffs[1], { id, month: '2027-06', label: 'Closing', amount: -40000 });
   const jun = planRows(p)[5];
-  assert.deepEqual([jun[4], jun[5]], ['-$40,000', '-$29,200']); // 500 + 10,000 − 40,000 + 300
+  assert.deepEqual([jun[5], jun[6]], ['-$40,000', '-$29,200']); // 500 + 10,000 − 40,000 + 300
   assert.ok(p.el('#p-rows tr:nth-child(6) td:last-child').classList.contains('neg'));
   assert.equal(p.el('#pk-end').className, 'val neg');
   p.click('[data-pact="step-del"][data-i="1"]'); await saved();
@@ -791,8 +793,8 @@ test('Planning: a stale plan save loads the other person’s copy of that plan',
   seedPlan();
   const p = await openBudget('#plan');
   table.put({ ...table.get(PK, 'PLAN#p1'), rev: 2, plan: JSON.stringify({ ...PLAN1, balance: 999 }) });
-  p.type('#p-balance', '1'); await saved();
-  assert.equal(p.el('#p-balance').value, '999');
+  p.type(BAL, '1'); await saved();
+  assert.equal(p.el(BAL).value, '999');
   assert.match(p.text('status'), /“Pay HELOC” was just changed somewhere else/);
   p.close();
 });
@@ -813,9 +815,9 @@ test('Planning: rename, duplicate and new plans; each is its own row', async () 
   assert.deepEqual(JSON.parse(table.get(PK, copy).plan), savedPlan(), 'same timeline');
   assert.equal(p.el('#p-name').value, 'Pay HELOC now copy', 'the copy is open');
 
-  p.type('#p-name', 'Keep cash'); p.type('#p-name', 'Keep cash', 'change'); p.type('#p-balance', '7000'); await saved();
-  assert.equal(savedPlan().balance, 2000, 'the original is untouched');
-  assert.equal(JSON.parse(table.get(PK, copy).plan).balance, 7000);
+  p.type('#p-name', 'Keep cash'); p.type('#p-name', 'Keep cash', 'change'); p.type(BAL, '7000'); await saved();
+  assert.equal(savedPlan().accounts[0].balance, 2000, 'the original is untouched');
+  assert.equal(JSON.parse(table.get(PK, copy).plan).accounts[0].balance, 7000);
   assert.deepEqual(pick(p), ['Keep cash', 'Pay HELOC now']);
 
   p.click('[data-pact="plan-new"]'); await saved();
@@ -829,11 +831,11 @@ test('Planning: switching plans saves the one being left and opens the other', a
   table.put({ pk: PK, sk: 'PLAN#p2', name: 'Keep cash', rev: 1, plan: JSON.stringify({ ...PLAN1, balance: 50000 }) });
   const p = await openBudget('#plan');
   assert.equal(p.el('#p-name').value, 'Keep cash', 'first by name');
-  p.type('#p-balance', '123');
+  p.type(BAL, '123');
   p.type('#p-pick', 'p1', 'change'); await saved();
-  assert.equal(savedPlan('p2').balance, 123, 'the edit went to the plan being left');
+  assert.equal(savedPlan('p2').accounts[0].balance, 123, 'the edit went to the plan being left');
   assert.equal(savedPlan('p1').balance, 2000);
-  assert.equal(p.el('#p-balance').value, '2000');
+  assert.equal(p.el(BAL).value, '2000');
   p.close();
 });
 
@@ -863,8 +865,8 @@ test('Planning: comparing draws the other plan’s running total and the differe
   assert.match(p.el('#p-legend').textContent, /“Keep cash”/);
   assert.match(p.text('pk-end-yr'), /\+\$5,000 vs “Keep cash”/);
   assert.match(p.text('pk-spend-yr'), /You’d pay in \$0 less than “Keep cash”/);
-  assert.deepEqual(planRows(p)[11].slice(5), ['$14,700', '$9,700']);
-  assert.equal(p.d.querySelectorAll('#p-head th').length, 7);
+  assert.deepEqual(planRows(p)[11].slice(6), ['$14,700', '$9,700']);
+  assert.equal(p.d.querySelectorAll('#p-head th').length, 8);
   assert.ok(![...p.d.querySelectorAll('#p-cmp option')].some((o) => o.value === 'p1'), 'a plan isn’t compared with itself');
   assert.equal(p.requests.filter((r) => r.startsWith('PUT /plans')).length, 0, 'comparing changes no plan');
   p.close();
@@ -875,7 +877,7 @@ test('Planning: a plan deleted elsewhere goes away when it’s next saved', asyn
   table.put({ pk: PK, sk: 'PLAN#p2', name: 'Keep cash', rev: 1, plan: JSON.stringify(PLAN1) });
   const p = await openBudget('#plan');
   table.delete(PK, 'PLAN#p2');
-  p.type('#p-balance', '1'); await saved();
+  p.type(BAL, '1'); await saved();
   assert.equal(table.get(PK, 'PLAN#p2'), undefined, 'not recreated');
   assert.deepEqual(pick(p), ['Pay HELOC']);
   assert.match(p.text('status'), /deleted somewhere else/);
@@ -890,5 +892,88 @@ test('Planning: comparing a cheaper plan shows how much less you’d pay in', as
   p.type('#p-pick', 'p2', 'change'); await wait();
   p.type('#p-cmp', 'p1', 'change'); await wait();
   assert.match(p.text('pk-spend-yr'), /You’d pay in \$7,200 less than “Pay HELOC”/); // 9 months × $800
+  p.close();
+});
+
+// --- Accounts and interest ---
+
+// Shared checking (savings land there), Marcus at 12% (1% a month) and a HELOC at 12% paid by the
+// Shared line “Bills” ($1,000/mo in Starting point). Starting point all year; no savings in it.
+const ACCOUNTS = [
+  { id: 'shared', name: 'Shared checking', balance: 0, rate: 0, savings: true },
+  { id: 'marcus', name: 'Marcus', balance: 12000, rate: 12 },
+  { id: 'heloc', name: 'HELOC', balance: -12000, rate: 12, paidBy: 'Bills' },
+];
+function seedAccounts(over = {}) {
+  table.put({ pk: PK, sk: 'PLAN#p1', name: 'Pay HELOC', rev: 1, plan: JSON.stringify({
+    start: '2027-01', months: 12, balance: 0, steps: [{ from: '2027-01', tag: 'default' }],
+    oneOffs: [{ id: 'o1', month: '2027-02', label: 'Pay down', amount: 5000, account: 'marcus', to: 'heloc' }],
+    accounts: ACCOUNTS, ...over,
+  }) });
+}
+
+test('Planning: interest compounds monthly, a loan is paid by its Shared line, and transfers move money', async () => {
+  seedAccounts();
+  const p = await openBudget('#plan');
+  const head = [...p.d.querySelectorAll('#p-head th')].map((t) => t.textContent);
+  assert.deepEqual(head, ['Month', 'Using', 'Spending', 'Saved', 'Interest', 'One-offs', 'Paid on loans', 'Running total']);
+  const [jan, feb] = planRows(p);
+  // Jan: Marcus +120 → 12,120; HELOC −120 → −12,120, then +1,000 from Bills → −11,120
+  assert.deepEqual(jan.slice(4), ['$0', '', '$1,000', '$1,000']);
+  // Feb: Marcus +121.20 → 12,241.20 − 5,000; HELOC −111.20 → −11,231.20 + 1,000 + 5,000
+  assert.deepEqual(feb.slice(4), ['$10', 'moved', '$1,000', '$2,010']);
+  assert.match(p.text('pa-heloc'), /^Dec 2027: /);
+  assert.match(p.text('pk-int-yr'), /^earned \$/);
+  p.close();
+});
+
+test('Planning: a loan’s payment stops once it’s paid off', async () => {
+  seedAccounts({ oneOffs: [], accounts: [ACCOUNTS[0], { id: 'heloc', name: 'HELOC', balance: -500, rate: 12, paidBy: 'Bills' }] });
+  const p = await openBudget('#plan');
+  const [jan, feb] = planRows(p);
+  assert.deepEqual(jan.slice(6), ['$505', '$0']); // −500 − 5 interest, paid off with 505 of the 1,000
+  assert.deepEqual(feb.slice(6), ['$0', '$0']);
+  p.close();
+});
+
+test('Planning: accounts are edited in the panel and saved with the plan', async () => {
+  seedAccounts();
+  const p = await openBudget('#plan');
+  p.click('[data-pact="acct-add"]'); await wait();
+  const id = [...p.d.querySelectorAll('[data-p="acct-name"]')].pop().dataset.id;
+  p.type(`[data-p="acct-name"][data-id="${id}"]`, 'Car loan');
+  p.type(`[data-p="acct-balance"][data-id="${id}"]`, '-9000');
+  p.type(`[data-p="acct-rate"][data-id="${id}"]`, '6.5');
+  p.type(`[data-p="acct-savings"][data-id="marcus"]`, 'on', 'change');
+  p.type('[data-p="acct-paid"][data-id="heloc"]', '', 'change');
+  p.type('[data-p="once-to"][data-id="o1"]', '', 'change');
+  await saved();
+  const sp = savedPlan();
+  assert.deepEqual(sp.accounts.find((a) => a.id === id), { id, name: 'Car loan', balance: -9000, rate: 6.5 });
+  assert.deepEqual(sp.accounts.filter((a) => a.savings).map((a) => a.id), ['marcus']);
+  assert.equal(sp.accounts.find((a) => a.id === 'heloc').paidBy, undefined);
+  assert.deepEqual(sp.oneOffs[0], { id: 'o1', month: '2027-02', label: 'Pay down', amount: 5000, account: 'marcus' }, 'no longer moved: it lands in Marcus');
+  assert.ok([...p.d.querySelectorAll('[data-p="acct-paid"][data-id="heloc"] option')].some((o) => o.value === 'Bills'), 'Shared lines to pay a loan by');
+  p.close();
+});
+
+test('Planning: an account one-offs use can’t be deleted', async () => {
+  seedAccounts();
+  const p = await openBudget('#plan');
+  p.click('[data-pact="acct-del"][data-id="heloc"]'); await wait();
+  assert.match(p.text('status'), /One-offs use that account/);
+  p.type('[data-p="once-to"][data-id="o1"]', '', 'change'); await wait();
+  p.click('[data-pact="acct-del"][data-id="heloc"]'); await saved();
+  assert.deepEqual(savedPlan().accounts.map((a) => a.id), ['shared', 'marcus']);
+  p.close();
+});
+
+test('Planning: Running total stacks each account’s balance, with the total as a line', async () => {
+  seedAccounts();
+  const p = await openBudget('#plan');
+  p.click('[data-pact="view"][data-v="save"]'); await wait();
+  const cum = p.el('[data-p="cum"]'); cum.checked = true; cum.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  assert.ok(p.d.querySelector('#p-chart .total-line'));
+  assert.deepEqual([...p.d.querySelectorAll('#p-legend li')].map((l) => l.textContent).slice(0, 3), ['Shared checking', 'Marcus', 'HELOC']);
   p.close();
 });

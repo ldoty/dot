@@ -83,8 +83,11 @@ export function makeTools({ calendar, calendarNames = [], budget, discovered = {
       + 'which is what the budget app shows now and may include unsaved edits, plus its saved versions and tags. With `version`: that saved version, '
       + 'by name or by tag (e.g. "default"). Amounts are dollars; freq "mo" is monthly and "yr" yearly. The shared budget also returns '
       + 'the household’s `plans` (the Planning tab, by name), if any: in a plan, from each step’s month (YYYY-MM) on, that step’s Shared version applies; a month’s '
-      + 'saved amount is the total of that version’s categories with kind "save", everything else (mortgage included) is spending; the running total '
-      + 'starts at starting_balance and adds each month’s saved amount and one_offs. You can’t change the budget; '
+      + 'saved amount is the total of that version’s categories with kind "save", everything else (mortgage included) is spending. Money sits in the '
+      + 'plan’s accounts (balance, negative for a loan; yearly rate %). Each month, per account: interest on the opening balance (rate/12), then a '
+      + 'loan with paid_by gets that Shared line’s monthly amount until it reaches zero, then the saved amount lands in the savings account, then '
+      + 'one_offs land in their account (or move from it to moved_to). The running total is all accounts added up. A cheaper Shared budget '
+      + 'shows up as less paid in by each person, not in the running total. You can’t change the budget; '
       + 'for changes, point them to budget.dot-y.co.',
     input_schema: {
       type: 'object',

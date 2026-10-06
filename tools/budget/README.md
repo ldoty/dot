@@ -22,7 +22,10 @@ Planning tab, with `rev`), and `STATE`, the pre-split combined budget kept as a 
 **Planning** (`PUT`/`DELETE /plans/{id}`): named plans, each a timeline of the months ahead. Each step says which Shared tag applies
 from a month on (the plan follows the tag when it moves); one-off amounts land in their month. A
 month's *saved* amount is its version's Shared categories marked Savings; everything else, mortgage
-included, is spending. The running total adds savings and one-offs to a starting balance. Comparing draws
+included, is spending. Money sits in the plan's accounts (balance, negative for a loan, and a yearly
+rate compounded monthly): savings land in one, one-offs land in or move between them, and a loan can
+be paid down by a Shared line (its payment isn't counted twice). The running total is the accounts
+added up. Comparing draws
 another plan's running total over this one's and says how much more or less you'd pay in. Dot reads
 the plans with the Shared budget (`read_budget`).
 

@@ -42,11 +42,21 @@ export function makeBudget({ tokenFor, apiUrl, clientId, user, channel = 'web', 
       // (named with the version it points to now), one-off amounts, and the starting balance
       if (doc === 'shared' && all.plans?.length) {
         const versionOf = (tag) => (all.versions.shared || []).find((v) => v.id === tags.find((t) => t.name === tag)?.versionId)?.name ?? null;
-        out.plans = all.plans.map(({ name, plan: p }) => ({
-          name, start: p.start, months: p.months, starting_balance: p.balance,
-          steps: p.steps.map((s) => ({ from: s.from, tag: s.tag, version: versionOf(s.tag) })),
-          one_offs: p.oneOffs.map((o) => ({ month: o.month, label: o.label, amount: o.amount })),
-        }));
+        out.plans = all.plans.map(({ name, plan: p }) => {
+          // Plans from before accounts had one starting balance, which the page treats as one account
+          const accounts = p.accounts?.length ? p.accounts : [{ id: 'shared', name: 'Shared accounts', balance: p.balance ?? 0, rate: 0, savings: true }];
+          const acct = (id) => accounts.find((a) => a.id === id);
+          const savings = accounts.find((a) => a.savings) || accounts[0];
+          return {
+            name, start: p.start, months: p.months,
+            accounts: accounts.map((a) => ({ name: a.name, balance: a.balance, rate: a.rate, ...(a.paidBy ? { paid_by: a.paidBy } : {}), ...(a === savings ? { savings: true } : {}) })),
+            steps: p.steps.map((s) => ({ from: s.from, tag: s.tag, version: versionOf(s.tag) })),
+            one_offs: p.oneOffs.map((o) => {
+              const from = acct(o.account) || savings, to = o.to && o.to !== from.id && acct(o.to);
+              return { month: o.month, label: o.label, amount: o.amount, account: from.name, ...(to ? { moved_to: to.name } : {}) };
+            }),
+          };
+        });
       }
       return out;
     },

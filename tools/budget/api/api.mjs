@@ -99,16 +99,27 @@ async function putState(doc, body, user) {
 // The plan is checked strictly: the page and Dot both read it, so a malformed one shouldn't get in.
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const TAG = /^[a-z0-9][a-z0-9_-]{0,29}$/;
+const ID = /^[A-Za-z0-9_-]{1,40}$/;
+const isId = (v) => typeof v === 'string' && ID.test(v);
+// Accounts: a starting balance (negative for a loan), a yearly rate, optionally the Shared budget line
+// that pays the loan down (paidBy, an item name) and whether the month's savings land there.
+// One-offs land in an account, or move money from it to another (to).
 function cleanPlan(p) {
   if (!isObj(p) || !MONTH.test(p.start) || !Number.isInteger(p.months) || p.months < 6 || p.months > 60) return null;
-  if (!Number.isFinite(p.balance ?? 0) || !Array.isArray(p.steps) || !Array.isArray(p.oneOffs)) return null;
-  if (p.steps.length > 60 || p.oneOffs.length > 100) return null;
+  const accounts = p.accounts ?? [];
+  if (!Number.isFinite(p.balance ?? 0) || !Array.isArray(p.steps) || !Array.isArray(p.oneOffs) || !Array.isArray(accounts)) return null;
+  if (p.steps.length > 60 || p.oneOffs.length > 100 || accounts.length > 20) return null;
   const steps = p.steps.map((s) => (isObj(s) && MONTH.test(s.from) && TAG.test(s.tag) ? { from: s.from, tag: s.tag } : null));
-  const oneOffs = p.oneOffs.map((o) => (isObj(o) && typeof o.id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(o.id) && MONTH.test(o.month)
-    && typeof o.label === 'string' && Number.isFinite(o.amount)
-    ? { id: o.id, month: o.month, label: o.label.slice(0, 60), amount: o.amount } : null));
-  if (steps.includes(null) || oneOffs.includes(null)) return null;
-  return { start: p.start, months: p.months, balance: p.balance ?? 0, steps, oneOffs };
+  const accts = accounts.map((a) => (isObj(a) && isId(a.id) && typeof a.name === 'string' && Number.isFinite(a.balance)
+    && Number.isFinite(a.rate) && a.rate >= -100 && a.rate <= 100 && (a.paidBy === undefined || typeof a.paidBy === 'string')
+    ? { id: a.id, name: a.name.slice(0, 60), balance: a.balance, rate: a.rate, ...(a.paidBy ? { paidBy: a.paidBy.slice(0, 60) } : {}), ...(a.savings === true ? { savings: true } : {}) }
+    : null));
+  const oneOffs = p.oneOffs.map((o) => (isObj(o) && isId(o.id) && MONTH.test(o.month) && typeof o.label === 'string' && Number.isFinite(o.amount)
+    && (o.account === undefined || isId(o.account)) && (o.to === undefined || isId(o.to))
+    ? { id: o.id, month: o.month, label: o.label.slice(0, 60), amount: o.amount, ...(o.account ? { account: o.account } : {}), ...(o.to ? { to: o.to } : {}) }
+    : null));
+  if (steps.includes(null) || oneOffs.includes(null) || accts.includes(null)) return null;
+  return { start: p.start, months: p.months, balance: p.balance ?? 0, steps, oneOffs, accounts: accts };
 }
 
 async function putPlan(id, body, user) {

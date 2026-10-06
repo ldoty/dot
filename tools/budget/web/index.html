@@ -245,6 +245,12 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
 .p-row [data-p="step-tag"] { grid-column: 1 / -1; grid-row: 2 }
 .p-row.once { grid-template-columns: minmax(0, 1fr) 110px 30px }
 .p-row.once .p-label { grid-column: 1 / -1 }
+.p-row.once .p-to { grid-column: 2 / -1 }
+.p-row.acct > :not(input):not(.del) { grid-column: 1 / -1 }
+.p-two { display: grid; grid-template-columns: 1fr 1fr; gap: 6px }
+.p-two .fld span { display: block; font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin-bottom: 2px }
+.p-check { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted) }
+.p-check input { width: auto; accent-color: var(--pool) }
 .p-row .v-meta { grid-column: 1 / -1 }
 .p-first { font-size: 13px; color: var(--muted) }
 .p-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
@@ -845,7 +851,10 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
   // A timeline of the months ahead: from a given month on, a Shared tag sets the numbers (tags move,
   // so the plan follows them), and one-off amounts (a check in, a closing out) land in their month.
   // Saved is whatever Shared categories are marked Savings; everything else, mortgage included, is
-  // spending. The running total starts from the plan's starting balance. Plans are named and shared
+  // spending. Money sits in the plan's accounts, each with a balance and a yearly rate (interest
+  // compounds monthly): savings land in one of them, one-offs land in or move between them, and a loan
+  // can be paid down by a Shared budget line (so its payment isn't counted twice). The running total
+  // is the accounts added up. Plans are named and shared
   // by Luke and Amber; each saves on its own with a rev like the docs. Another plan's running total
   // can be drawn over this one's to compare them.
   var PLAN = "plan", VKEY = "luke-amber-budget-planview";
@@ -866,7 +875,10 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     return Math.floor(t / 12) + "-" + pad(t % 12 + 1);
   }
   function monthName(ym, year) { return MONTHS[Number(ym.slice(5, 7)) - 1] + (year ? " " + ym.slice(0, 4) : ""); }
-  function newPlan() { return { start: thisMonth(), months: 24, balance: 0, steps: [{ from: thisMonth(), tag: "default" }], oneOffs: [] }; }
+  function newPlan() {
+    return { start: thisMonth(), months: 24, balance: 0, steps: [{ from: thisMonth(), tag: "default" }], oneOffs: [],
+      accounts: [{ id: "shared", name: "Shared accounts", balance: 0, rate: 0, savings: true }] };
+  }
   function normalizePlan(p) {
     p = p || newPlan();
     if (!/^\d{4}-\d{2}$/.test(p.start || "")) p.start = thisMonth();
@@ -875,8 +887,14 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     p.steps = (p.steps || []).slice().sort(function (a, b) { return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; });
     if (!p.steps.length) p.steps = [{ from: p.start, tag: "default" }];
     p.oneOffs = p.oneOffs || [];
+    // Plans from before accounts had one starting balance: it becomes one account with no interest
+    if (!p.accounts || !p.accounts.length) { p.accounts = [{ id: "shared", name: "Shared accounts", balance: p.balance, rate: 0, savings: true }]; p.balance = 0; }
+    if (!p.accounts.some(function (a) { return a.savings; })) p.accounts[0].savings = true;
     return p;
   }
+  function acctOf(p, id) { return p.accounts.filter(function (a) { return a.id === id; })[0] || null; }
+  function savingsAcct(p) { return p.accounts.filter(function (a) { return a.savings; })[0] || p.accounts[0]; }
+  function startTotal(p) { return p.accounts.reduce(function (t, a) { return t + (Number(a.balance) || 0); }, 0); }
   function planMonths(p) { var out = []; for (var i = 0; i < p.months; i++) out.push(addMonths(p.start, i)); return out; }
   // The step in effect in a month: the latest one that has started, or the first before any has
   function stepAt(p, ym) {
@@ -914,24 +932,50 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     if (tab === PLAN) render();
   }
   function tagVersion(tn) { var t = tagFor("shared", tn); return t ? sharedVersion(t.versionId) || null : null; }
-  var SAVED = "Saved", ONCE = "One-offs", MORT = "Mortgage";
-  // Each month's numbers, from the version its step's tag points to now
+  var SAVED = "Saved", ONCE = "One-offs", MORT = "Mortgage", LOANPAID = "Paid on loans";
+  // Each month's numbers, from the version its step's tag points to now. In each account, in order:
+  // interest on the month's opening balance, the loan payment, savings, one-offs.
   function projection(p) {
-    var cache = {}, run = p.balance, rows = [];
+    var cache = {}, rows = [], bal = {}, intBy = {}, sav = savingsAcct(p);
+    p.accounts.forEach(function (a) { bal[a.id] = Number(a.balance) || 0; intBy[a.id] = 0; });
     planMonths(p).forEach(function (ym) {
-      var step = stepAt(p, ym), v = tagVersion(step.tag), spend = {}, spent = 0, saved = 0;
+      var step = stepAt(p, ym), v = tagVersion(step.tag), spend = {}, spent = 0, saved = 0, lines = {};
       if (v) {
-        var S = cache[v.id] || (cache[v.id] = sharedSummary(normalizeShared(clone(v.state))));
-        if (S.mort) { spend[MORT] = S.mort; spent += S.mort; }
-        S.cats.forEach(function (x) {
+        var C = cache[v.id];
+        if (!C) {
+          var S = sharedSummary(normalizeShared(clone(v.state)));
+          C = cache[v.id] = { S: S, lines: {} };
+          // Each Shared line's monthly amount by name, for the loans they pay down
+          S.cats.forEach(function (x) { x.c.items.forEach(function (it) { var k = (it.name || "").trim().toLowerCase(); C.lines[k] = (C.lines[k] || 0) + monthly(it, S.ctx); }); });
+        }
+        lines = C.lines;
+        if (C.S.mort) { spend[MORT] = C.S.mort; spent += C.S.mort; }
+        C.S.cats.forEach(function (x) {
           if (x.c.kind === "save") { saved += x.t; return; }
           var n = x.c.name || "Untitled"; spend[n] = (spend[n] || 0) + x.t; spent += x.t;
         });
       }
-      var once = p.oneOffs.filter(function (o) { return o.month === ym; });
-      var onceSum = once.reduce(function (t, o) { return t + (Number(o.amount) || 0); }, 0);
-      run += saved + onceSum;
-      rows.push({ ym: ym, step: step, v: v, spend: spend, spent: spent, saved: saved, once: once, onceSum: onceSum, run: run });
+      var interest = 0, earned = 0, paid = 0;
+      p.accounts.forEach(function (a) {
+        var i = bal[a.id] * (Number(a.rate) || 0) / 1200;
+        bal[a.id] += i; intBy[a.id] += i; interest += i; if (i > 0) earned += i;
+      });
+      // A loan's payment comes out of the Shared budget line that pays it, and stops once it's paid off
+      p.accounts.forEach(function (a) {
+        if (!a.paidBy || bal[a.id] >= 0) return;
+        var amt = Math.min(lines[a.paidBy.trim().toLowerCase()] || 0, -bal[a.id]);
+        bal[a.id] += amt; paid += amt;
+      });
+      bal[sav.id] += saved;
+      var once = p.oneOffs.filter(function (o) { return o.month === ym; }), onceSum = 0;
+      once.forEach(function (o) {
+        var from = acctOf(p, o.account) || sav, to = o.to && o.to !== from.id && acctOf(p, o.to), amt = Number(o.amount) || 0;
+        bal[from.id] += to ? -amt : amt;
+        if (to) bal[to.id] += amt; else onceSum += amt;
+      });
+      var run = 0; Object.keys(bal).forEach(function (k) { run += bal[k]; });
+      rows.push({ ym: ym, step: step, v: v, spend: spend, spent: spent, saved: saved, once: once, onceSum: onceSum,
+        interest: interest, earned: earned, paid: paid, bal: clone(bal), intBy: clone(intBy), run: run });
     });
     return rows;
   }
@@ -965,8 +1009,10 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       if (!save) return series.map(function (s) {
         return { v: s.names.reduce(function (t, nm) { return t + (r.spend[nm] || 0); }, 0), color: s.color, name: s.name };
       });
-      if (cum) return [{ v: r.run, color: r.run < 0 ? "var(--ember)" : "var(--leaf)", name: "Running total" }];
-      return [{ v: r.saved, color: "var(--leaf)", name: SAVED }, { v: r.onceSum, color: r.onceSum < 0 ? "var(--ember)" : "var(--sun)", name: ONCE }];
+      // Running total: each account's balance (loans hang below zero), with the total as a line
+      if (cum) return plan.accounts.map(function (a, k) { return { v: r.bal[a.id] || 0, color: PCOLORS[k % PCOLORS.length], name: a.name }; });
+      return [{ v: r.saved, color: "var(--leaf)", name: SAVED }, { v: r.onceSum, color: r.onceSum < 0 ? "var(--ember)" : "var(--sun)", name: ONCE },
+        { v: r.interest, color: r.interest < 0 ? "var(--wood)" : "var(--pool)", name: "Interest" }, { v: r.paid, color: "var(--bloom)", name: LOANPAID }];
     });
     // The compared plan's running total, by month, drawn as a line over this plan's running total
     var other = {};
@@ -990,8 +1036,10 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     rows.forEach(function (r, i) {
       var x = L + i * cw + (cw - bw) / 2, up = 0, down = 0;
       var tip = monthName(r.ym, true) + " · " + r.step.tag + (r.v ? " → “" + r.v.name + "”" : " (no version)") +
-        "\nSpending " + money.format(r.spent) + " · Saved " + money.format(r.saved) +
-        (r.once.length ? "\n" + r.once.map(function (o) { return (o.label || "One-off") + " " + money.format(o.amount); }).join("\n") : "") +
+        "\nSpending " + money.format(r.spent) + " · Saved " + money.format(r.saved) + " · Interest " + money.format(r.interest) +
+        (r.paid ? " · Paid on loans " + money.format(r.paid) : "") +
+        "\n" + plan.accounts.map(function (a) { return a.name + " " + money.format(r.bal[a.id] || 0); }).join(" · ") +
+        (r.once.length ? "\n" + r.once.map(function (o) { return (o.label || "One-off") + " " + money.format(o.amount) + (o.to && acctOf(plan, o.to) ? " → " + acctOf(plan, o.to).name : ""); }).join("\n") : "") +
         "\nRunning total " + money.format(r.run);
       out.push('<g data-month="' + r.ym + '"><title>' + esc(tip) + "</title>" + bars[i].map(function (p) {
         if (!p.v) return "";
@@ -1001,6 +1049,10 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       }).join("") + "</g>");
       if (i % every === 0) out.push('<text x="' + (L + i * cw + cw / 2).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + monthName(r.ym, false) + (i === 0 || r.ym.slice(5) === "01" ? " ’" + r.ym.slice(2, 4) : "") + "</text>");
     });
+    if (cum) {
+      var tl = rows.map(function (r, i) { return (i ? "L" : "M") + (L + i * cw + cw / 2).toFixed(1) + " " + y(r.run).toFixed(1); }).join(" ");
+      out.push('<path class="total-line" d="' + tl + '" fill="none" style="stroke:var(--ink)" stroke-width="1.5"/>');
+    }
     var path = "", pen = "M";
     rows.forEach(function (r, i) {
       if (!(r.ym in other)) { pen = "M"; return; }
@@ -1018,8 +1070,10 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
   }
   function legendHtml(series, cmp) {
     var items = planView.view === "save"
-      ? (planView.cum ? [["Running total", "var(--leaf)"], ["Below zero", "var(--ember)"]].concat(cmp ? [["“" + cmp.name + "”", "var(--ink)"]] : [])
-        : [[SAVED + " (Savings categories)", "var(--leaf)"], [ONCE + " in", "var(--sun)"], [ONCE + " out", "var(--ember)"]])
+      ? (planView.cum ? plan.accounts.map(function (a, k) { return [a.name || "Untitled", PCOLORS[k % PCOLORS.length]]; }).concat([["Running total (line)", "var(--ink)"]], cmp ? [["“" + cmp.name + "” (dashed)", "var(--ink)"]] : [])
+        : [[SAVED + " (Savings categories)", "var(--leaf)"], [ONCE + " in", "var(--sun)"], [ONCE + " out", "var(--ember)"]].concat(
+          plan.accounts.some(function (a) { return Number(a.rate); }) ? [["Interest earned", "var(--pool)"], ["Interest paid", "var(--wood)"]] : [],
+          plan.accounts.some(function (a) { return a.paidBy; }) ? [[LOANPAID, "var(--bloom)"]] : []))
       : series.map(function (s) { return [s.name, s.color]; });
     return items.map(function (x) { return '<li><i style="background:' + x[1] + '"></i>' + esc(x[0]) + "</li>"; }).join("");
   }
@@ -1036,6 +1090,15 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       return '<option value="' + esc(n) + '"' + (n === selected ? " selected" : "") + ">" + esc(n) + (v ? " → " + esc(v.name) : " (no version)") + "</option>";
     }).join("");
   }
+  // Shared line names a loan can be paid by: every item in the versions this plan uses
+  function paidByOptions() {
+    var names = {};
+    plan.steps.forEach(function (s) {
+      var v = tagVersion(s.tag); if (!v) return;
+      (v.state.categories || []).forEach(function (c) { c.items.forEach(function (it) { if ((it.name || "").trim()) names[it.name.trim()] = 1; }); });
+    });
+    return Object.keys(names).sort();
+  }
   function planBody() {
     var steps = plan.steps.map(function (s, i) {
       var v = tagVersion(s.tag);
@@ -1046,12 +1109,29 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
         (i ? '<button class="del" data-pact="step-del" data-i="' + i + '" aria-label="Remove this change" title="Remove">&times;</button>' : "<span></span>") +
         '<span class="v-meta" id="ps-' + i + '">' + (v ? "" : "No Shared version is tagged " + esc(s.tag)) + "</span></div>";
     }).join("");
+    var acctOpts = function (sel) { return plan.accounts.map(function (a) { return '<option value="' + esc(a.id) + '"' + (a.id === sel ? " selected" : "") + ">" + esc(a.name || "Untitled") + "</option>"; }).join(""); };
+    var lineNames = paidByOptions();
+    var accts = plan.accounts.map(function (a) {
+      var names = lineNames.slice(); if (a.paidBy && names.indexOf(a.paidBy) < 0) names.push(a.paidBy);
+      return '<div class="p-row acct" data-acct="' + esc(a.id) + '">' +
+        '<input data-p="acct-name" data-id="' + esc(a.id) + '" aria-label="Account name" placeholder="Name this account" maxlength="60" value="' + esc(a.name) + '">' +
+        '<button class="del" data-pact="acct-del" data-id="' + esc(a.id) + '" aria-label="Remove ' + esc(a.name || "account") + '" title="Remove"' + (plan.accounts.length < 2 ? " disabled" : "") + ">&times;</button>" +
+        '<div class="p-two"><label class="fld"><span>Balance</span><input class="amt" data-p="acct-balance" data-id="' + esc(a.id) + '" inputmode="decimal" value="' + (a.balance || 0) + '"></label>' +
+        '<label class="fld"><span>Rate % / yr</span><input class="amt" data-p="acct-rate" data-id="' + esc(a.id) + '" inputmode="decimal" value="' + (a.rate || 0) + '"></label></div>' +
+        '<label class="p-check"><input type="radio" name="p-savings" data-p="acct-savings" data-id="' + esc(a.id) + '"' + (a.savings ? " checked" : "") + "> Savings land here</label>" +
+        '<select data-p="acct-paid" data-id="' + esc(a.id) + '" aria-label="Paid down by"><option value="">Not paid from Shared</option>' +
+        names.map(function (n) { return '<option value="' + esc(n) + '"' + (n === a.paidBy ? " selected" : "") + ">Paid by Shared line “" + esc(n) + "”</option>"; }).join("") + "</select>" +
+        '<span class="v-meta" id="pa-' + esc(a.id) + '"></span></div>';
+    }).join("");
     var once = plan.oneOffs.map(function (o) {
       return '<div class="p-row once" data-once="' + esc(o.id) + '">' +
         '<select data-p="once-month" data-id="' + esc(o.id) + '" aria-label="Month">' + monthOptions(o.month, plan.start, plan.months) + "</select>" +
         '<input class="amt" data-p="once-amount" data-id="' + esc(o.id) + '" inputmode="decimal" aria-label="Amount (negative for money out)" value="' + (o.amount || 0) + '">' +
         '<button class="del" data-pact="once-del" data-id="' + esc(o.id) + '" aria-label="Remove ' + esc(o.label || "one-off") + '" title="Remove">&times;</button>' +
-        '<input class="p-label" data-p="once-label" data-id="' + esc(o.id) + '" placeholder="What it is" aria-label="What it is" maxlength="60" value="' + esc(o.label) + '"></div>';
+        '<input class="p-label" data-p="once-label" data-id="' + esc(o.id) + '" placeholder="What it is" aria-label="What it is" maxlength="60" value="' + esc(o.label) + '">' +
+        '<select data-p="once-acct" data-id="' + esc(o.id) + '" aria-label="Account">' + acctOpts((acctOf(plan, o.account) || savingsAcct(plan)).id) + "</select>" +
+        '<select class="p-to" data-p="once-to" data-id="' + esc(o.id) + '" aria-label="Moved to"><option value="">Stays there</option>' +
+        plan.accounts.map(function (a) { return '<option value="' + esc(a.id) + '"' + (a.id === o.to ? " selected" : "") + ">Moved to " + esc(a.name || "Untitled") + "</option>"; }).join("") + "</select></div>";
     }).join("");
     var others = plans.filter(function (x) { return x !== cur; });
     var bar = '<div class="panel p-bar">' +
@@ -1064,7 +1144,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       '<div class="fld"><label for="p-cmp">Compare with</label><select id="p-cmp" data-p="cmp"' + (others.length ? "" : " disabled") + '><option value="">' + (others.length ? "Nothing" : "No other plans yet") + "</option>" +
       others.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === planView.cmp ? " selected" : "") + ">" + esc(x.name || "Untitled") + "</option>"; }).join("") + "</select></div></div>";
     var lengths = [12, 24, 36, 60].map(function (m) { return '<option value="' + m + '"' + (plan.months === m ? " selected" : "") + ">" + m + " months</option>"; }).join("");
-    return bar + '<div class="tiles">' + tile("Average spending", "pk-spend") + tile("Saved over the plan", "pk-saved") + tile("One-offs", "pk-once") + tile("Running total at the end", "pk-end") + "</div>" +
+    return bar + '<div class="tiles">' + tile("Average spending", "pk-spend") + tile("Saved over the plan", "pk-saved") + tile("Interest", "pk-int") + tile("Running total at the end", "pk-end") + "</div>" +
       '<div class="layout"><div>' +
       '<section class="chart-card"><div class="chart-head"><h2>Month by month</h2><div class="savebar">' +
       '<span class="seg" role="group" aria-label="Show"><button data-pact="view" data-v="spend" aria-pressed="' + (planView.view === "spend") + '">Spending</button>' +
@@ -1078,13 +1158,16 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       '<div class="panel"><h3>Timeline</h3><div class="p-fields">' +
       '<div class="fld"><label for="p-start">Starts</label><select id="p-start" data-p="start">' + monthOptions(plan.start, addMonths(thisMonth(), -12), 37) + "</select></div>" +
       '<div class="fld"><label for="p-months">Length</label><select id="p-months" data-p="months">' + lengths + "</select></div>" +
-      '<div class="fld wide"><label for="p-balance">Starting balance</label><input id="p-balance" class="amt" data-p="balance" inputmode="decimal" value="' + plan.balance + '"></div></div>' +
-      '<p class="split-foot">What’s in the shared accounts when the plan starts. The running total adds each month’s savings and one-offs to it.</p></div>' +
+      "</div></div>" +
+      '<div class="panel"><h3>Accounts</h3><div class="p-list">' + accts + "</div>" +
+      '<button class="add" data-pact="acct-add">+ Add an account</button>' +
+      '<p class="split-foot">Balances when the plan starts; a loan is negative. Interest compounds monthly. A loan paid by a Shared line gets that line’s monthly amount until it’s paid off. The running total is all the accounts added up.</p></div>' +
       '<div class="panel"><h3>Which budget, when</h3><div class="p-list">' + steps + "</div>" +
       '<button class="add" data-pact="step-add">+ Add a change</button>' +
       '<p class="split-foot">Each month uses the Shared version its tag points to now, so the plan follows when a tag moves. Saved is any Shared category marked Savings.</p></div>' +
       '<div class="panel"><h3>One-offs</h3><div class="p-list">' + (once || '<p class="v-empty">Nothing yet. Add money that comes in or goes out once, like a check or a closing.</p>') + "</div>" +
-      '<button class="add" data-pact="once-add">+ Add a one-off</button></div>' +
+      '<button class="add" data-pact="once-add">+ Add a one-off</button>' +
+      '<p class="split-foot">A one-off lands in its account (negative takes money out). “Moved to” moves it from one account to another instead, like paying down a loan from savings.</p></div>' +
       "</aside></div>";
   }
   function drawPlan() {
@@ -1094,13 +1177,18 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     el.innerHTML = chartSvg(rows, series, cmpRows);
     document.getElementById("p-legend").innerHTML = legendHtml(series, cmp);
     var n = rows.length, spent = rows.reduce(function (t, r) { return t + r.spent; }, 0), saved = rows.reduce(function (t, r) { return t + r.saved; }, 0);
-    var once = rows.reduce(function (t, r) { return t + r.onceSum; }, 0), end = rows[n - 1].run;
+    var end = rows[n - 1].run;
     var low = rows.reduce(function (m, r) { return r.run < m.run ? r : m; }, rows[0]);
     set("pk-spend", money.format(spent / n)); set("pk-spend-yr", "per month over " + n + " months");
     set("pk-saved", money.format(saved)); set("pk-saved-yr", money.format(saved / n) + " / mo on average");
-    var inSum = plan.oneOffs.reduce(function (t, o) { return t + Math.max(0, o.amount); }, 0);
-    set("pk-once", money.format(once)); set("pk-once-yr", plan.oneOffs.length ? money.format(inSum) + " in · " + money.format(inSum - once) + " out" : "None yet");
-    set("pk-end", money.format(end)); set("pk-end-yr", "by " + monthName(rows[n - 1].ym, true) + (low.run < Math.min(end, plan.balance) ? " · lowest " + money.format(low.run) + " in " + monthName(low.ym, true) : ""));
+    var interest = rows.reduce(function (t, r) { return t + r.interest; }, 0), earned = rows.reduce(function (t, r) { return t + r.earned; }, 0);
+    set("pk-int", money.format(interest)); set("pk-int-yr", "earned " + money.format(earned) + " · paid " + money.format(earned - interest));
+    var ki = document.getElementById("pk-int"); if (ki) ki.className = "val" + (interest < 0 ? " neg" : interest > 0 ? " pos" : "");
+    set("pk-end", money.format(end)); set("pk-end-yr", "by " + monthName(rows[n - 1].ym, true) + (low.run < Math.min(end, startTotal(plan)) ? " · lowest " + money.format(low.run) + " in " + monthName(low.ym, true) : ""));
+    plan.accounts.forEach(function (a) {
+      var last = rows[n - 1], it = last.intBy[a.id] || 0;
+      set("pa-" + a.id, monthName(last.ym, true) + ": " + money.format(last.bal[a.id] || 0) + (it ? " · interest " + (it < 0 ? "−" : "+") + money.format(Math.abs(it)) : ""));
+    });
     var lastYm = rows[n - 1].ym;
     // What the two of you pay in is Shared's whole budget, savings included, so a cheaper plan shows
     // here (the money stays with each of you), not in Shared's running total
@@ -1126,12 +1214,14 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     warn.textContent = (missing.length ? "No Shared version is tagged " + missing.join(", ") + ", so those months show nothing. " : "") +
       (noSavings ? "Nothing in Shared is marked Savings yet: mark a category Savings on the Shared tab to count it as saved." : "");
     warn.hidden = !warn.textContent;
-    document.getElementById("p-head").innerHTML = "<tr><th>Month</th><th>Using</th><th>Spending</th><th>Saved</th><th>One-offs</th><th>Running total</th>" +
+    var loans = plan.accounts.some(function (a) { return a.paidBy; });
+    document.getElementById("p-head").innerHTML = "<tr><th>Month</th><th>Using</th><th>Spending</th><th>Saved</th><th>Interest</th><th>One-offs</th>" + (loans ? "<th>Paid on loans</th>" : "") + "<th>Running total</th>" +
       (cmp ? "<th>“" + esc(cmp.name) + "”</th>" : "") + "</tr>";
     document.getElementById("p-rows").innerHTML = rows.map(function (r, i) {
       var cell = function (v) { return '<td class="' + (v < 0 ? "neg" : "") + '">' + money.format(v) + "</td>"; };
       return '<tr' + (i && r.step !== rows[i - 1].step ? ' class="step"' : "") + "><td>" + monthName(r.ym, true) + "</td><td>" + esc(r.step.tag) + (r.v ? " → " + esc(r.v.name) : "") + "</td>" +
-        cell(r.spent) + cell(r.saved) + (r.once.length ? cell(r.onceSum) : "<td></td>") + cell(r.run) +
+        cell(r.spent) + cell(r.saved) + cell(Math.round(r.interest)) + (r.onceSum ? cell(r.onceSum) : r.once.length ? "<td>moved</td>" : "<td></td>") +
+        (loans ? cell(r.paid) : "") + cell(r.run) +
         (cmp ? (r.ym in cmpRun ? cell(cmpRun[r.ym]) : "<td></td>") : "") + "</tr>";
     }).join("");
   }
@@ -1141,7 +1231,9 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
   }
   function planInput(t) {
     var o = plan.oneOffs.filter(function (x) { return x.id === t.dataset.id; })[0];
-    if (t.dataset.p === "balance") { plan.balance = parseFloat(t.value.replace(/[^0-9.\-]/g, "")) || 0; planChanged(); }
+    var a = acctOf(plan, t.dataset.id);
+    if (a && t.dataset.p === "acct-name") { a.name = t.value; planChanged(); }
+    else if (a && (t.dataset.p === "acct-balance" || t.dataset.p === "acct-rate")) { a[t.dataset.p.slice(5)] = parseFloat(t.value.replace(/[^0-9.\-]/g, "")) || 0; planChanged(); }
     else if (t.dataset.p === "once-amount" && o) { o.amount = parseFloat(t.value.replace(/[^0-9.\-]/g, "")) || 0; planChanged(); }
     else if (t.dataset.p === "once-label" && o) { o.label = t.value; planChanged(); }
     else if (t.dataset.p === "name") {
@@ -1173,6 +1265,11 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     else if (t.dataset.p === "step-from") { plan.steps[i].from = t.value; plan = normalizePlan(plan); }
     else if (t.dataset.p === "step-tag") plan.steps[i].tag = t.value;
     else if (t.dataset.p === "once-month" && o) o.month = t.value;
+    else if (t.dataset.p === "once-acct" && o) { o.account = t.value; if (o.to === t.value) delete o.to; }
+    else if (t.dataset.p === "once-to" && o) { if (t.value) o.to = t.value; else delete o.to; }
+    else if (t.dataset.p === "acct-savings") plan.accounts.forEach(function (a) { if (a.id === t.dataset.id) a.savings = true; else delete a.savings; });
+    else if (t.dataset.p === "acct-paid") { var pa = acctOf(plan, t.dataset.id); if (!pa) return; if (t.value) pa.paidBy = t.value; else delete pa.paidBy; }
+    else if (t.dataset.p === "acct-name") { render(); return; } // other selects show the new name once it's done
     else return;
     planChanged(true);
   }
@@ -1205,9 +1302,18 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     } else if (a === "step-del") plan.steps.splice(Number(t.dataset.i), 1);
     else if (a === "once-add") plan.oneOffs.push({ id: uid(), month: plan.start, label: "", amount: 0 });
     else if (a === "once-del") plan.oneOffs = plan.oneOffs.filter(function (x) { return x.id !== t.dataset.id; });
+    else if (a === "acct-add") plan.accounts.push({ id: uid(), name: "", balance: 0, rate: 0 });
+    else if (a === "acct-del") {
+      // One-offs would otherwise land somewhere else without saying so
+      var used = plan.oneOffs.filter(function (o) { return o.account === t.dataset.id || o.to === t.dataset.id; }).length;
+      if (used) { setStatus("One-offs use that account. Move them first."); return; }
+      plan.accounts = plan.accounts.filter(function (x) { return x.id !== t.dataset.id; });
+      plan = normalizePlan(plan);
+    }
     else return;
     planChanged(true);
     if (a === "once-add") { var li = app.querySelectorAll('[data-p="once-label"]'); if (li.length) li[li.length - 1].focus(); }
+    if (a === "acct-add") { var an = app.querySelectorAll('[data-p="acct-name"]'); if (an.length) an[an.length - 1].focus(); }
   }
   function deletePlan() {
     var e = cur;
