@@ -15,7 +15,7 @@ export const memberToken = () => accessToken({ clientId: CLIENT_ID, group: 'fami
 
 const callApi = caller(handler, [
   'GET /all', 'GET /defaults', 'PUT /docs/{doc}/state', 'PUT /docs/{doc}/versions/{id}',
-  'DELETE /docs/{doc}/versions/{id}', 'PUT /docs/{doc}/tags/{name}', 'DELETE /docs/{doc}/tags/{name}',
+  'DELETE /docs/{doc}/versions/{id}', 'PUT /docs/{doc}/tags/{name}', 'DELETE /docs/{doc}/tags/{name}', 'PUT /plan',
 ]);
 
 /** Calls the handler like API Gateway would, as a family_budget member unless a token is given. */

@@ -37,7 +37,18 @@ export function makeBudget({ tokenFor, apiUrl, clientId, user, channel = 'web', 
         if (!v) throw new Error(`No saved version or tag "${version}" in the ${doc} budget. Saved: ${versions.map((x) => x.name).join(', ') || 'none'}`);
         return { budget: doc, version: v.name, saved_at: new Date(v.savedAt).toISOString(), state: v.state };
       }
-      return { budget: doc, working_copy: all.docs[doc]?.state ?? null, versions };
+      const out = { budget: doc, working_copy: all.docs[doc]?.state ?? null, versions };
+      // The Planning tab's timeline belongs with Shared: which Shared tag applies from which month
+      // (named with the version it points to now), one-off amounts, and the starting balance
+      const p = all.plan?.plan;
+      if (doc === 'shared' && p) {
+        out.plan = {
+          start: p.start, months: p.months, starting_balance: p.balance,
+          steps: p.steps.map((s) => ({ from: s.from, tag: s.tag, version: (all.versions.shared || []).find((v) => v.id === tags.find((t) => t.name === s.tag)?.versionId)?.name ?? null })),
+          one_offs: p.oneOffs.map((o) => ({ month: o.month, label: o.label, amount: o.amount })),
+        };
+      }
+      return out;
     },
   };
 }

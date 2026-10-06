@@ -153,7 +153,7 @@ test('categories: rename, add, reorder, delete with items', async () => {
   p.close();
 });
 
-test('categories: spending/savings toggle exists only on personal tabs, and empty savings categories survive reload', async () => {
+test('categories: spending/savings toggle on every tab but the fixed section, and empty savings categories survive reload', async () => {
   const p = await openBudget('#luke');
   assert.equal(p.d.querySelectorAll('[data-ckind]').length, 1, 'Needs (the fixed section has none)');
   p.click('[data-ckind="Lukec"]'); await saved();
@@ -164,7 +164,10 @@ test('categories: spending/savings toggle exists only on personal tabs, and empt
   assert.equal(again.d.querySelectorAll('.cat-name').length, 2);
   again.close();
   const shared = await openBudget('#shared');
-  assert.equal(shared.d.querySelectorAll('[data-ckind]').length, 0);
+  shared.click('#resume-keep'); await wait();
+  shared.click('[data-ckind="c1"]'); await saved();
+  assert.equal(doc('shared').categories.find((c) => c.id === 'c1').kind, 'save', 'Shared categories can be Savings too (they count as saved on Planning)');
+  assert.match(shared.d.querySelector('[data-cat="c1"] .chip').textContent, /Savings/);
   shared.close();
 });
 
@@ -670,5 +673,122 @@ test('switching a yearly item to Split starts Luke at the global split of the ye
   p.type('#w-ins', 'Split'); await wait();
   assert.equal(p.el('#sp-ins').value, '600');
   assert.equal(p.text('sr-ins'), 'Amber $600/yr');
+  p.close();
+});
+
+// --- Planning -------------------------------------------------------------------------
+
+// Two Shared versions: "Starting point" (v1, $1,000 bills, tagged default) and "Bigger" (v2: $1,500 bills
+// plus $300 in a Savings category, tagged stretch). A plan: 12 months from Jan 2027, default for three
+// months, then stretch, with a $10,000 check in February and a starting balance of $2,000.
+function seedPlan(over = {}) {
+  const bigger = sharedDoc(1500);
+  bigger.categories.push({ id: 'c2', name: 'Savings', kind: 'save', items: [{ id: 'a8', name: 'College', amount: 300, freq: 'mo', who: 'Shared' }] });
+  table.put({ pk: PK, sk: 'DOC#shared#VERSION#v2', name: 'Bigger', savedAt: 2, state: JSON.stringify(bigger) });
+  table.put({ pk: PK, sk: 'TAG#shared#stretch', versionId: 'v2' });
+  table.put({ pk: PK, sk: 'PLAN', rev: 1, plan: JSON.stringify({
+    start: '2027-01', months: 12, balance: 2000,
+    steps: [{ from: '2027-01', tag: 'default' }, { from: '2027-04', tag: 'stretch' }],
+    oneOffs: [{ id: 'o1', month: '2027-02', label: 'Check', amount: 10000 }],
+    ...over,
+  }) });
+}
+const planRows = (p) => [...p.d.querySelectorAll('#p-rows tr')].map((tr) => [...tr.children].map((td) => td.textContent));
+const savedPlan = () => JSON.parse(table.get(PK, 'PLAN').plan);
+
+test('Planning: each month uses its step’s tag; savings and one-offs build the running total', async () => {
+  seedPlan();
+  const p = await openBudget('#plan');
+  assert.equal(p.el('[data-tab="plan"]').getAttribute('aria-selected'), 'true');
+  const rows = planRows(p);
+  assert.equal(rows.length, 12);
+  assert.deepEqual(rows[0], ['Jan 2027', 'default → Starting point', '$1,000', '$0', '', '$2,000']);
+  assert.deepEqual(rows[1], ['Feb 2027', 'default → Starting point', '$1,000', '$0', '$10,000', '$12,000']);
+  assert.deepEqual(rows[3], ['Apr 2027', 'stretch → Bigger', '$1,500', '$300', '', '$12,300']);
+  assert.equal(rows[11][5], '$14,700'); // 12,000 + 9 × 300
+  assert.equal(p.text('pk-end'), '$14,700');
+  assert.equal(p.text('pk-saved'), '$2,700');
+  assert.equal(p.d.querySelectorAll('#p-chart g[data-month]').length, 12);
+  assert.match(p.d.querySelector('#p-chart .mark').textContent, /stretch/, 'the switch is marked on the chart');
+  assert.equal(p.el('#p-warn').hidden, true);
+  p.close();
+});
+
+test('Planning follows a tag when it moves', async () => {
+  seedPlan();
+  const p = await openBudget('#shared');
+  p.click('#resume-keep'); await wait();
+  p.type('[data-tagsel="stretch"]', 'v1', 'change'); await wait(50);
+  await p.tab('plan');
+  assert.deepEqual(planRows(p)[3].slice(1, 4), ['stretch → Starting point', '$1,000', '$0']);
+  p.close();
+});
+
+test('Planning: changes, one-offs and settings save to the plan row with its rev', async () => {
+  seedPlan();
+  const p = await openBudget('#plan');
+  p.type('[data-p="step-from"][data-i="1"]', '2027-06', 'change');
+  p.type('#p-balance', '500');
+  p.click('[data-pact="once-add"]'); await wait();
+  const id = savedPlanIdAfter(p);
+  p.type(`[data-p="once-label"][data-id="${id}"]`, 'Closing');
+  p.type(`[data-p="once-amount"][data-id="${id}"]`, '-40000');
+  p.type(`[data-p="once-month"][data-id="${id}"]`, '2027-06', 'change');
+  await saved();
+  const sp = savedPlan();
+  assert.equal(table.get(PK, 'PLAN').rev, 2);
+  assert.deepEqual(sp.steps, [{ from: '2027-01', tag: 'default' }, { from: '2027-06', tag: 'stretch' }]);
+  assert.equal(sp.balance, 500);
+  assert.deepEqual(sp.oneOffs[1], { id, month: '2027-06', label: 'Closing', amount: -40000 });
+  const jun = planRows(p)[5];
+  assert.deepEqual([jun[4], jun[5]], ['-$40,000', '-$29,200']); // 500 + 10,000 − 40,000 + 300
+  assert.ok(p.el('#p-rows tr:nth-child(6) td:last-child').classList.contains('neg'));
+  assert.equal(p.el('#pk-end').className, 'val neg');
+  p.click('[data-pact="step-del"][data-i="1"]'); await saved();
+  assert.deepEqual(savedPlan().steps, [{ from: '2027-01', tag: 'default' }]);
+  p.close();
+});
+function savedPlanIdAfter(p) { return [...p.d.querySelectorAll('[data-p="once-label"]')].pop().dataset.id; }
+
+test('Planning: a new household starts an unsaved plan on this month, saved only once edited', async () => {
+  const p = await openBudget('#plan');
+  assert.equal(planRows(p).length, 24);
+  assert.match(planRows(p)[0][1], /^default → Starting point/);
+  assert.equal(table.get(PK, 'PLAN'), undefined);
+  assert.match(p.text('p-warn'), /Nothing in Shared is marked Savings/);
+  p.type('#p-months', '12', 'change'); await saved();
+  assert.equal(savedPlan().months, 12);
+  assert.equal(table.get(PK, 'PLAN').rev, 1);
+  p.close();
+});
+
+test('Planning: a step whose tag is gone says so', async () => {
+  seedPlan({ steps: [{ from: '2027-01', tag: 'default' }, { from: '2027-04', tag: 'gone' }] });
+  const p = await openBudget('#plan');
+  assert.match(p.text('p-warn'), /No Shared version is tagged gone/);
+  assert.deepEqual(planRows(p)[3].slice(1, 3), ['gone', '$0']);
+  p.close();
+});
+
+test('Planning: Spending stacks categories; Saved shows savings, or the running total', async () => {
+  seedPlan();
+  const p = await openBudget('#plan');
+  assert.deepEqual([...p.d.querySelectorAll('#p-legend li')].map((l) => l.textContent), ['Home']);
+  p.click('[data-pact="view"][data-v="save"]'); await wait();
+  assert.match(p.el('#p-legend').textContent, /Saved \(Savings categories\)/);
+  assert.equal(p.el('.cum').hidden, false);
+  const cum = p.el('[data-p="cum"]'); cum.checked = true; cum.dispatchEvent(new p.w.Event('change', { bubbles: true }));
+  assert.match(p.el('#p-chart svg').getAttribute('aria-label'), /Running total/);
+  assert.equal(p.requests.filter((r) => r === 'PUT /plan').length, 0, 'the view is per viewer, not part of the plan');
+  p.close();
+});
+
+test('Planning: a stale plan save loads the other person’s plan', async () => {
+  seedPlan();
+  const p = await openBudget('#plan');
+  table.put({ ...table.get(PK, 'PLAN'), rev: 2, plan: JSON.stringify({ ...savedPlan(), balance: 999 }) });
+  p.type('#p-balance', '1'); await saved();
+  assert.equal(p.el('#p-balance').value, '999');
+  assert.match(p.text('status'), /plan was just changed somewhere else/);
   p.close();
 });

@@ -2,15 +2,17 @@
 // working copy, saved versions and tags (names for versions; "default" opens on load).
 // Personal docs also follow a Shared tag for their share of the shared costs.
 //
-//   GET    /all                       -> { docs: {doc: {state, rev}}, versions: {doc: [...]}, tags: {doc: [{name, versionId}]} }
+//   GET    /all                       -> { docs: {doc: {state, rev}}, versions: {doc: [...]}, tags: {doc: [{name, versionId}]}, plan: {plan, rev} | null }
 //   GET    /defaults                  -> { state }   the household's starting numbers (Reset)
 //   PUT    /docs/{doc}/state          { state, rev } -> { rev }   409 + current { state, rev } if rev is stale
 //   PUT    /docs/{doc}/versions/{id}  { name, savedAt, state }
 //   DELETE /docs/{doc}/versions/{id}  409 if a tag points at it
 //   PUT    /docs/{doc}/tags/{name}    { versionId }  (a version of that doc)
 //   DELETE /docs/{doc}/tags/{name}    "default" can't be deleted
+//   PUT    /plan                      { plan, rev } -> { rev }   409 + current { plan, rev } if rev is stale
 //
-// Rows (pk = HOUSEHOLD#<id>): DOC#<doc>#STATE, DOC#<doc>#VERSION#<id>, TAG#<doc>#<name>, DEFAULTS.
+// Rows (pk = HOUSEHOLD#<id>): DOC#<doc>#STATE, DOC#<doc>#VERSION#<id>, TAG#<doc>#<name>, DEFAULTS,
+// PLAN (the Planning tab's timeline: which Shared tag applies from which month, plus one-off amounts).
 //
 // Auth is checked twice. API Gateway's JWT authorizer runs first, but this handler
 // does not trust it: it re-verifies the token's signature against the pool's JWKS
@@ -58,8 +60,9 @@ async function queryAll(prefix) {
 
 async function getAll() {
   const perDoc = () => Object.fromEntries(DOCS.map((d) => [d, []]));
-  const out = { docs: {}, versions: perDoc(), tags: perDoc() };
+  const out = { docs: {}, versions: perDoc(), tags: perDoc(), plan: null };
   for (const i of await queryAll('')) {
+    if (i.sk === 'PLAN') { out.plan = { plan: JSON.parse(i.plan), rev: i.rev }; continue; }
     const [kind, doc, sub, id] = i.sk.split('#');
     if (!DOCS.includes(doc)) continue;
     if (kind === 'TAG' && sub) out.tags[doc].push({ name: sub, versionId: i.versionId });
@@ -87,6 +90,41 @@ async function putState(doc, body, user) {
     if (e.name !== 'ConditionalCheckFailedException') throw e;
     const cur = await getItem(stateKey(doc));
     return json(409, { state: JSON.parse(cur.state), rev: cur.rev });
+  }
+  return json(200, { rev });
+}
+
+// The plan is checked strictly: the page and Dot both read it, so a malformed one shouldn't get in.
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const TAG = /^[a-z0-9][a-z0-9_-]{0,29}$/;
+function cleanPlan(p) {
+  if (!isObj(p) || !MONTH.test(p.start) || !Number.isInteger(p.months) || p.months < 6 || p.months > 60) return null;
+  if (!Number.isFinite(p.balance ?? 0) || !Array.isArray(p.steps) || !Array.isArray(p.oneOffs)) return null;
+  if (p.steps.length > 60 || p.oneOffs.length > 100) return null;
+  const steps = p.steps.map((s) => (isObj(s) && MONTH.test(s.from) && TAG.test(s.tag) ? { from: s.from, tag: s.tag } : null));
+  const oneOffs = p.oneOffs.map((o) => (isObj(o) && typeof o.id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(o.id) && MONTH.test(o.month)
+    && typeof o.label === 'string' && Number.isFinite(o.amount)
+    ? { id: o.id, month: o.month, label: o.label.slice(0, 60), amount: o.amount } : null));
+  if (steps.includes(null) || oneOffs.includes(null)) return null;
+  return { start: p.start, months: p.months, balance: p.balance ?? 0, steps, oneOffs };
+}
+
+async function putPlan(body, user) {
+  const expected = body.rev ?? null, plan = cleanPlan(body.plan);
+  if (!plan || !(expected === null || Number.isInteger(expected))) return json(400, { error: 'bad plan' });
+  const rev = (expected ?? 0) + 1;
+  try {
+    await db.send(new PutCommand({
+      TableName: TABLE,
+      Item: { pk: PK, sk: 'PLAN', plan: JSON.stringify(plan), rev, updatedAt: new Date().toISOString(), updatedBy: user },
+      ...(expected === null
+        ? { ConditionExpression: 'attribute_not_exists(pk)' }
+        : { ConditionExpression: 'rev = :rev', ExpressionAttributeValues: { ':rev': expected } }),
+    }));
+  } catch (e) {
+    if (e.name !== 'ConditionalCheckFailedException') throw e;
+    const cur = await getItem('PLAN');
+    return json(409, { plan: JSON.parse(cur.plan), rev: cur.rev });
   }
   return json(200, { rev });
 }
@@ -168,6 +206,8 @@ export const handler = async (event) => {
       return deleteVersion(doc, id);
     case 'PUT /docs/{doc}/tags/{name}':
       return putTag(doc, name, body, user);
+    case 'PUT /plan':
+      return putPlan(body, user);
     case 'DELETE /docs/{doc}/tags/{name}':
       if (name === 'default') return json(400, { error: 'default can’t be deleted' });
       await db.send(new DeleteCommand({ TableName: TABLE, Key: { pk: PK, sk: `TAG#${doc}#${name}` } }));

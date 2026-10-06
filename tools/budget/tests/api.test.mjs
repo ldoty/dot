@@ -129,3 +129,57 @@ test('Dot is read-only: every write is refused and nothing changes', async () =>
 test('Dot gets nothing for someone outside family_budget', async () => {
   assert.equal((await call('GET', '/all', undefined, dotToken({ group: 'family_assistant' }))).status, 403);
 });
+
+// --- The plan (Planning tab) ---
+
+const plan = (over = {}) => ({
+  start: '2026-11', months: 24, balance: 5000,
+  steps: [{ from: '2026-11', tag: 'default' }, { from: '2027-03', tag: 'stretch' }],
+  oneOffs: [{ id: 'o1', month: '2026-12', label: 'Settlement check', amount: 200000 }],
+  ...over,
+});
+
+test('the plan starts empty, saves with a rev, and comes back in GET /all', async () => {
+  assert.equal((await call('GET', '/all')).body.plan, null);
+  assert.deepEqual(await call('PUT', '/plan', { plan: plan(), rev: null }), { status: 200, body: { rev: 1 } });
+  const { body } = await call('GET', '/all');
+  assert.deepEqual(body.plan, { plan: plan(), rev: 1 });
+});
+
+test('a stale plan save gets 409 with the current plan', async () => {
+  await call('PUT', '/plan', { plan: plan(), rev: null });
+  assert.equal((await call('PUT', '/plan', { plan: plan({ months: 12 }), rev: 1 })).status, 200);
+  const stale = await call('PUT', '/plan', { plan: plan({ months: 36 }), rev: 1 });
+  assert.equal(stale.status, 409);
+  assert.deepEqual([stale.body.rev, stale.body.plan.months], [2, 12]);
+  assert.equal((await call('PUT', '/plan', { plan: plan(), rev: null })).status, 409, 'creating over an existing plan');
+});
+
+test('a malformed plan is refused and extra fields are dropped', async () => {
+  for (const bad of [
+    plan({ start: '2026-13' }), plan({ months: 3 }), plan({ months: 61 }), plan({ balance: 'lots' }),
+    plan({ steps: [{ from: '2026-11', tag: 'Bad Tag' }] }), plan({ steps: 'x' }),
+    plan({ oneOffs: [{ id: 'o1', month: '2026-12', label: 'x', amount: 'big' }] }),
+    plan({ oneOffs: [{ id: 'bad id', month: '2026-12', label: 'x', amount: 1 }] }),
+  ]) assert.equal((await call('PUT', '/plan', { plan: bad, rev: null })).status, 400, JSON.stringify(bad));
+  await call('PUT', '/plan', { plan: plan({ steps: [{ from: '2026-11', tag: 'default', junk: 1 }], extra: true }), rev: null });
+  assert.deepEqual(JSON.parse(table.get(PK, 'PLAN').plan).steps, [{ from: '2026-11', tag: 'default' }]);
+  assert.equal(JSON.parse(table.get(PK, 'PLAN').plan).extra, undefined);
+});
+
+test('Dot can read the plan but not change it', async () => {
+  await call('PUT', '/plan', { plan: plan(), rev: null });
+  assert.equal((await call('GET', '/all', undefined, dotToken())).body.plan.plan.start, '2026-11');
+  const r = await call('PUT', '/plan', { plan: plan({ months: 12 }), rev: 1 }, dotToken());
+  assert.deepEqual([r.status, r.body.error], [403, 'read-only']);
+  assert.equal(JSON.parse(table.get(PK, 'PLAN').plan).months, 24);
+});
+
+test('API Gateway routes match the ones the handler serves', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const tf = await readFile(new URL('../infra/api.tf', import.meta.url), 'utf8');
+  const src = await readFile(new URL('../api/api.mjs', import.meta.url), 'utf8');
+  const block = /for_each = toset\(\[([\s\S]*?)\]\)/.exec(tf)[1];
+  const served = [...src.matchAll(/case '([A-Z]+ \/[^']*)'/g)].map((m) => m[1]);
+  assert.deepEqual([...block.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort(), served.sort());
+});
