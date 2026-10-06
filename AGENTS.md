@@ -30,24 +30,6 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 AWS account `921782276410`, region `us-east-1`, CLI profile **`ldoty`**. State bucket
 `family-tfstate-921782276410`, one key per root (`platform/<x>/…`, `tools/<x>/…`).
 
-## Layout
-
-```
-platform/
-  bootstrap/  billing/  email/        roots
-  core/                               root: cert, DNS, Cognito pool + auth.dot-y.co, sign-in Lambdas, home page
-    lambda/  pre-token.mjs (group gate), sso-auth.mjs (hand-off + delegation), *.mjs symlinks to platform/api
-    portal/  the home page and public pages
-  api/        shared Lambda code, symlinked into tools: verify-token.mjs, delegation.mjs, dot-manifest.mjs
-  web/        shared page code, copied to every site: family-auth.js, family.css, favicon.svg, style-guide.html
-  modules/    family-app (app client, groups, access rule, tile, delegated client), static-site (S3 + CloudFront)
-  templates/tool/   what scripts/new-tool.sh copies
-  scripts/    new-tool.sh, invite.sh
-  tests/      platform tests + shared test helpers (tokens, fake-table, http)
-tools/<tool>/  web/ api/ infra/ scripts/ tests/ README.md   (each self-contained; infra is its own root)
-private/       gitignored: real household data. Never commit it, never copy it into tracked files.
-```
-
 ## How access works (keep all four checks)
 
 1. **Cognito group gate** (`platform/core/lambda/pre-token.mjs`): every app client registers a rule
@@ -78,13 +60,8 @@ Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`)
 
 ### Dot (the assistant) and tool discovery
 
-Dot (`tools/assistant`) runs one conversation turn per request (`api/agent.mjs` `runTurn`) on Claude
-via **Bedrock** (`AnthropicBedrock`, IAM-signed, no API key; model `us.anthropic.claude-opus-4-6-v1`,
-Opus 4.7+ needs AWS account approval). It acts as whoever is signed in (`var.people` in its `infra/api.tf`).
-
-Built-in tools are defined in `api/tools.mjs`: Google Calendar (implemented in `calendar.mjs`) and
-`read_budget` (`budget.mjs`; Budget has no manifest, and discovery skips its 404). **Everything else
-is discovered** (`api/discovery.mjs`): Dot lists `/family/delegation/*`, borrows a token for the
+Dot (`tools/assistant`; internals in `tools/assistant/AGENTS.md`) acts as whoever is signed in. Apart
+from its built-ins (calendar, `read_budget`), **every tool is discovered** (`api/discovery.mjs`): Dot lists `/family/delegation/*`, borrows a token for the
 asker, reads each tool's `GET /dot` manifest (`platform/api/dot-manifest.mjs`) and offers its
 operations as `<name>_<operation>` tools, GET only. To make a tool usable by Dot: `delegated = true`,
 publish `/family/delegation/<group>`, serve `GET /dot` (validate it with `validateManifest`), accept the
@@ -111,13 +88,8 @@ delegated client id in its token check, refuse non-GET from it. No Dot code chan
 
 ## Tests
 
-```sh
-npm install
-npm test             # node --test "platform/tests/*.test.mjs" "tools/*/tests/*.test.mjs" (no AWS)
-npm run test:live    # read-only checks against what's deployed: tools/*/tests/*.live.mjs (default to profile ldoty)
-```
-
-Only **top-level** `*.test.mjs` files in those folders run: a test in a subfolder (e.g. `tests/helpers/`)
+`npm test` needs no AWS; `npm run test:live` runs read-only checks against what's deployed (profile `ldoty`).
+Only **top-level** `*.test.mjs` files in `platform/tests/` and `tools/*/tests/` run: a test in a subfolder (e.g. `tests/helpers/`)
 or with another name is silently skipped.
 
 - **API tests** call the real handler through `platform/tests/helpers/http.mjs` (`caller(handler, routes)`)
@@ -165,50 +137,11 @@ npm run test:live
 
 ## Tool notes
 
-### Budget (`tools/budget`)
-Docs `shared`, `Luke`, `Amber`, each with a working copy (`DOC#<doc>#STATE`, with `rev`), saved
-versions (`DOC#<doc>#VERSION#<id>`) and tags (`TAG#<doc>#<name>`; `default` opens on load), plus a
-`DEFAULTS` row (the starting numbers, `GET /defaults`, used by Reset). A
-personal doc `follows` a Shared tag, or one Shared version directly (`@v:<id>`). The page normalizes
-state on load (`normalizeShared`, `normalizePerson`): every personal doc has a fixed, locked
-**Shared contributions** section (`contrib`) with `contrib-share` (`calc: share`: their share of
-Shared from the split slider, less travel) and `contrib-travel` (`calc: travel`: their part of the
-travel fund: Shared categories with `fund: "travel"`, else any named “travel”). `PLAN#<id>` rows (named, each with `rev`)
-hold the **Planning** tab's plans: steps `{from: YYYY-MM, tag}` (a Shared tag per stretch of months), `accounts`
-(balance, yearly `rate`, `paidBy` a Shared line that pays a loan down, one marked `savings`) and one-offs
-(into an `account`, or moved `to` another); saved = Shared categories with `kind: "save"`. Older plans'
-`balance` becomes one account on load. The page holds all
-the math; the API stores JSON blobs. Dot and the finances tools read it read-only (Dot gets the plans with Shared).
+Per-tool notes load when you work in that tool: `tools/budget/AGENTS.md` (docs, versions, tags, plans),
+`tools/finances/AGENTS.md` (deployments, sync, line ids, filing precedence), `tools/assistant/AGENTS.md` (Dot).
+Read them first when a change crosses into one of those tools (e.g. Dot or Finances reading Budget).
 
-### Finances (`tools/finances` + three deployments)
-One codebase; each deployment is `tools/<x>-finances/infra/main.tf` calling `../../finances/infra`
-with `tool`, `group`, `title`, `tile_description`, `partition` and `owner` (whose access reads the
-budget on the nightly sync). Personal deployments set `person` (Budget's doc name). Shared sets
-`mode = "shared"`, `sources` (the personal tools to read, and as whom), `delegates = ["dot"]` and a
-later `schedule`. Defaults: `mode = "personal"`, `delegates = ["dot", "shared_finances"]`.
-- **Sync** (`api/sync.mjs`, nightly 6:30 NY; Shared at 7:00; or “Sync now”): personal pulls SimpleFIN
-  (`simplefin.mjs`: claims a setup token once; 89 days the first time, then from 7 days before the
-  newest stored transaction; new accounts get a one-off 89-day backfill); shared pulls each personal
-  tool's `GET /shared/{from}` (from a week before its newest, or everything when `FEED` in `sync.mjs`
-  is bumped because the feed's shape changed) and de-duplicates
-  (accounts by bank + last 4, transactions by date + amount + description, keeping real repeats). Then:
-  read the budget as the owner → matched transfers → contributions → rules → Claude (`categorize.mjs`).
-- **Line ids** (filing targets): `L.<item>` personal line, `LC.<category>` a personal category's
-  General line, `S.<item>` / `SC.<category>` Shared (Shared Finances only), `X.transfer` Transfers (never
-  counted), `X.in.<Person>` / `X.in` money into Shared, `X.to.<account>` automatic “To <account>”
-  contribution lines (only when the budget has no `contrib` section), `L.contrib-share` / `L.contrib-travel`.
-  Personal tools never file to `S.`/`SC.` lines and Shared Finances never to `L.`/`LC.` (the sync clears such filings).
-- **Precedence**: your hand-filing (`source: you`) > matched transfers/contributions > merchant rules
-  (`RULE#<merchant>`, by you or Claude) > Claude. Claude is asked about a transaction once per budget
-  version (`asked`), never about contribution lines, and only about the view's own accounts.
-- **Accounts** have `owner` `mine` | `shared` | `off` (shared accounts appear only in the account list
-  of a personal tool; their data is Shared Finances') and, if shared, `fund` `household` | `travel`.
-- The budget a deployment follows (`SETTINGS.tag`): a tag, `@working` (live working copy) or `@v:<id>`.
-  `GET /month` re-reads it (as the person signed in) when the stored copy is over 5 minutes old;
-  “Refresh budget” on the page calls `PUT /settings` with the current tag to re-read it now.
-- `GET /month/{month}` is the page's (and Dot's) one read: summary, 3-month trend, transactions,
-  accounts, sync status. A transaction can count in the month before or after it posted (`month`).
-- **Never change the description of the `simplefin` SSM parameter**: rewriting a SecureString can
+- **Finances: never change the description of the `simplefin` SSM parameter**: rewriting a SecureString can
   replace its value (the live access URL). The module keeps it byte-for-byte.
 
 ### Others
@@ -233,4 +166,5 @@ later `schedule`. Defaults: `mode = "personal"`, `delegates = ["dot", "shared_fi
   bridge.simplefin.org often: the sync reports it; nothing to fix in code.
 - Headless Chrome has a ~500px minimum window: to see phone width, render the page in a 390px iframe.
 - Every site file is served with `max-age=60`; after a deploy, reload (or wait a minute).
+- `private/` is gitignored real household data: never commit it, never copy it into tracked files.
 - Real data stays out of git: seeds read from `private/`, fixtures in tests are invented.
