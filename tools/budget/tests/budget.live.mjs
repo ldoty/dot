@@ -33,8 +33,9 @@ test('the public page contains none of the household’s line items', async () =
   const lists = [...d.categories, ...Object.values(d.people).flatMap((p) => [{ items: p.income }, ...p.categories])];
   const names = lists.flatMap((c) => c.items.map((i) => i.name)).filter((n) => n && n.length > 4);
   assert.ok(names.length > 10, 'expected item names to check against');
-  // Generic line-item names the page's own calculations recognize (they follow the home value)
-  const LOGIC = ['Homeowners insurance', 'Property tax'];
+  // Generic names the page itself uses: lines its calculations recognize (they follow the home value),
+  // and the fixed Travel line in every personal budget's Shared contributions
+  const LOGIC = ['Homeowners insurance', 'Property tax', 'Travel'];
   const leaked = names.filter((n) => !LOGIC.includes(n) && page.includes(n));
   assert.deepEqual(leaked, []);
 });
