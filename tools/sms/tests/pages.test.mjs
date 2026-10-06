@@ -27,6 +27,11 @@ test('no placeholder or unfinished content anywhere', () => {
   }
 });
 
+// The Twilio campaign is registered without “Embedded links”: the pages mustn't promise them
+test('no page says messages contain links', () => {
+  for (const [name, html] of Object.entries(pages)) assert.doesNotMatch(text(html), /(messages|texts)[^.]*\b(contain|include)[^.]*links/i, name);
+});
+
 test('each page links to the other two', () => {
   const links = (html) => [...new JSDOM(html).window.document.querySelectorAll('a')].map((a) => a.getAttribute('href'));
   assert.ok(['/privacy', '/terms'].every((h) => links(pages.sms).includes(h)));
