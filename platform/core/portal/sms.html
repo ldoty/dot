@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dot-y text messages: sign up</title>
-<meta name="description" content="Sign up for text messages from Dot-y, a family assistant app for to-dos, reminders and questions.">
+<title>Join Dot-y</title>
+<meta name="description" content="Join Dot-y, and optionally get text messages from it: a family assistant app for to-dos, reminders and questions.">
 <link rel="icon" type="image/svg+xml" href="/style/favicon.svg">
 <link rel="stylesheet" href="/style/family.css">
 <style>
-/* Layout: one readable column. Program description, then the sign-up form, then program details. */
+/* Layout: one readable column. Program description, then the sign-up form (texts optional), then program details. */
 .wrap { max-width: 680px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 28px }
 nav.site { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px }
 nav.site a { color: var(--muted); text-decoration: none }
@@ -20,6 +20,7 @@ ul.examples { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px }
 form.card { display: grid; gap: 14px }
 .field { display: grid; gap: 4px }
 .field label { font-weight: 600; font-size: 14px }
+.field .opt { font-weight: 400; color: var(--muted) }
 .field input { font: 16px var(--body); color: var(--ink); background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 10px 12px }
 .field input:focus { border-color: var(--pool); outline: none }
 .consent { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; font-size: 14.5px; line-height: 1.5 }
@@ -56,15 +57,17 @@ footer a { color: var(--muted) }
   </section>
 
   <section aria-labelledby="signup">
-    <h2 id="signup">Sign up</h2>
-    <p style="margin-bottom:12px">Dot-y is invitation only. If someone in your household has invited you to Dot-y, sign up here to get texts.</p>
+    <h2 id="signup">Join Dot-y</h2>
+    <p style="margin-bottom:12px">Dot-y is invitation only. If someone in your household has invited you, join here and we’ll email you a sign-in for Dot-y on the web.</p>
+    <p id="optional" style="margin-bottom:12px"><strong>Text messages are optional.</strong> You can use Dot-y without them: leave the box unchecked and the mobile number blank. You can also sign up for texts later.</p>
     <form class="card" id="optin" novalidate>
       <div class="field"><label for="name">Your name</label><input id="name" name="name" autocomplete="name" maxlength="100" required></div>
-      <div class="field"><label for="phone">Mobile number</label><input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="(555) 555-5555" required></div>
+      <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" maxlength="200" required></div>
+      <div class="field"><label for="phone">Mobile number <span class="opt">(optional, only for texts)</span></label><input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="(555) 555-5555"></div>
       <div class="hp" aria-hidden="true"><label for="company">Company</label><input id="company" name="company" tabindex="-1" autocomplete="off"></div>
       <label class="consent"><input type="checkbox" id="consent" name="consent"><span id="consent-text">I agree to receive recurring personal reminder and assistant text messages from Dot-y (Luke Doty) at the number provided. Message frequency varies. Msg &amp; data rates may apply. Reply HELP for help, STOP to opt out. Consent is not a condition of any purchase. See our <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms</a>.</span></label>
       <p class="msg error" id="error" role="alert" hidden></p>
-      <div><button class="btn primary" id="submit">Sign up for texts</button></div>
+      <div><button class="btn primary" id="submit">Join Dot-y</button></div>
     </form>
     <div class="done" id="done" role="status" hidden></div>
   </section>
@@ -91,20 +94,22 @@ footer a { color: var(--muted) }
     e.preventDefault();
     err.hidden = true;
     var f = form.elements; // the inputs (the form itself has its own "name" property)
-    var name = f.name.value.trim(), phone = f.phone.value.trim();
+    var name = f.name.value.trim(), email = f.email.value.trim(), phone = f.phone.value.trim(), texts = f.consent.checked;
     if (!name) return fail("Please enter your name.", "name");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("Please enter a valid email address.", "email");
+    // The number is optional, but needed (and checked) when the box is
     var digits = phone.replace(/\D/g, "");
     if (digits.length === 11 && digits[0] === "1") digits = digits.slice(1);
-    if (!/^[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return fail("Please enter a valid US mobile number.", "phone");
-    if (!f.consent.checked) return fail("Please check the box to agree to receive messages.", "consent");
-    btn.disabled = true; btn.textContent = "Signing up…";
+    if (texts && !phone) return fail("To get texts, please enter your mobile number.", "phone");
+    if (phone && !/^[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return fail("Please enter a valid US mobile number, or leave it blank.", "phone");
+    btn.disabled = true; btn.textContent = "Joining…";
     fetch("/sms-config.json").then(function (r) { return r.json(); }).then(function (cfg) {
       return fetch(cfg.optinUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          name: name, phone: phone, consent: true, company: f.company.value,
-          consentText: document.getElementById("consent-text").textContent.replace(/\s+/g, " ").trim(),
+          name: name, email: email, phone: phone, consent: texts, company: f.company.value,
+          consentText: texts ? document.getElementById("consent-text").textContent.replace(/\s+/g, " ").trim() : null,
           page: location.href,
         }),
       });
@@ -113,12 +118,14 @@ footer a { color: var(--muted) }
         if (!res.ok) throw new Error(b.error || "Something went wrong. Please try again.");
         form.hidden = true;
         var done = document.getElementById("done");
-        done.textContent = "Thanks, " + name + ". You’re signed up for Dot-y texts at " + phone + ". Reply HELP for help or STOP to opt out at any time.";
+        done.textContent = "Thanks, " + name + ". We’ll email your Dot-y sign-in to " + email + "." + (texts
+          ? " You’re also signed up for Dot-y texts at " + phone + ". Reply HELP for help or STOP to opt out at any time."
+          : " You didn’t sign up for texts.");
         done.hidden = false;
       });
     }).catch(function (e) {
       fail(e.message || "Something went wrong. Please try again.");
-      btn.disabled = false; btn.textContent = "Sign up for texts";
+      btn.disabled = false; btn.textContent = "Join Dot-y";
     });
   });
 })();
