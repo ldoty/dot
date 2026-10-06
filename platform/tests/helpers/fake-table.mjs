@@ -65,6 +65,7 @@ export function fakeTable() {
   return {
     put: (item) => rows.set(key(item), clone(item)),
     get: (pk, sk) => clone(rows.get(`${pk}|${sk}`)),
+    delete: (pk, sk) => rows.delete(`${pk}|${sk}`),
     keys: () => [...rows.keys()].map((k) => k.split('|')[1]).sort(),
     clear: () => rows.clear(),
     dump: () => [...rows.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),

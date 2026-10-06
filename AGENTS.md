@@ -173,10 +173,10 @@ personal doc `follows` a Shared tag, or one Shared version directly (`@v:<id>`).
 state on load (`normalizeShared`, `normalizePerson`): every personal doc has a fixed, locked
 **Shared contributions** section (`contrib`) with `contrib-share` (`calc: share`: their share of
 Shared from the split slider, less travel) and `contrib-travel` (`calc: travel`: their part of the
-travel fund: Shared categories with `fund: "travel"`, else any named “travel”). A `PLAN` row (with `rev`)
-holds the **Planning** tab: steps `{from: YYYY-MM, tag}` (a Shared tag per stretch of months), one-offs and
+travel fund: Shared categories with `fund: "travel"`, else any named “travel”). `PLAN#<id>` rows (named, each with `rev`)
+hold the **Planning** tab's plans: steps `{from: YYYY-MM, tag}` (a Shared tag per stretch of months), one-offs and
 a starting balance; saved = Shared categories with `kind: "save"`. The page holds all
-the math; the API stores JSON blobs. Dot and the finances tools read it read-only (Dot gets the plan with Shared).
+the math; the API stores JSON blobs. Dot and the finances tools read it read-only (Dot gets the plans with Shared).
 
 ### Finances (`tools/finances` + three deployments)
 One codebase; each deployment is `tools/<x>-finances/infra/main.tf` calling `../../finances/infra`

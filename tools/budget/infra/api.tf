@@ -103,7 +103,8 @@ resource "aws_apigatewayv2_route" "api" {
   for_each = toset([
     "GET /all", "GET /defaults", "PUT /docs/{doc}/state",
     "PUT /docs/{doc}/versions/{id}", "DELETE /docs/{doc}/versions/{id}",
-    "PUT /docs/{doc}/tags/{name}", "DELETE /docs/{doc}/tags/{name}", "PUT /plan",
+    "PUT /docs/{doc}/tags/{name}", "DELETE /docs/{doc}/tags/{name}",
+    "PUT /plans/{id}", "DELETE /plans/{id}",
   ])
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = each.key

@@ -8,11 +8,11 @@ const ALL = {
   docs: { shared: { state: { split: 50, categories: [] }, rev: 3 }, Luke: { state: { income: [] }, rev: 1 }, Amber: { state: { income: [] }, rev: 1 } },
   versions: { shared: [{ id: 'v1', name: 'Starting point', savedAt: Date.UTC(2026, 9, 1), state: { split: 40 } }], Luke: [], Amber: [] },
   tags: { shared: [{ name: 'default', versionId: 'v1' }], Luke: [], Amber: [] },
-  plan: { rev: 2, plan: {
+  plans: [{ id: 'p1', name: 'Pay HELOC', rev: 2, plan: {
     start: '2026-11', months: 24, balance: 5000,
     steps: [{ from: '2026-11', tag: 'default' }, { from: '2027-03', tag: 'gone' }],
     oneOffs: [{ id: 'o1', month: '2026-12', label: 'Check', amount: 200000 }],
-  } },
+  } }],
 };
 
 function setup({ tokenFor, status = 200 } = {}) {
@@ -69,13 +69,13 @@ test('tools: no calendars means no calendar tools; read_budget checks which budg
   assert.equal(JSON.parse(ok.content).budget, 'Amber');
 });
 
-test('the shared budget comes with the plan, steps named by the version their tag points to', async () => {
+test('the shared budget comes with the plans, steps named by the version their tag points to', async () => {
   const { budget } = setup();
-  assert.deepEqual((await budget.read({ doc: 'shared' })).plan, {
-    start: '2026-11', months: 24, starting_balance: 5000,
+  assert.deepEqual((await budget.read({ doc: 'shared' })).plans, [{
+    name: 'Pay HELOC', start: '2026-11', months: 24, starting_balance: 5000,
     steps: [{ from: '2026-11', tag: 'default', version: 'Starting point' }, { from: '2027-03', tag: 'gone', version: null }],
     one_offs: [{ month: '2026-12', label: 'Check', amount: 200000 }],
-  });
-  assert.equal((await budget.read({ doc: 'Luke' })).plan, undefined);
-  assert.equal((await budget.read({ version: 'default' })).plan, undefined);
+  }]);
+  assert.equal((await budget.read({ doc: 'Luke' })).plans, undefined);
+  assert.equal((await budget.read({ version: 'default' })).plans, undefined);
 });

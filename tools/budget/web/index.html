@@ -236,6 +236,11 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; margin: 10px 0 0; list-style: none; padding: 0 }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px }
 .p-list { display: grid; gap: 0; margin: 0 0 8px }
+.p-bar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px 14px; align-items: end; margin-bottom: 20px }
+.p-acts { display: flex; gap: 6px }
+.p-acts button { padding: 6px 12px; font-size: 13px }
+.p-acts .v-del.arm { color: var(--bad); border-color: var(--bad) }
+@media (max-width: 760px) { .p-bar { grid-template-columns: 1fr 1fr } .p-acts { grid-column: 1 / -1; order: 3 } .p-bar .fld:last-child { order: 4; grid-column: 1 / -1 } }
 .p-row { display: grid; grid-template-columns: minmax(0, 1fr) 30px; gap: 6px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line) }
 .p-row [data-p="step-tag"] { grid-column: 1 / -1; grid-row: 2 }
 .p-row.once { grid-template-columns: minmax(0, 1fr) 110px 30px }
@@ -840,12 +845,19 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
   // A timeline of the months ahead: from a given month on, a Shared tag sets the numbers (tags move,
   // so the plan follows them), and one-off amounts (a check in, a closing out) land in their month.
   // Saved is whatever Shared categories are marked Savings; everything else, mortgage included, is
-  // spending. The running total starts from the plan's starting balance. Shared by Luke and Amber,
-  // saved on its own with a rev like the docs.
+  // spending. The running total starts from the plan's starting balance. Plans are named and shared
+  // by Luke and Amber; each saves on its own with a rev like the docs. Another plan's running total
+  // can be drawn over this one's to compare them.
   var PLAN = "plan", VKEY = "luke-amber-budget-planview";
-  var plan = null, planRev = null, planSync = { timer: null, saving: false, dirty: false };
-  var planView = { view: "spend", cum: false };
-  try { var pv0 = JSON.parse(localStorage.getItem(VKEY) || "null"); if (pv0) planView = { view: pv0.view === "save" ? "save" : "spend", cum: !!pv0.cum }; } catch (e) {}
+  // plans: [{ id, name, plan, rev }]. cur is the one on screen and plan its timeline. A plan that was
+  // never saved has rev null; its first save creates it.
+  var plans = [], cur = null, plan = null, planSync = { timer: null, saving: false, dirty: false };
+  // Per viewer, not part of any plan: the view, and which plans are open and compared
+  var planView = { view: "spend", cum: false, id: null, cmp: null };
+  try {
+    var pv0 = JSON.parse(localStorage.getItem(VKEY) || "null");
+    if (pv0) planView = { view: pv0.view === "save" ? "save" : "spend", cum: !!pv0.cum, id: pv0.id || null, cmp: pv0.cmp || null };
+  } catch (e) {}
   var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function thisMonth() { var d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1); }
@@ -865,20 +877,49 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     p.oneOffs = p.oneOffs || [];
     return p;
   }
-  function planMonths() { var out = []; for (var i = 0; i < plan.months; i++) out.push(addMonths(plan.start, i)); return out; }
+  function planMonths(p) { var out = []; for (var i = 0; i < p.months; i++) out.push(addMonths(p.start, i)); return out; }
   // The step in effect in a month: the latest one that has started, or the first before any has
-  function stepAt(ym) {
-    var s = plan.steps[0];
-    plan.steps.forEach(function (x) { if (x.from <= ym) s = x; });
+  function stepAt(p, ym) {
+    var s = p.steps[0];
+    p.steps.forEach(function (x) { if (x.from <= ym) s = x; });
     return s;
+  }
+  function freshPlan(name, p) { return { id: uid(), name: name, rev: null, plan: p || newPlan() }; }
+  function byName(a, b) { return a.name.localeCompare(b.name); }
+  function openPlan(e) { cur = e; plan = e.plan; planView.id = e.id; if (planView.cmp === e.id) planView.cmp = null; saveView(); }
+  function cmpPlan() { return plans.filter(function (x) { return x.id === planView.cmp && x !== cur; })[0] || null; }
+  // From GET /all. Plans changed elsewhere come in, except the open one while its edits are on the
+  // way; a plan deleted elsewhere goes, unless it's open and not saved yet.
+  function setPlans(list) {
+    var busy = cur && (planSync.dirty || planSync.saving) ? cur : null;
+    var next = (list || []).map(function (e) {
+      if (busy && e.id === busy.id) return busy;
+      var mine = plans.filter(function (x) { return x.id === e.id; })[0];
+      if (mine && mine.rev === e.rev) return mine;
+      if (!mine) mine = { id: e.id };
+      mine.name = e.name; mine.rev = e.rev; mine.plan = normalizePlan(e.plan);
+      return mine;
+    });
+    if (cur && next.indexOf(cur) < 0 && (cur.rev === null || busy === cur)) next.push(cur);
+    if (!next.length) next.push(freshPlan("Plan"));
+    plans = next.sort(byName);
+    var id = cur ? cur.id : planView.id;
+    openPlan(plans.filter(function (x) { return x.id === id; })[0] || plans.filter(function (x) { return x.id === planView.id; })[0] || plans[0]);
+  }
+  function dropPlan(e) {
+    plans = plans.filter(function (x) { return x !== e; });
+    if (!plans.length) plans.push(freshPlan("Plan"));
+    if (planView.cmp === e.id) planView.cmp = null;
+    if (cur === e) openPlan(plans[0]);
+    if (tab === PLAN) render();
   }
   function tagVersion(tn) { var t = tagFor("shared", tn); return t ? sharedVersion(t.versionId) || null : null; }
   var SAVED = "Saved", ONCE = "One-offs", MORT = "Mortgage";
   // Each month's numbers, from the version its step's tag points to now
-  function projection() {
-    var cache = {}, run = plan.balance, rows = [];
-    planMonths().forEach(function (ym) {
-      var step = stepAt(ym), v = tagVersion(step.tag), spend = {}, spent = 0, saved = 0;
+  function projection(p) {
+    var cache = {}, run = p.balance, rows = [];
+    planMonths(p).forEach(function (ym) {
+      var step = stepAt(p, ym), v = tagVersion(step.tag), spend = {}, spent = 0, saved = 0;
       if (v) {
         var S = cache[v.id] || (cache[v.id] = sharedSummary(normalizeShared(clone(v.state))));
         if (S.mort) { spend[MORT] = S.mort; spent += S.mort; }
@@ -887,7 +928,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
           var n = x.c.name || "Untitled"; spend[n] = (spend[n] || 0) + x.t; spent += x.t;
         });
       }
-      var once = plan.oneOffs.filter(function (o) { return o.month === ym; });
+      var once = p.oneOffs.filter(function (o) { return o.month === ym; });
       var onceSum = once.reduce(function (t, o) { return t + (Number(o.amount) || 0); }, 0);
       run += saved + onceSum;
       rows.push({ ym: ym, step: step, v: v, spend: spend, spent: spent, saved: saved, once: once, onceSum: onceSum, run: run });
@@ -917,7 +958,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
   }
   // One bar per month. Spending: categories stacked. Saved: savings and one-offs (negative ones hang
   // below zero), or with Running total, the balance at the end of each month.
-  function chartSvg(rows, series) {
+  function chartSvg(rows, series, cmpRows) {
     var W = 760, H = 300, L = 58, R = 10, T = 30, B = 26, n = rows.length, cw = (W - L - R) / n, bw = Math.max(2, cw * 0.72);
     var save = planView.view === "save", cum = save && planView.cum;
     var bars = rows.map(function (r) {
@@ -927,7 +968,11 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       if (cum) return [{ v: r.run, color: r.run < 0 ? "var(--ember)" : "var(--leaf)", name: "Running total" }];
       return [{ v: r.saved, color: "var(--leaf)", name: SAVED }, { v: r.onceSum, color: r.onceSum < 0 ? "var(--ember)" : "var(--sun)", name: ONCE }];
     });
+    // The compared plan's running total, by month, drawn as a line over this plan's running total
+    var other = {};
+    if (cum && cmpRows) cmpRows.forEach(function (r) { other[r.ym] = r.run; });
     var hi = 0, lo = 0;
+    Object.keys(other).forEach(function (ym) { hi = Math.max(hi, other[ym]); lo = Math.min(lo, other[ym]); });
     bars.forEach(function (parts) {
       var up = 0, down = 0;
       parts.forEach(function (p) { if (p.v > 0) up += p.v; else down += p.v; });
@@ -956,6 +1001,12 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       }).join("") + "</g>");
       if (i % every === 0) out.push('<text x="' + (L + i * cw + cw / 2).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + monthName(r.ym, false) + (i === 0 || r.ym.slice(5) === "01" ? " ’" + r.ym.slice(2, 4) : "") + "</text>");
     });
+    var path = "", pen = "M";
+    rows.forEach(function (r, i) {
+      if (!(r.ym in other)) { pen = "M"; return; }
+      path += pen + (L + i * cw + cw / 2).toFixed(1) + " " + y(other[r.ym]).toFixed(1) + " "; pen = "L";
+    });
+    if (path) out.push('<path class="cmp-line" d="' + path.trim() + '" fill="none" style="stroke:var(--ink)" stroke-width="2" stroke-dasharray="6 4"/>');
     // Where the plan switches to another tag
     rows.forEach(function (r, i) {
       if (!i || r.step === rows[i - 1].step) return;
@@ -965,9 +1016,10 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     });
     return '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + (save ? (cum ? "Running total" : "Saved") : "Spending by category") + ' by month">' + out.join("") + "</svg>";
   }
-  function legendHtml(series) {
+  function legendHtml(series, cmp) {
     var items = planView.view === "save"
-      ? (planView.cum ? [["Running total", "var(--leaf)"], ["Below zero", "var(--ember)"]] : [[SAVED + " (Savings categories)", "var(--leaf)"], [ONCE + " in", "var(--sun)"], [ONCE + " out", "var(--ember)"]])
+      ? (planView.cum ? [["Running total", "var(--leaf)"], ["Below zero", "var(--ember)"]].concat(cmp ? [["“" + cmp.name + "”", "var(--ink)"]] : [])
+        : [[SAVED + " (Savings categories)", "var(--leaf)"], [ONCE + " in", "var(--sun)"], [ONCE + " out", "var(--ember)"]])
       : series.map(function (s) { return [s.name, s.color]; });
     return items.map(function (x) { return '<li><i style="background:' + x[1] + '"></i>' + esc(x[0]) + "</li>"; }).join("");
   }
@@ -1001,8 +1053,18 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
         '<button class="del" data-pact="once-del" data-id="' + esc(o.id) + '" aria-label="Remove ' + esc(o.label || "one-off") + '" title="Remove">&times;</button>' +
         '<input class="p-label" data-p="once-label" data-id="' + esc(o.id) + '" placeholder="What it is" aria-label="What it is" maxlength="60" value="' + esc(o.label) + '"></div>';
     }).join("");
+    var others = plans.filter(function (x) { return x !== cur; });
+    var bar = '<div class="panel p-bar">' +
+      '<div class="fld"><label for="p-pick">Plan</label><select id="p-pick" data-p="pick">' + plans.map(function (x) {
+        return '<option value="' + esc(x.id) + '"' + (x === cur ? " selected" : "") + ">" + esc(x.name || "Untitled") + "</option>";
+      }).join("") + "</select></div>" +
+      '<div class="fld"><label for="p-name">Name</label><input id="p-name" data-p="name" maxlength="60" value="' + esc(cur.name) + '"></div>' +
+      '<div class="p-acts"><button data-pact="plan-new">New</button><button data-pact="plan-dup">Duplicate</button>' +
+      '<button class="v-del" data-pact="plan-del"' + (plans.length < 2 ? " disabled" : "") + ">Delete</button></div>" +
+      '<div class="fld"><label for="p-cmp">Compare with</label><select id="p-cmp" data-p="cmp"' + (others.length ? "" : " disabled") + '><option value="">' + (others.length ? "Nothing" : "No other plans yet") + "</option>" +
+      others.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === planView.cmp ? " selected" : "") + ">" + esc(x.name || "Untitled") + "</option>"; }).join("") + "</select></div></div>";
     var lengths = [12, 24, 36, 60].map(function (m) { return '<option value="' + m + '"' + (plan.months === m ? " selected" : "") + ">" + m + " months</option>"; }).join("");
-    return '<div class="tiles">' + tile("Average spending", "pk-spend") + tile("Saved over the plan", "pk-saved") + tile("One-offs", "pk-once") + tile("Running total at the end", "pk-end") + "</div>" +
+    return bar + '<div class="tiles">' + tile("Average spending", "pk-spend") + tile("Saved over the plan", "pk-saved") + tile("One-offs", "pk-once") + tile("Running total at the end", "pk-end") + "</div>" +
       '<div class="layout"><div>' +
       '<section class="chart-card"><div class="chart-head"><h2>Month by month</h2><div class="savebar">' +
       '<span class="seg" role="group" aria-label="Show"><button data-pact="view" data-v="spend" aria-pressed="' + (planView.view === "spend") + '">Spending</button>' +
@@ -1010,7 +1072,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       '<label class="cum"' + (planView.view === "save" ? "" : " hidden") + '><input type="checkbox" data-p="cum"' + (planView.cum ? " checked" : "") + "> Running total</label></div></div>" +
       '<p class="note" id="p-warn" hidden></p>' +
       '<div class="chart-scroll" id="p-chart"></div><ul class="legend" id="p-legend"></ul></section>' +
-      '<details class="chart-card p-detail"><summary>Table</summary><div class="p-table-wrap"><table class="p-table"><thead><tr><th>Month</th><th>Using</th><th>Spending</th><th>Saved</th><th>One-offs</th><th>Running total</th></tr></thead><tbody id="p-rows"></tbody></table></div></details>' +
+      '<details class="chart-card p-detail"><summary>Table</summary><div class="p-table-wrap"><table class="p-table"><thead id="p-head"></thead><tbody id="p-rows"></tbody></table></div></details>' +
       "</div>" +
       '<aside class="rail">' +
       '<div class="panel"><h3>Timeline</h3><div class="p-fields">' +
@@ -1026,9 +1088,11 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       "</aside></div>";
   }
   function drawPlan() {
-    var rows = projection(), series = ranked(rows), el = document.getElementById("p-chart"); if (!el) return;
-    el.innerHTML = chartSvg(rows, series);
-    document.getElementById("p-legend").innerHTML = legendHtml(series);
+    var rows = projection(plan), series = ranked(rows), el = document.getElementById("p-chart"); if (!el) return;
+    var cmp = cmpPlan(), cmpRows = cmp ? projection(cmp.plan) : null, cmpRun = {};
+    if (cmpRows) cmpRows.forEach(function (r) { cmpRun[r.ym] = r.run; });
+    el.innerHTML = chartSvg(rows, series, cmpRows);
+    document.getElementById("p-legend").innerHTML = legendHtml(series, cmp);
     var n = rows.length, spent = rows.reduce(function (t, r) { return t + r.spent; }, 0), saved = rows.reduce(function (t, r) { return t + r.saved; }, 0);
     var once = rows.reduce(function (t, r) { return t + r.onceSum; }, 0), end = rows[n - 1].run;
     var low = rows.reduce(function (m, r) { return r.run < m.run ? r : m; }, rows[0]);
@@ -1037,6 +1101,19 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     var inSum = plan.oneOffs.reduce(function (t, o) { return t + Math.max(0, o.amount); }, 0);
     set("pk-once", money.format(once)); set("pk-once-yr", plan.oneOffs.length ? money.format(inSum) + " in · " + money.format(inSum - once) + " out" : "None yet");
     set("pk-end", money.format(end)); set("pk-end-yr", "by " + monthName(rows[n - 1].ym, true) + (low.run < Math.min(end, plan.balance) ? " · lowest " + money.format(low.run) + " in " + monthName(low.ym, true) : ""));
+    var lastYm = rows[n - 1].ym;
+    // What the two of you pay in is Shared's whole budget, savings included, so a cheaper plan shows
+    // here (the money stays with each of you), not in Shared's running total
+    if (cmp) {
+      var cmpIn = {}; cmpRows.forEach(function (r) { cmpIn[r.ym] = r.spent + r.saved; });
+      var both = rows.filter(function (r) { return r.ym in cmpIn; });
+      var dIn = both.reduce(function (t, r) { return t + r.spent + r.saved - cmpIn[r.ym]; }, 0);
+      if (both.length) set("pk-spend-yr", "You’d pay in " + money.format(Math.abs(dIn)) + (dIn > 0 ? " more" : " less") + " than “" + cmp.name + "”" + (both.length < n ? " (shared months)" : ""));
+    }
+    if (cmp && lastYm in cmpRun) {
+      var d = end - cmpRun[lastYm];
+      set("pk-end-yr", "by " + monthName(lastYm, true) + " · " + (d < 0 ? "−" : "+") + money.format(Math.abs(d)) + " vs “" + cmp.name + "”");
+    }
     var ke = document.getElementById("pk-end"); if (ke) ke.className = "val " + (end < 0 ? "neg" : "pos");
     plan.steps.forEach(function (s, i) {
       var r = rows.filter(function (x) { return x.step === s; })[0];
@@ -1049,10 +1126,13 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     warn.textContent = (missing.length ? "No Shared version is tagged " + missing.join(", ") + ", so those months show nothing. " : "") +
       (noSavings ? "Nothing in Shared is marked Savings yet: mark a category Savings on the Shared tab to count it as saved." : "");
     warn.hidden = !warn.textContent;
+    document.getElementById("p-head").innerHTML = "<tr><th>Month</th><th>Using</th><th>Spending</th><th>Saved</th><th>One-offs</th><th>Running total</th>" +
+      (cmp ? "<th>“" + esc(cmp.name) + "”</th>" : "") + "</tr>";
     document.getElementById("p-rows").innerHTML = rows.map(function (r, i) {
       var cell = function (v) { return '<td class="' + (v < 0 ? "neg" : "") + '">' + money.format(v) + "</td>"; };
       return '<tr' + (i && r.step !== rows[i - 1].step ? ' class="step"' : "") + "><td>" + monthName(r.ym, true) + "</td><td>" + esc(r.step.tag) + (r.v ? " → " + esc(r.v.name) : "") + "</td>" +
-        cell(r.spent) + cell(r.saved) + (r.once.length ? cell(r.onceSum) : "<td></td>") + cell(r.run) + "</tr>";
+        cell(r.spent) + cell(r.saved) + (r.once.length ? cell(r.onceSum) : "<td></td>") + cell(r.run) +
+        (cmp ? (r.ym in cmpRun ? cell(cmpRun[r.ym]) : "<td></td>") : "") + "</tr>";
     }).join("");
   }
   function planChanged(redraw) {
@@ -1064,10 +1144,28 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     if (t.dataset.p === "balance") { plan.balance = parseFloat(t.value.replace(/[^0-9.\-]/g, "")) || 0; planChanged(); }
     else if (t.dataset.p === "once-amount" && o) { o.amount = parseFloat(t.value.replace(/[^0-9.\-]/g, "")) || 0; planChanged(); }
     else if (t.dataset.p === "once-label" && o) { o.label = t.value; planChanged(); }
+    else if (t.dataset.p === "name") {
+      cur.name = t.value;
+      var opt = app.querySelector('#p-pick option[value="' + cur.id + '"]'); if (opt) opt.textContent = t.value || "Untitled";
+      planChanged();
+    }
   }
   function planChange(t) {
     var i = Number(t.dataset.i), o = plan.oneOffs.filter(function (x) { return x.id === t.dataset.id; })[0];
     if (t.dataset.p === "cum") { planView.cum = t.checked; saveView(); drawPlan(); return; }
+    if (t.dataset.p === "pick") {
+      flushPlan(); // the plan being left saves first; its save carries on in the background
+      var e = plans.filter(function (x) { return x.id === t.value; })[0]; if (!e) return;
+      openPlan(e); render(); return;
+    }
+    // A renamed plan takes its place in the list once the name is done, not while it's typed
+    if (t.dataset.p === "name") { plans.sort(byName); render(); return; }
+    if (t.dataset.p === "cmp") {
+      // Comparing is about where the money ends up: show the running totals
+      planView.cmp = t.value || null;
+      if (planView.cmp) { planView.view = "save"; planView.cum = true; }
+      saveView(); render(); return;
+    }
     if (t.dataset.p === "start") {
       // The first step always starts with the plan; later ones keep their months
       plan.start = t.value; plan.steps[0].from = t.value;
@@ -1082,6 +1180,24 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
   function planAction(t) {
     var a = t.dataset.pact;
     if (a === "view") { planView.view = t.dataset.v; saveView(); render(); return; }
+    if (a === "plan-new" || a === "plan-dup") {
+      flushPlan();
+      var e = a === "plan-new" ? freshPlan("Plan " + (plans.length + 1)) : freshPlan(cur.name + " copy", normalizePlan(clone(cur.plan)));
+      plans.push(e); plans.sort(byName); openPlan(e);
+      planChanged(true); flushPlan();
+      var ni = document.getElementById("p-name"); if (ni) { ni.focus(); ni.select(); }
+      setStatus(a === "plan-new" ? "New plan" : "Copied “" + e.name.replace(/ copy$/, "") + "”");
+      return;
+    }
+    if (a === "plan-del") {
+      var key = "plan:" + cur.id;
+      if (armedDel !== key) {
+        armedDel = key; t.textContent = "Click again to delete"; t.classList.add("arm");
+        setTimeout(function () { if (armedDel === key) { armedDel = null; t.textContent = "Delete"; t.classList.remove("arm"); } }, 3000);
+        return;
+      }
+      armedDel = null; deletePlan(); return;
+    }
     if (a === "step-add") {
       var last = plan.steps[plan.steps.length - 1], end = addMonths(plan.start, plan.months - 1);
       var from = last.from < end ? addMonths(last.from < plan.start ? plan.start : last.from, 1) : end;
@@ -1093,19 +1209,32 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     planChanged(true);
     if (a === "once-add") { var li = app.querySelectorAll('[data-p="once-label"]'); if (li.length) li[li.length - 1].focus(); }
   }
+  function deletePlan() {
+    var e = cur;
+    if (planSync.saving) { setStatus("Still saving. Try again in a moment."); return; }
+    clearTimeout(planSync.timer); planSync.dirty = false;
+    (e.rev === null ? Promise.resolve({ ok: true }) : api("DELETE", "/plans/" + e.id)).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      dropPlan(e); setStatus("Deleted “" + e.name + "”");
+    }).catch(function () { setStatus("Couldn’t delete the plan. Try again."); });
+  }
+  // Saves the open plan (as it is when the save starts, even if another plan is opened meanwhile)
   function flushPlan() {
     clearTimeout(planSync.timer); planSync.timer = null;
-    if (!planSync.dirty || planSync.saving) return;
+    if (!planSync.dirty || planSync.saving || !cur) return;
+    var e = cur;
     planSync.saving = true; planSync.dirty = false;
     var retry = false;
-    api("PUT", "/plan", { plan: plan, rev: planRev }).then(function (res) {
+    api("PUT", "/plans/" + e.id, { name: e.name.trim() || "Untitled", plan: e.plan, rev: e.rev }).then(function (res) {
+      if (res.status === 404) { dropPlan(e); setStatus("That plan was deleted somewhere else."); return; }
       if (res.status === 409) return res.json().then(function (c) {
-        plan = normalizePlan(c.plan); planRev = c.rev; planSync.dirty = false;
+        e.name = c.name; e.plan = normalizePlan(c.plan); e.rev = c.rev;
+        if (cur === e) { plan = e.plan; planSync.dirty = false; }
         if (tab === PLAN) render();
-        setStatus("The plan was just changed somewhere else, so that version is loaded now.");
+        setStatus("“" + e.name + "” was just changed somewhere else, so that version is loaded now.");
       });
       if (!res.ok) throw new Error(res.status);
-      return res.json().then(function (r) { planRev = r.rev; });
+      return res.json().then(function (r) { e.rev = r.rev; });
     }).catch(function () {
       planSync.dirty = retry = true;
       setStatus("Couldn’t save the plan. Retrying in a few seconds…");
@@ -1476,7 +1605,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     return FamilyAuth.accessToken().then(function (tok) {
       if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
       return fetch(cfg.apiUrl + path, {
-        method: method, keepalive: method === "PUT" && /\/(state|plan)$/.test(path),
+        method: method, keepalive: method === "PUT" && /\/(state|plans\/[^/]+)$/.test(path),
         headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
         body: body ? JSON.stringify(body) : undefined,
       });
@@ -1523,7 +1652,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     return api("GET", "/all").then(function (res) { return res.ok ? res.json() : null; }).then(function (all) {
       if (!all) return;
       tags = all.tags; versions = all.versions;
-      if (all.plan && !planSync.dirty && !planSync.saving && all.plan.rev !== planRev) { plan = normalizePlan(all.plan.plan); planRev = all.plan.rev; }
+      setPlans(all.plans);
       DOCS.forEach(function (d) {
         var srv = all.docs[d], q = sync[d];
         if (srv && !q.dirty && !q.saving && srv.rev !== revs[d]) { docs[d] = normalizeDoc(d, srv.state); revs[d] = srv.rev; }
@@ -1552,7 +1681,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       if (!res.ok) throw new Error("Couldn’t load the budget (" + res.status + "). Reload to try again.");
       return res.json().then(function (all) {
         tags = all.tags; versions = all.versions;
-        if (all.plan) { plan = normalizePlan(all.plan.plan); planRev = all.plan.rev; } else { plan = newPlan(); planRev = null; }
+        setPlans(all.plans);
         var missing = DOCS.filter(function (d) { return !all.docs[d]; });
         return (missing.length ? fetchDefaults() : Promise.resolve(null)).then(function (defs) {
           DOCS.forEach(function (d) {

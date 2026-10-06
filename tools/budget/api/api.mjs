@@ -2,17 +2,18 @@
 // working copy, saved versions and tags (names for versions; "default" opens on load).
 // Personal docs also follow a Shared tag for their share of the shared costs.
 //
-//   GET    /all                       -> { docs: {doc: {state, rev}}, versions: {doc: [...]}, tags: {doc: [{name, versionId}]}, plan: {plan, rev} | null }
+//   GET    /all                       -> { docs: {doc: {state, rev}}, versions: {doc: [...]}, tags: {doc: [{name, versionId}]}, plans: [{id, name, plan, rev}] }
 //   GET    /defaults                  -> { state }   the household's starting numbers (Reset)
 //   PUT    /docs/{doc}/state          { state, rev } -> { rev }   409 + current { state, rev } if rev is stale
 //   PUT    /docs/{doc}/versions/{id}  { name, savedAt, state }
 //   DELETE /docs/{doc}/versions/{id}  409 if a tag points at it
 //   PUT    /docs/{doc}/tags/{name}    { versionId }  (a version of that doc)
 //   DELETE /docs/{doc}/tags/{name}    "default" can't be deleted
-//   PUT    /plan                      { plan, rev } -> { rev }   409 + current { plan, rev } if rev is stale
+//   PUT    /plans/{id}                { name, plan, rev } -> { rev }   409 + current { name, plan, rev } if rev is stale
+//   DELETE /plans/{id}
 //
 // Rows (pk = HOUSEHOLD#<id>): DOC#<doc>#STATE, DOC#<doc>#VERSION#<id>, TAG#<doc>#<name>, DEFAULTS,
-// PLAN (the Planning tab's timeline: which Shared tag applies from which month, plus one-off amounts).
+// PLAN#<id> (a named plan on the Planning tab: which Shared tag applies from which month, plus one-off amounts).
 //
 // Auth is checked twice. API Gateway's JWT authorizer runs first, but this handler
 // does not trust it: it re-verifies the token's signature against the pool's JWKS
@@ -60,9 +61,9 @@ async function queryAll(prefix) {
 
 async function getAll() {
   const perDoc = () => Object.fromEntries(DOCS.map((d) => [d, []]));
-  const out = { docs: {}, versions: perDoc(), tags: perDoc(), plan: null };
+  const out = { docs: {}, versions: perDoc(), tags: perDoc(), plans: [] };
   for (const i of await queryAll('')) {
-    if (i.sk === 'PLAN') { out.plan = { plan: JSON.parse(i.plan), rev: i.rev }; continue; }
+    if (i.sk.startsWith('PLAN#')) { out.plans.push({ id: i.sk.slice(5), name: i.name, plan: JSON.parse(i.plan), rev: i.rev }); continue; }
     const [kind, doc, sub, id] = i.sk.split('#');
     if (!DOCS.includes(doc)) continue;
     if (kind === 'TAG' && sub) out.tags[doc].push({ name: sub, versionId: i.versionId });
@@ -71,6 +72,7 @@ async function getAll() {
     if (sub === 'VERSION') out.versions[doc].push({ id, name: i.name, savedAt: i.savedAt, state: JSON.parse(i.state) });
   }
   for (const d of DOCS) out.versions[d].sort((a, b) => b.savedAt - a.savedAt);
+  out.plans.sort((a, b) => a.name.localeCompare(b.name));
   return out;
 }
 
@@ -109,22 +111,25 @@ function cleanPlan(p) {
   return { start: p.start, months: p.months, balance: p.balance ?? 0, steps, oneOffs };
 }
 
-async function putPlan(body, user) {
+async function putPlan(id, body, user) {
   const expected = body.rev ?? null, plan = cleanPlan(body.plan);
-  if (!plan || !(expected === null || Number.isInteger(expected))) return json(400, { error: 'bad plan' });
+  const name = typeof body.name === 'string' ? body.name.trim().slice(0, 60) : '';
+  if (!plan || !name || !(expected === null || Number.isInteger(expected))) return json(400, { error: 'bad plan' });
   const rev = (expected ?? 0) + 1;
   try {
     await db.send(new PutCommand({
       TableName: TABLE,
-      Item: { pk: PK, sk: 'PLAN', plan: JSON.stringify(plan), rev, updatedAt: new Date().toISOString(), updatedBy: user },
+      Item: { pk: PK, sk: `PLAN#${id}`, name, plan: JSON.stringify(plan), rev, updatedAt: new Date().toISOString(), updatedBy: user },
       ...(expected === null
         ? { ConditionExpression: 'attribute_not_exists(pk)' }
         : { ConditionExpression: 'rev = :rev', ExpressionAttributeValues: { ':rev': expected } }),
     }));
   } catch (e) {
     if (e.name !== 'ConditionalCheckFailedException') throw e;
-    const cur = await getItem('PLAN');
-    return json(409, { plan: JSON.parse(cur.plan), rev: cur.rev });
+    const cur = await getItem(`PLAN#${id}`);
+    // A plan someone else deleted comes back as gone, not as a conflict to merge
+    if (!cur) return json(404, { error: 'plan deleted' });
+    return json(409, { name: cur.name, plan: JSON.parse(cur.plan), rev: cur.rev });
   }
   return json(200, { rev });
 }
@@ -206,8 +211,11 @@ export const handler = async (event) => {
       return deleteVersion(doc, id);
     case 'PUT /docs/{doc}/tags/{name}':
       return putTag(doc, name, body, user);
-    case 'PUT /plan':
-      return putPlan(body, user);
+    case 'PUT /plans/{id}':
+      return putPlan(id, body, user);
+    case 'DELETE /plans/{id}':
+      await db.send(new DeleteCommand({ TableName: TABLE, Key: { pk: PK, sk: `PLAN#${id}` } }));
+      return json(200, { id });
     case 'DELETE /docs/{doc}/tags/{name}':
       if (name === 'default') return json(400, { error: 'default can’t be deleted' });
       await db.send(new DeleteCommand({ TableName: TABLE, Key: { pk: PK, sk: `TAG#${doc}#${name}` } }));
