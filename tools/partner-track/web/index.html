@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Partner Track</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: Tempi's shape grown up. A left rail of modules named for financing rounds,
+   a capital-deployed bar that fills as modules are finished, one page shown at a time. */
+:root{
+  --bg:#F2F4F1; --surface:#FFFFFF; --ink:#13201A; --muted:#58665E; --rule:#D3D9D3; --rule-soft:#E5E9E4;
+  --accent:#1B6A4C; --accent-ink:#FFFFFF; --soft:#E2EEE7; --brass:#946510; --brass-soft:#F4ECDB; --bad:#A6392A;
+  color-scheme:light;
+  --display:"Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --body:"Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+*{box-sizing:border-box}
+body{background:var(--bg); color:var(--ink); font-family:var(--body); font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit; color:inherit}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+.shell{max-width:1180px; margin:0 auto; padding-inline:20px; padding-block:24px 80px}
+.top{display:flex; flex-wrap:wrap; gap:16px 32px; align-items:flex-end; justify-content:space-between; border-bottom:2px solid var(--ink); padding-bottom:18px; margin-bottom:28px}
+.brand .kicker{display:block; font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted)}
+.brand .name{display:block; font-family:var(--display); font-size:44px; line-height:1; margin-top:6px}
+.deployed{min-width:0; flex:0 1 340px}
+.deployed .lbl{display:flex; justify-content:space-between; gap:12px; font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:6px}
+.deployed .bar{display:grid; grid-template-columns:repeat(7,1fr); gap:3px; height:14px}
+.deployed .bar i{background:var(--rule-soft); border:1px solid var(--rule); display:block}
+.deployed .bar i.on{background:var(--accent); border-color:var(--accent)}
+
+.layout{display:grid; grid-template-columns:232px minmax(0,1fr); gap:40px}
+.rail{position:sticky; top:calc(env(safe-area-inset-top,0px) + 16px); align-self:start}
+.nav{display:flex; flex-direction:column; gap:2px}
+.nav .group{font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:16px 0 6px}
+.nav .group:first-child{margin-top:0}
+.nav button{display:grid; grid-template-columns:62px 1fr 14px; align-items:baseline; gap:6px; text-align:left; background:none; border:0; border-left:2px solid transparent; padding:6px 8px; cursor:pointer; font-size:14px; line-height:1.3}
+.nav button:hover{background:var(--surface)}
+.nav button.cur{border-left-color:var(--accent); background:var(--surface); font-weight:600}
+.nav .rnd{font-family:var(--mono); font-size:10.5px; color:var(--muted); letter-spacing:.02em}
+.nav .chk{font-size:12px; color:var(--accent)}
+.score-card{margin-top:22px; border-top:1px solid var(--rule); padding-top:14px}
+.score-card h4{font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 8px; font-weight:500}
+.score-card .row{display:flex; justify-content:space-between; font-size:13px; padding:3px 0}
+.score-card .row b{font-family:var(--mono); font-weight:500}
+
+main{min-width:0}
+.page{max-width:760px}
+.eyebrow{display:flex; flex-wrap:wrap; gap:10px; align-items:center; font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-bottom:10px}
+.chip{display:inline-block; padding:2px 8px; border:1px solid var(--accent); color:var(--accent); font-weight:500}
+h1,h2{font-family:var(--display); font-weight:400; line-height:1.05; letter-spacing:-.01em; text-wrap:balance; margin:0 0 14px}
+h1{font-size:52px}
+h2{font-size:44px}
+h3{font-size:17px; font-weight:700; margin:0 0 8px}
+h4{font-size:15px; font-weight:700; margin:0 0 4px}
+p{margin:0 0 14px}
+.lede{font-size:18.5px; line-height:1.55}
+.big-idea{font-family:var(--display); font-style:italic; font-size:24px; line-height:1.35; border-left:3px solid var(--accent); padding-left:18px; margin:6px 0 30px; text-wrap:pretty}
+.block{margin:0 0 34px}
+.block-label{font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin-bottom:10px; font-weight:500}
+ul,ol{padding-left:22px; margin:0 0 14px}
+li{margin-bottom:6px}
+.note{font-size:14.5px; color:var(--muted); border-top:1px solid var(--rule-soft); padding-top:12px}
+.cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; margin:14px 0}
+.card{background:var(--surface); border:1px solid var(--rule); padding:14px 16px; min-width:0}
+.card p{font-size:14.5px; margin:0}
+.num,.mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
+.tw{overflow-x:auto; margin:14px 0 18px}
+table{border-collapse:collapse; width:100%; font-size:14px; min-width:480px}
+th,td{text-align:left; padding:8px 12px 8px 0; border-bottom:1px solid var(--rule-soft); vertical-align:top}
+thead th{font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:500; border-bottom:1px solid var(--ink)}
+td.r,th.r{text-align:right}
+
+/* quiz */
+.quiz{display:flex; flex-direction:column; gap:18px}
+.q p{font-weight:600; margin-bottom:8px}
+.opts{display:flex; flex-direction:column; gap:6px}
+.opt{text-align:left; background:var(--surface); border:1px solid var(--rule); padding:9px 12px; cursor:pointer; font-size:14.5px; line-height:1.4}
+.opt:hover{border-color:var(--ink)}
+.opt.right{border-color:var(--accent); background:var(--soft)}
+.opt.wrong{border-color:var(--bad)}
+.why{font-size:14px; color:var(--muted); margin-top:8px}
+.score{font-family:var(--mono); font-size:13px; color:var(--muted)}
+
+/* try it + tools */
+.tryit{background:var(--surface); border:1px solid var(--rule); border-top:3px solid var(--brass); padding:20px 22px; margin:0 0 34px}
+.tryit-head{display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 16px; align-items:baseline; margin-bottom:12px}
+.tryit-head h3{font-size:19px; margin:0}
+.meta{font-family:var(--mono); font-size:11.5px; color:var(--muted)}
+.tool{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:24px}
+.fields{display:flex; flex-direction:column; gap:10px}
+.field{display:grid; grid-template-columns:1fr 92px; gap:10px; align-items:center; font-size:14px}
+.field input{width:100%; border:1px solid var(--rule); background:var(--bg); padding:6px 8px; font-family:var(--mono); font-size:14px; text-align:right}
+.range{display:flex; flex-direction:column; gap:2px; font-size:14px}
+.range .top-line{display:flex; justify-content:space-between; gap:10px}
+.range input{width:100%; accent-color:var(--accent)}
+.out{display:flex; flex-direction:column; gap:0; min-width:0}
+.out .row{display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid var(--rule-soft); font-size:14px}
+.out .row b{font-family:var(--mono); font-weight:500; font-variant-numeric:tabular-nums; white-space:nowrap}
+.out .row.key{border-bottom:1px solid var(--ink)}
+.out .row.key b{color:var(--accent); font-weight:600; font-size:16px}
+.out .row.warn b{color:var(--brass)}
+.takeaway{background:var(--brass-soft); border-left:3px solid var(--brass); padding:10px 14px; font-size:14.5px; margin-top:14px}
+.hist{width:100%; height:auto; display:block}
+.stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin:12px 0}
+.stat{border-top:2px solid var(--ink); padding-top:6px}
+.stat .v{font-family:var(--mono); font-size:22px; font-weight:500}
+.stat .k{font-size:12.5px; color:var(--muted); line-height:1.35}
+.btn{display:inline-flex; align-items:center; gap:6px; background:var(--accent); color:var(--accent-ink); border:1px solid var(--accent); padding:8px 16px; cursor:pointer; font-weight:600; font-size:14.5px}
+.btn.ghost{background:transparent; color:var(--accent)}
+.btn.small{padding:4px 10px; font-size:13px; font-weight:500}
+.btn.done{background:var(--soft); color:var(--accent)}
+
+/* prediction log */
+.pform{display:grid; grid-template-columns:minmax(0,1fr) 80px 150px auto; gap:8px; align-items:end; margin-bottom:14px}
+.pform label{display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--muted); min-width:0}
+.pform input{border:1px solid var(--rule); background:var(--bg); padding:7px 8px; font-size:14px; width:100%; min-width:0}
+.plist{display:flex; flex-direction:column}
+.pitem{display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; padding:10px 0; border-top:1px solid var(--rule-soft); font-size:14.5px}
+.pitem .pm{font-family:var(--mono); font-size:12px; color:var(--muted)}
+.pitem .acts{display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:flex-end}
+.pill{font-family:var(--mono); font-size:11.5px; padding:2px 8px; border:1px solid var(--rule)}
+.pill.yes{border-color:var(--accent); color:var(--accent)}
+.pill.no{border-color:var(--bad); color:var(--bad)}
+.empty{font-size:14px; color:var(--muted); border:1px dashed var(--rule); padding:14px}
+
+.skillbox{border:1px solid var(--rule); padding:18px 20px; margin:0 0 34px}
+.reflect{display:flex; flex-direction:column; gap:8px; margin:0 0 30px}
+.reflect label{font-weight:600; font-size:15px; margin-top:8px}
+textarea.jr{width:100%; min-height:120px; border:1px solid var(--rule); background:var(--surface); padding:10px 12px; font-size:15px; line-height:1.5; resize:vertical}
+textarea.jr.short{min-height:76px}
+.saved{font-family:var(--mono); font-size:11.5px; color:var(--muted); min-height:1em}
+.foot{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-between; align-items:center; border-top:1px solid var(--rule); padding-top:18px; margin-top:10px}
+
+/* path */
+.timeline{display:flex; flex-direction:column; margin:10px 0 24px}
+.stage{display:grid; grid-template-columns:110px minmax(0,1fr); gap:18px; padding:16px 0; border-top:1px solid var(--rule)}
+.stage .when{font-family:var(--mono); font-size:12px; color:var(--accent); font-weight:500; padding-top:3px}
+.stage ul{margin-top:6px}
+.diagram{background:var(--surface); border:1px solid var(--rule); padding:16px; margin:14px 0 22px; overflow-x:auto}
+.diagram svg{display:block; width:100%; min-width:560px; height:auto}
+.kit{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px 28px}
+.kit .item{padding:8px 0; border-top:1px solid var(--rule-soft); font-size:14.5px}
+.kit .item b{display:block}
+.kit .item span{color:var(--muted)}
+.selfcheck{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px 28px}
+.jout{display:flex; flex-direction:column; gap:14px}
+.jout .e{border-top:1px solid var(--rule-soft); padding-top:10px}
+.jout .e h4{font-family:var(--mono); font-size:11.5px; font-weight:500; letter-spacing:.06em; color:var(--muted); text-transform:uppercase}
+.jout .e p{white-space:pre-wrap}
+.sync{font-family:var(--mono); font-size:11px; color:var(--muted)}
+
+@media (max-width:860px){
+  .layout{grid-template-columns:1fr; gap:20px}
+  .rail{position:static}
+  .nav{flex-direction:row; overflow-x:auto; gap:4px; padding-bottom:6px}
+  .nav .group{display:none}
+  .nav button{grid-template-columns:auto; white-space:nowrap; border-left:0; border-bottom:2px solid transparent; flex:0 0 auto}
+  .nav button.cur{border-bottom-color:var(--accent)}
+  .nav .rnd,.nav .chk{display:none}
+  .score-card{display:none}
+  .tool{grid-template-columns:1fr}
+  h1{font-size:40px} h2{font-size:36px}
+  .brand .name{font-size:36px}
+  .pform{grid-template-columns:1fr 1fr}
+  .pform label:first-child{grid-column:1 / -1}
+  .stage{grid-template-columns:1fr; gap:4px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+/* Sign-in gate, shown until the course loads */
+.gate{max-width:520px; margin:18vh auto 0; padding-inline:16px; text-align:center; display:grid; gap:14px; justify-items:center}
+.gate h1{font-size:40px; margin:0}
+.gate p{color:var(--muted); margin:0}
+
+</style>
+</head>
+<body>
+<div id="course"><div class="gate"><h1>Partner Track</h1><p id="gate-msg">Loading…</p></div></div>
+<script src="family-auth.js"></script>
+<script>
+/* Signs in, then loads the course and your saved progress from the API and starts it.
+   The course itself is served by the API so it isn't public. Progress is kept in this browser
+   and saved to your account a moment after each change, so every device picks up where you left off. */
+(function () {
+  var KEY = "partner-track-v1", cfg, pending = null, timer = null, saving = false;
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method, keepalive: method === "PUT",
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    });
+  }
+  function status(text) { var el = document.getElementById("sync"); if (el) el.textContent = text; }
+  function push() {
+    clearTimeout(timer); timer = null;
+    if (saving || !pending) return;
+    var body = pending; pending = null; saving = true;
+    var retry = false;
+    api("PUT", "/progress", { progress: body }).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      status("Saved to your account");
+    }).catch(function () {
+      if (!pending) pending = body; retry = true;
+      status("Saved in this browser · retrying");
+    }).then(function () {
+      saving = false;
+      if (pending) timer = setTimeout(push, retry ? 5000 : 200);
+    });
+  }
+  window.ptSync = function (state) {
+    pending = JSON.parse(JSON.stringify(state));
+    clearTimeout(timer); timer = setTimeout(push, 1000);
+  };
+  window.addEventListener("pagehide", push);
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") push(); });
+
+  function gate(msg, signIn) {
+    document.getElementById("gate-msg").textContent = msg;
+    if (signIn && !document.getElementById("signin")) {
+      var b = document.createElement("button"); b.id = "signin"; b.className = "btn"; b.textContent = "Sign in";
+      b.onclick = function () { FamilyAuth.login(); };
+      document.querySelector(".gate").appendChild(b);
+    }
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.", true);
+    return Promise.all([api("GET", "/course"), api("GET", "/progress")]).then(function (r) {
+      if (r[0].status === 403) return gate("Your account doesn’t have access to this course.");
+      if (!r[0].ok || !(r[1].ok || r[1].status === 404)) throw new Error("load failed");
+      return Promise.all([r[0].json(), r[1].status === 404 ? null : r[1].json()]).then(function (x) {
+        var local = null;
+        try { local = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+        var start = x[1] ? x[1].progress : local;
+        try { if (start) localStorage.setItem(KEY, JSON.stringify(start)); } catch (e) {}
+        if (!x[1] && local) window.ptSync(local);
+        document.getElementById("course").innerHTML = x[0].html;
+        window.startCourse(start);
+        status(x[1] || !local ? "Saved to your account" : "Saved in this browser");
+      });
+    });
+  }).catch(function (e) {
+    gate(e.signIn ? e.message : "Couldn’t load the course. Reload to try again.", true);
+  });
+})();
+</script>
+<script>
+/* The course: navigation, checkmarks, journal, quizzes, models and the prediction log.
+   State `S` is saved by save(): to this browser at once and to your account by the loader. */
+window.startCourse = function (initial) {
+  var MODS = ['m1','m2','m3','m4','m5','m6','m7'];
+  var KEY = 'partner-track-v1';
+  var S = initial || {};
+  ['done','j','quiz','inputs','self','self2'].forEach(function (k) { S[k] = S[k] || {}; });
+  S.preds = Array.isArray(S.preds) ? S.preds : [];
+
+  function save() {
+    window.ptSync(S);
+    try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
+  }
+
+  // ---------- navigation ----------
+  var nav = document.getElementById('nav');
+  function go(id) {
+    document.querySelectorAll('.page').forEach(function (p) { p.hidden = p.id !== 'p-' + id; });
+    nav.querySelectorAll('button').forEach(function (b) { b.classList.toggle('cur', b.getAttribute('data-go') === id); });
+    if (id === 'journal') renderJournal();
+    if (S.last !== id) { S.last = id; save(); }
+    window.scrollTo(0, 0);
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-go]');
+    if (b) go(b.getAttribute('data-go'));
+  });
+
+  // ---------- module completion ----------
+  function renderDone() {
+    var n = 0, bar = document.getElementById('bar');
+    bar.innerHTML = '';
+    MODS.forEach(function (m) {
+      var on = !!S.done[m]; if (on) n++;
+      var i = document.createElement('i'); if (on) i.className = 'on'; bar.appendChild(i);
+      var nb = nav.querySelector('[data-go="' + m + '"] .chk'); if (nb) nb.textContent = on ? '✓' : '';
+      var db = document.querySelector('.done-btn[data-mod="' + m + '"]');
+      if (db) { db.textContent = on ? '✓ Complete' : 'Mark module complete'; db.classList.toggle('done', on); }
+    });
+    document.getElementById('doneCount').textContent = n + ' of 7';
+  }
+  document.querySelectorAll('.done-btn').forEach(function (b) {
+    b.addEventListener('click', function () { var m = b.getAttribute('data-mod'); S.done[m] = !S.done[m]; save(); renderDone(); });
+  });
+
+  // ---------- journal ----------
+  var savedTimers = new WeakMap();
+  document.querySelectorAll('textarea.jr').forEach(function (t) {
+    t.addEventListener('input', function () {
+      S.j[t.getAttribute('data-j')] = t.value; save(); renderScore();
+      var s = t.closest('.reflect') && t.closest('.reflect').querySelector('.saved');
+      if (s) { s.textContent = 'Saving…'; clearTimeout(savedTimers.get(s)); savedTimers.set(s, setTimeout(function () { s.textContent = 'Saved'; }, 1200)); }
+    });
+  });
+  function renderJournalInputs() {
+    document.querySelectorAll('textarea.jr').forEach(function (t) { t.value = S.j[t.getAttribute('data-j')] || ''; });
+  }
+  function journalEntries() {
+    var out = [];
+    document.querySelectorAll('textarea.jr').forEach(function (t) {
+      var v = (S.j[t.getAttribute('data-j')] || '').trim();
+      if (v) out.push({ label: t.getAttribute('data-label'), text: v, key: t.getAttribute('data-j') });
+    });
+    return out;
+  }
+  function renderJournal() {
+    var box = document.getElementById('jout'); box.innerHTML = '';
+    var es = journalEntries();
+    if (!es.length) { box.innerHTML = '<p class="empty">Nothing yet. Each module ends with a few questions to answer; what you write there shows up here.</p>'; return; }
+    es.forEach(function (e) {
+      var d = document.createElement('div'); d.className = 'e';
+      var h = document.createElement('h4'); h.textContent = e.label;
+      var p = document.createElement('p'); p.textContent = e.text;
+      d.appendChild(h); d.appendChild(p); box.appendChild(d);
+    });
+  }
+  function copyText(text, msgEl) {
+    function done(t) { msgEl.textContent = t; setTimeout(function () { msgEl.textContent = ''; }, 2500); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done('Copied'); }, function () { fallback(); });
+    } else fallback();
+    function fallback() {
+      var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done('Copied'); } catch (e) { done('Select the text and copy it yourself'); }
+      ta.remove();
+    }
+  }
+  document.getElementById('copyJournal').addEventListener('click', function () {
+    var t = journalEntries().map(function (e) { return e.label + '\n' + e.text; }).join('\n\n');
+    copyText('Partner Track journal\n\n' + t, document.getElementById('jMsg'));
+  });
+  document.getElementById('copyMemo').addEventListener('click', function () {
+    var t = journalEntries().filter(function (e) { return /^c\d/.test(e.key); })
+      .map(function (e) { return e.label.replace('Fund I · ', '').toUpperCase() + '\n' + e.text; }).join('\n\n');
+    copyText('FUND I\n\n' + (t || '(Nothing written yet.)'), document.getElementById('memoMsg'));
+  });
+
+  // ---------- self-assessment ----------
+  var AREAS = [
+    ['judgment', 'A record of good investment calls'],
+    ['founders', 'Founders who would call you first'],
+    ['lps', 'People who would invest in your fund'],
+    ['plumbing', 'Fund terms, law and accounting'],
+    ['capital', 'Capital you can commit yourself'],
+    ['operating', 'Having built or run a business']
+  ];
+  function renderSelf(boxId, key) {
+    var box = document.getElementById(boxId); box.innerHTML = '';
+    AREAS.forEach(function (a) {
+      var id = boxId + '-' + a[0], v = S[key][a[0]] != null ? S[key][a[0]] : 3;
+      var w = document.createElement('div'); w.className = 'range';
+      w.innerHTML = '<div class="top-line"><label for="' + id + '"></label><b class="mono"></b></div><input id="' + id + '" type="range" min="0" max="10" step="1">';
+      w.querySelector('label').textContent = a[1];
+      var inp = w.querySelector('input'), out = w.querySelector('b');
+      inp.value = v; out.textContent = v;
+      inp.addEventListener('input', function () { out.textContent = inp.value; S[key][a[0]] = +inp.value; save(); });
+      box.appendChild(w);
+    });
+  }
+
+  // ---------- quizzes ----------
+  // Quiz items live with the course (served by the API), not in this public page.
+  var QUIZ = JSON.parse(document.getElementById('quiz-data').textContent);
+  function renderQuizzes() {
+    document.querySelectorAll('[data-quiz]').forEach(function (box) {
+      var m = box.getAttribute('data-quiz'); box.innerHTML = '';
+      QUIZ[m].forEach(function (item, qi) {
+        var key = m + '-' + qi, picked = S.quiz[key];
+        var d = document.createElement('div'); d.className = 'q';
+        var p = document.createElement('p'); p.textContent = (qi + 1) + '. ' + item.q; d.appendChild(p);
+        var opts = document.createElement('div'); opts.className = 'opts';
+        item.o.forEach(function (o, oi) {
+          var b = document.createElement('button'); b.type = 'button'; b.className = 'opt'; b.textContent = o;
+          if (picked != null) { if (oi === item.a) b.classList.add('right'); else if (oi === picked) b.classList.add('wrong'); }
+          b.addEventListener('click', function () { S.quiz[key] = oi; save(); renderQuizzes(); renderScore(); });
+          opts.appendChild(b);
+        });
+        d.appendChild(opts);
+        if (picked != null) { var w = document.createElement('p'); w.className = 'why'; w.textContent = (picked === item.a ? 'Right. ' : 'Not quite. ') + item.w; d.appendChild(w); }
+        box.appendChild(d);
+      });
+      var sc = document.querySelector('[data-score="' + m + '"]');
+      var answered = 0, right = 0;
+      QUIZ[m].forEach(function (it, qi) { var v = S.quiz[m + '-' + qi]; if (v != null) { answered++; if (v === it.a) right++; } });
+      sc.textContent = answered ? right + ' of ' + QUIZ[m].length + ' right' : '';
+    });
+  }
+
+  // ---------- money formatting ----------
+  function money(m) { // m in $M
+    var a = Math.abs(m), s = m < 0 ? '−' : '';
+    if (a >= 1) return s + '$' + a.toFixed(a >= 100 ? 0 : 2).replace(/\.00$/, '') + 'M';
+    return s + '$' + Math.round(a * 1000).toLocaleString() + 'K';
+  }
+  function bindInputs(ids, fn) {
+    ids.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (S.inputs[id] != null) el.value = S.inputs[id];
+      el.addEventListener('input', function () { S.inputs[id] = el.value; save(); fn(); });
+    });
+    fn();
+  }
+  function val(id) { var v = parseFloat(document.getElementById(id).value); return isFinite(v) ? v : 0; }
+  function rows(el, list) {
+    el.innerHTML = '';
+    list.forEach(function (r) {
+      var d = document.createElement('div'); d.className = 'row' + (r[2] ? ' ' + r[2] : '');
+      var s = document.createElement('span'); s.textContent = r[0];
+      var b = document.createElement('b'); b.textContent = r[1];
+      d.appendChild(s); d.appendChild(b); el.appendChild(d);
+    });
+  }
+
+  // ---------- M1: fund model ----------
+  var FUND_IDS = ['f-size','f-fee1','f-fee2','f-exp','f-carry','f-gp','f-gross'];
+  function fundModel() {
+    var size = val('f-size'), f1 = val('f-fee1') / 100, f2 = val('f-fee2') / 100;
+    var exp = val('f-exp') / 1000, carry = val('f-carry') / 100, gp = val('f-gp') / 100, gross = val('f-gross');
+    var fees = size * (f1 * 5 + f2 * 5);
+    var invest = Math.max(0, size - fees - exp);
+    var proceeds = invest * gross;
+    var profit = Math.max(0, proceeds - size);
+    var c = carry * profit;
+    var lpNet = proceeds - c;
+    var net = size ? lpNet / size : 0;
+    var gpCommit = size * gp;
+    rows(document.getElementById('fundOut'), [
+      ['Annual fee, years 1–5', money(size * f1)],
+      ['Fees over the fund’s life', money(fees) + ' (' + (size ? Math.round(fees / size * 100) : 0) + '%)'],
+      ['Fund expenses', money(exp)],
+      ['Left to invest', money(invest), 'warn'],
+      ['Gross proceeds at ' + gross + '×', money(proceeds)],
+      ['Your carry', money(c)],
+      ['Your GP commitment', money(gpCommit)],
+      ['LPs receive', money(lpNet)],
+      ['Net multiple to LPs', net.toFixed(2) + '×', 'key']
+    ]);
+    document.getElementById('fundTake').innerHTML = '<b>Gross to net.</b> Picking investments that return ' + gross + '× gives your LPs ' + net.toFixed(2) + '× after fees, expenses and carry. ' +
+      (net >= 3 ? 'That’s a top-quartile result for most vintages.' : net >= 2 ? 'That’s a good fund. Top-quartile venture funds often land around 2.5–3× net or higher.' : net >= 1 ? 'Positive, but an LP could likely have done as well in a public index with no lockup.' : 'Your LPs lose money. Raising Fund II would be very hard.');
+  }
+
+  // ---------- M2: power-law simulator ----------
+  var BUCKETS = [[0,0],[0.1,1],[1,3],[3,10],[10,30],[30,100],[100,300]];
+  var BASE = [0.55,0.20,0.13,0.08,0.03,0.008,0.002];
+  function probs(edge) {
+    var p = BASE.slice(), add = 0;
+    for (var i = 3; i < p.length; i++) { add += p[i] * edge; p[i] *= (1 + edge); }
+    p[0] = Math.max(0, p[0] - add);
+    return p;
+  }
+  function drawCo(p) {
+    var r = Math.random(), i = 0;
+    for (; i < p.length - 1; i++) { if (r < p[i]) break; r -= p[i]; }
+    var b = BUCKETS[i]; if (!b[1]) return 0;
+    return b[0] * Math.pow(b[1] / b[0], Math.random()); // log-uniform inside the bucket
+  }
+  var BINS = [[0,0.5,'<0.5×'],[0.5,1,'0.5–1'],[1,1.5,'1–1.5'],[1.5,2,'1.5–2'],[2,3,'2–3'],[3,4,'3–4'],[4,5,'4–5'],[5,Infinity,'5×+']];
+  function simulate() {
+    var n = +document.getElementById('s-n').value, edge = +document.getElementById('s-edge').value / 100;
+    document.getElementById('s-nv').textContent = n;
+    document.getElementById('s-edgev').textContent = Math.round(edge * 100) + '%';
+    var p = probs(edge), F = 2000, res = [], topShare = 0, withoutTop = [];
+    for (var k = 0; k < F; k++) {
+      var sum = 0, best = 0;
+      for (var j = 0; j < n; j++) { var x = drawCo(p); sum += x; if (x > best) best = x; }
+      res.push(sum / n); withoutTop.push((sum - best) / n);
+      if (sum > 0) topShare += best / sum;
+    }
+    res.sort(function (a, b) { return a - b; });
+    var median = res[F >> 1], lose = 0, three = 0, loseNoTop = 0;
+    res.forEach(function (x) { if (x < 1) lose++; if (x >= 3) three++; });
+    withoutTop.forEach(function (x) { if (x < 1) loseNoTop++; });
+    var counts = BINS.map(function (b) { return res.filter(function (x) { return x >= b[0] && x < b[1]; }).length; });
+    drawHist(counts);
+    var st = document.getElementById('simStats');
+    st.innerHTML = '';
+    [[median.toFixed(2) + '×', 'Median fund, gross'], [Math.round(lose / F * 100) + '%', 'Funds that lose money, before fees'], [Math.round(three / F * 100) + '%', 'Funds returning 3× or more, gross'], [Math.round(topShare / F * 100) + '%', 'Share of value from the best company']].forEach(function (s) {
+      var d = document.createElement('div'); d.className = 'stat';
+      d.innerHTML = '<div class="v"></div><div class="k"></div>';
+      d.querySelector('.v').textContent = s[0]; d.querySelector('.k').textContent = s[1]; st.appendChild(d);
+    });
+    document.getElementById('simTake').innerHTML = '<b>Take out each fund’s single best company</b> and ' + Math.round(loseNoTop / F * 100) + '% of funds lose money, up from ' + Math.round(lose / F * 100) + '%. Remember these are gross: on the fund model, a 1.25× gross fund is roughly break-even for LPs.';
+  }
+  function drawHist(counts) {
+    var svg = document.getElementById('hist'), W = 360, H = 190, padL = 6, padB = 34, top = 18;
+    var max = Math.max.apply(null, counts) || 1, bw = (W - padL * 2) / counts.length;
+    var s = '';
+    counts.forEach(function (c, i) {
+      var h = (H - padB - top) * c / max, x = padL + i * bw + 3, y = H - padB - h;
+      var fill = BINS[i][0] >= 3 ? 'var(--accent)' : BINS[i][1] <= 1 ? 'var(--bad)' : 'var(--muted)';
+      s += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + (bw - 6).toFixed(1) + '" height="' + Math.max(h, 0.5).toFixed(1) + '" fill="' + fill + '" opacity="0.85"/>';
+      s += '<text x="' + (x + (bw - 6) / 2).toFixed(1) + '" y="' + (y - 4).toFixed(1) + '" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="var(--ink)">' + Math.round(c / 20) + '%</text>';
+      s += '<text x="' + (x + (bw - 6) / 2).toFixed(1) + '" y="' + (H - padB + 14) + '" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="var(--muted)">' + BINS[i][2] + '</text>';
+    });
+    s += '<line x1="' + padL + '" x2="' + (W - padL) + '" y1="' + (H - padB) + '" y2="' + (H - padB) + '" stroke="var(--ink)" stroke-width="1"/>';
+    s += '<text x="' + (W / 2) + '" y="' + (H - 4) + '" text-anchor="middle" font-family="Public Sans, sans-serif" font-size="11" fill="var(--muted)">Gross multiple of 2,000 simulated funds</text>';
+    svg.innerHTML = s;
+  }
+
+  // ---------- M3: napkin LBO ----------
+  var LBO_IDS = ['l-ebitda','l-entry','l-debt','l-growth','l-years','l-exit','l-emp','l-sal','l-pool'];
+  var SWEEP = 0.35; // share of each year's EBITDA left after interest, tax and capex to repay debt
+  function lbo() {
+    var e0 = val('l-ebitda'), entry = val('l-entry'), debtX = val('l-debt'), g = val('l-growth') / 100;
+    var yrs = Math.max(1, Math.round(val('l-years'))), exitX = val('l-exit'), emp = Math.max(1, val('l-emp')), sal = val('l-sal') / 1000, pool = Math.min(0.5, val('l-pool') / 100);
+    var ev0 = e0 * entry, debt = Math.min(e0 * debtX, ev0 * 0.9), eq0 = ev0 - debt, cash = 0, e = e0;
+    for (var t = 1; t <= yrs; t++) {
+      e = e0 * Math.pow(1 + g, t);
+      var pay = SWEEP * e;
+      if (pay > debt) { cash += pay - debt; debt = 0; } else debt -= pay;
+    }
+    var evX = e * exitX, eqX = Math.max(0, evX - debt + cash);
+    var moic0 = eq0 > 0 ? eqX / eq0 : 0, moic1 = eq0 > 0 ? eqX * (1 - pool) / eq0 : 0;
+    function irr(m) { return m > 0 ? (Math.pow(m, 1 / yrs) - 1) * 100 : -100; }
+    var poolV = eqX * pool, per = poolV / emp;
+    rows(document.getElementById('lboOut'), [
+      ['Purchase price', money(ev0)],
+      ['Equity you put in', money(eq0)],
+      ['Debt left at exit', money(debt)],
+      ['Sale price, year ' + yrs, money(evX)],
+      ['Equity value at exit', money(eqX)],
+      ['Investors without a pool', moic0.toFixed(2) + '× · ' + irr(moic0).toFixed(1) + '% IRR'],
+      ['Investors with the pool', moic1.toFixed(2) + '× · ' + irr(moic1).toFixed(1) + '% IRR', 'key'],
+      ['Ownership pool at exit', money(poolV)],
+      ['Average per employee', money(per), 'key'],
+      ['In years of their pay', (sal ? per / sal : 0).toFixed(2), 'warn']
+    ]);
+    var need = pool < 1 ? (1 / (1 - pool) - 1) * 100 : 0;
+    document.getElementById('lboTake').innerHTML = '<b>What the pool has to earn.</b> For investors to come out even, the business has to be worth ' + need.toFixed(1) + '% more at exit because of the pool: lower turnover, better service, faster hiring. Notice that the payout per person depends on equity value per employee. A small, people-heavy business needs a bigger pool to reach one year of pay.';
+  }
+
+  // ---------- M4: prediction log ----------
+  function brier(list) {
+    var r = list.filter(function (p) { return p.outcome != null; });
+    if (!r.length) return null;
+    return r.reduce(function (s, p) { var o = p.outcome ? 1 : 0; return s + Math.pow(p.prob / 100 - o, 2); }, 0) / r.length;
+  }
+  function renderPreds() {
+    var list = document.getElementById('plist'); list.innerHTML = '';
+    var today = new Date().toISOString().slice(0, 10);
+    if (!S.preds.length) {
+      list.innerHTML = '<p class="empty">No predictions yet. Log your first one above, for example: “70% · the company in my last memo raises its next round within 18 months.” When the date passes it moves to the top and asks what happened.</p>';
+    }
+    var sorted = S.preds.slice().sort(function (a, b) {
+      var ad = a.outcome == null && a.due <= today ? 0 : a.outcome == null ? 1 : 2;
+      var bd = b.outcome == null && b.due <= today ? 0 : b.outcome == null ? 1 : 2;
+      return ad - bd || (a.due < b.due ? -1 : 1);
+    });
+    sorted.forEach(function (p) {
+      var d = document.createElement('div'); d.className = 'pitem';
+      var left = document.createElement('div');
+      var t = document.createElement('div'); t.textContent = p.text;
+      var m = document.createElement('div'); m.className = 'pm';
+      m.textContent = p.prob + '% · check on ' + p.due + (p.outcome == null && p.due <= today ? ' · due' : '');
+      left.appendChild(t); left.appendChild(m);
+      var acts = document.createElement('div'); acts.className = 'acts';
+      if (p.outcome == null) {
+        [['Happened', true], ['Didn’t', false]].forEach(function (x) {
+          var b = document.createElement('button'); b.type = 'button'; b.className = 'btn small ghost'; b.textContent = x[0];
+          b.addEventListener('click', function () { p.outcome = x[1]; save(); renderPreds(); renderScore(); });
+          acts.appendChild(b);
+        });
+      } else {
+        var pill = document.createElement('span'); pill.className = 'pill ' + (p.outcome ? 'yes' : 'no'); pill.textContent = p.outcome ? 'Happened' : 'Didn’t';
+        var u = document.createElement('button'); u.type = 'button'; u.className = 'btn small ghost'; u.textContent = 'Undo';
+        u.addEventListener('click', function () { p.outcome = null; save(); renderPreds(); renderScore(); });
+        acts.appendChild(pill); acts.appendChild(u);
+      }
+      var del = document.createElement('button'); del.type = 'button'; del.className = 'btn small ghost'; del.textContent = 'Remove';
+      del.addEventListener('click', function () {
+        if (del.getAttribute('data-arm')) { S.preds = S.preds.filter(function (q) { return q.id !== p.id; }); save(); renderPreds(); renderScore(); }
+        else { del.setAttribute('data-arm', '1'); del.textContent = 'Tap again to remove'; }
+      });
+      acts.appendChild(del);
+      d.appendChild(left); d.appendChild(acts); list.appendChild(d);
+    });
+    var res = S.preds.filter(function (p) { return p.outcome != null; }), b = brier(S.preds);
+    var st = document.getElementById('predStats'); st.innerHTML = '';
+    if (S.preds.length) {
+      [[String(S.preds.length), 'Logged'], [String(res.length), 'Resolved'], [b == null ? '—' : b.toFixed(3), 'Brier score (lower is better; 0.25 is coin-flipping)']].forEach(function (s) {
+        var d = document.createElement('div'); d.className = 'stat'; d.innerHTML = '<div class="v"></div><div class="k"></div>';
+        d.querySelector('.v').textContent = s[0]; d.querySelector('.k').textContent = s[1]; st.appendChild(d);
+      });
+    }
+  }
+  document.getElementById('pform').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var text = document.getElementById('p-text').value.trim(), prob = Math.min(99, Math.max(1, +document.getElementById('p-prob').value || 50)), due = document.getElementById('p-date').value;
+    if (!text || !due) return;
+    S.preds.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text: text, prob: prob, due: due, made: new Date().toISOString().slice(0, 10), outcome: null });
+    document.getElementById('p-text').value = '';
+    save(); renderPreds(); renderScore();
+  });
+  (function () { var d = new Date(); d.setMonth(d.getMonth() + 6); document.getElementById('p-date').value = d.toISOString().slice(0, 10); })();
+
+  // ---------- scoreboard ----------
+  function renderScore() {
+    var total = 0, right = 0;
+    Object.keys(QUIZ).forEach(function (m) { QUIZ[m].forEach(function (it, qi) { total++; if (S.quiz[m + '-' + qi] === it.a) right++; }); });
+    document.getElementById('sbQuiz').textContent = right + ' / ' + total;
+    document.getElementById('sbPred').textContent = S.preds.length;
+    var b = brier(S.preds); document.getElementById('sbBrier').textContent = b == null ? '—' : b.toFixed(3);
+    document.getElementById('sbJ').textContent = journalEntries().length;
+  }
+
+  function renderAll() {
+    renderDone(); renderJournalInputs(); renderQuizzes(); renderPreds(); renderScore();
+    renderSelf('selfcheck', 'self'); renderSelf('selfcheck2', 'self2');
+    FUND_IDS.concat(LBO_IDS).forEach(function (id) { if (S.inputs[id] != null) document.getElementById(id).value = S.inputs[id]; });
+    fundModel(); lbo();
+  }
+
+  bindInputs(FUND_IDS, fundModel);
+  bindInputs(LBO_IDS, lbo);
+  ['s-n','s-edge'].forEach(function (id) { document.getElementById(id).addEventListener('input', simulate); });
+  document.getElementById('s-run').addEventListener('click', simulate);
+  simulate();
+  renderAll();
+  go(document.getElementById('p-' + S.last) ? S.last : 'start');
+};
+</script>
+</body>
+</html>

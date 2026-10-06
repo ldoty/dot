@@ -1,0 +1,904 @@
+<div class="shell">
+  <header class="top">
+    <div class="brand">
+      <span class="kicker">A working course for Luke Doty</span>
+      <span class="name">Partner Track</span>
+    </div>
+    <div class="deployed" title="Each module you finish deploys one-seventh of the fund.">
+      <div class="lbl"><span>Fund deployed</span><span id="doneCount">0 of 7</span></div>
+      <div class="bar" id="bar"></div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="rail">
+      <nav class="nav" id="nav" aria-label="Course sections">
+        <div class="group">Start</div>
+        <button data-go="start"><span class="rnd">—</span>Welcome<span class="chk"></span></button>
+        <div class="group">Modules · one per round</div>
+        <button data-go="m1"><span class="rnd">Pre-seed</span>How a fund works<span class="chk"></span></button>
+        <button data-go="m2"><span class="rnd">Seed</span>The power law<span class="chk"></span></button>
+        <button data-go="m3"><span class="rnd">Series A</span>Buyouts<span class="chk"></span></button>
+        <button data-go="m4"><span class="rnd">Series B</span>Judgment<span class="chk"></span></button>
+        <button data-go="m5"><span class="rnd">Series C</span>Access and winning<span class="chk"></span></button>
+        <button data-go="m6"><span class="rnd">Growth</span>Ownership that pays<span class="chk"></span></button>
+        <button data-go="m7"><span class="rnd">Exit</span>Capstone: Fund I<span class="chk"></span></button>
+        <div class="group">Beyond the modules</div>
+        <button data-go="path"><span class="rnd">→</span>The plan: company, then firm<span class="chk"></span></button>
+        <button data-go="kit"><span class="rnd">✦</span>Field kit<span class="chk"></span></button>
+        <button data-go="journal"><span class="rnd">✎</span>Journal<span class="chk"></span></button>
+      </nav>
+      <div class="score-card" aria-label="Your scoreboard">
+        <h4>Your scoreboard</h4>
+        <div class="row"><span>Quiz answers right</span><b id="sbQuiz">0 / 0</b></div>
+        <div class="row"><span>Predictions logged</span><b id="sbPred">0</b></div>
+        <div class="row"><span>Brier score</span><b id="sbBrier">—</b></div>
+        <div class="row"><span>Journal entries</span><b id="sbJ">0</b></div>
+        <p class="sync" id="sync">Saved in this browser</p>
+      </div>
+    </aside>
+
+    <main id="main">
+
+<!-- ================= WELCOME ================= -->
+<section class="page" id="p-start">
+  <div class="eyebrow">Welcome · start here</div>
+  <h1>Make a lot of people wealthy, and pay your investors for it.</h1>
+  <p class="lede">This is the grown-up version of Tempi’s course. The shape is the same: explore an idea, check yourself, try it for real, build a skill, write it down. The subject is how to become an investor good enough to run a fund built on Contribution Units, and to keep beating the market while you do it.</p>
+
+  <div class="block">
+    <div class="block-label">Two scoreboards</div>
+    <p>Every investor is measured on one number: what came back to the people who trusted you with money, net of your fees. You are signing up to be measured on two.</p>
+    <div class="cards">
+      <div class="card"><h4>Scoreboard 1 · LPs</h4><p>Net DPI: cash returned to investors per dollar they paid in, after fees and carry. Measured over ten years and at least two funds. If this number is below the market, the mission ends with the fund.</p></div>
+      <div class="card"><h4>Scoreboard 2 · People</h4><p>How many people received at least one year of their own pay from equity in a company you backed. Count them, publish it next to DPI, and report it to LPs every year.</p></div>
+    </div>
+    <p>The second number only grows if the first one lets you raise Fund II. Nearly every module comes back to that.</p>
+  </div>
+
+  <div class="block">
+    <div class="block-label">How the course works</div>
+    <div class="cards">
+      <div class="card"><h4>Seven modules, named for rounds</h4><p>Pre-seed through Exit. Each is harder than the last, and the bar at the top fills as you deploy the fund.</p></div>
+      <div class="card"><h4>One module every week or two</h4><p>An hour or two of reading and tools, then real work in the world during the week: a model, a memo, a call, a prediction.</p></div>
+      <div class="card"><h4>Five parts per module</h4><p><b>Explore</b> the idea, <b>check</b> yourself, <b>try it</b> with real numbers, practice a <b>skill</b>, and <b>reflect</b> in the journal.</p></div>
+      <div class="card"><h4>Everything saves</h4><p>Journal entries, quiz picks, model inputs and predictions save to your account and follow you between devices.</p></div>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Where you are today · rate yourself 0–10</div>
+    <p>Be blunt. You’ll rate yourself again at the Exit and compare.</p>
+    <div class="selfcheck" id="selfcheck"></div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">By the end you’ll be able to</div>
+    <ul>
+      <li>Read a fund’s terms and say exactly where every dollar goes, from an LP’s commitment to your carry.</li>
+      <li>Explain why venture returns follow a power law and what that does to portfolio size, ownership and reserves.</li>
+      <li>Run a napkin buyout and show what a broad ownership pool costs investors and pays employees.</li>
+      <li>Keep a calibrated record of your own predictions, with a score.</li>
+      <li>Read a term sheet and win a deal a founder could take from someone else.</li>
+      <li>Answer the hardest LP questions about Contribution Units with numbers.</li>
+      <li>Write the Fund I memo you will actually raise on.</li>
+    </ul>
+  </div>
+
+  <p class="note"><strong>A note on the material.</strong> The numbers here are typical ranges and teaching models, not legal, tax or investment advice. Fund formation, securities law and adviser registration are work for fund counsel, and the course points to the spots where you will need them.</p>
+
+  <div class="foot"><span class="meta">About 10–14 weeks · 7 modules · 1 capstone</span><button class="btn" data-go="m1">Start Pre-seed →</button></div>
+</section>
+
+<!-- ================= M1 ================= -->
+<section class="page" id="p-m1" hidden>
+  <div class="eyebrow"><span class="chip">Pre-seed</span>Module 1 · Explore</div>
+  <h2>How a fund works</h2>
+  <p class="big-idea">A fund is a ten-year promise. Investors commit money, you call it as you need it, and everyone is paid in a fixed order written down before the first check.</p>
+
+  <div class="block">
+    <div class="block-label">Explore · three entities</div>
+    <div class="cards">
+      <div class="card"><h4>The fund</h4><p>A limited partnership (usually Delaware) that owns the investments. Your investors are its limited partners (LPs). It lives about ten years, plus extensions.</p></div>
+      <div class="card"><h4>The general partner</h4><p>An LLC you control. It makes the investment decisions and receives the carried interest. Your own commitment to the fund usually flows through it.</p></div>
+      <div class="card"><h4>The management company</h4><p>The business that employs you. It receives the management fee and pays salaries, travel, software and rent.</p></div>
+    </div>
+    <p>LPs don’t wire their money on day one. They <b>commit</b> it, and you send <b>capital calls</b> as you invest, mostly during a three-to-five year <b>investment period</b>. After that you only support existing companies and wait for exits.</p>
+    <h3>Where the money goes</h3>
+    <ul>
+      <li><b>Management fee.</b> Typically 2% of committed capital per year during the investment period, often stepping down afterwards. On $25M that is $500K a year. Over the life of the fund fees usually add up to 15–20% of commitments.</li>
+      <li><b>Fund expenses.</b> Formation legal work, the fund administrator, the annual audit, tax returns (K-1s) and insurance. Charged to the fund, usually with a cap on formation costs.</li>
+      <li><b>Carried interest.</b> Typically 20% of profits, paid only after LPs get their contributed capital back. Buyout funds usually add an 8% preferred return (the hurdle) with a catch-up; most venture funds don’t.</li>
+      <li><b>GP commitment.</b> You invest alongside your LPs, commonly 1–2% of the fund. LPs read it as a measure of how much you believe.</li>
+    </ul>
+    <h3>How results are reported</h3>
+    <div class="tw"><table>
+      <thead><tr><th>Metric</th><th>What it means</th><th>Why LPs care</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">TVPI</td><td>Total value (cash returned + current paper value) ÷ paid-in capital</td><td>The headline, but mostly marks you set yourself</td></tr>
+        <tr><td class="mono">DPI</td><td>Cash distributed ÷ paid-in capital</td><td>The only number that can’t be argued with</td></tr>
+        <tr><td class="mono">RVPI</td><td>Remaining paper value ÷ paid-in</td><td>TVPI minus DPI: what’s still at risk</td></tr>
+        <tr><td class="mono">IRR</td><td>Annualized return, timing included</td><td>Rewards early exits; easy to flatter with credit lines</td></tr>
+        <tr><td class="mono">MOIC</td><td>Multiple on invested capital, usually per deal and gross</td><td>Your selection skill before fees</td></tr>
+      </tbody>
+    </table></div>
+    <p>Early in a fund, fees and failures arrive before the winners, so returns start negative and climb later. That dip is the <b>J-curve</b>. Every first-time manager lives through it while raising Fund II.</p>
+  </div>
+
+  <div class="tryit">
+    <div class="tryit-head"><h3>Try it: The $25M fund model</h3><span class="meta">Change the terms · watch gross turn into net</span></div>
+    <div class="tool">
+      <div class="fields">
+        <label class="field" for="f-size">Fund size ($M)<input id="f-size" type="number" step="1" min="1" value="25"></label>
+        <label class="field" for="f-fee1">Fee, years 1–5 (%)<input id="f-fee1" type="number" step="0.25" min="0" value="2"></label>
+        <label class="field" for="f-fee2">Fee, years 6–10 (%)<input id="f-fee2" type="number" step="0.25" min="0" value="1.5"></label>
+        <label class="field" for="f-exp">Fund expenses, life ($K)<input id="f-exp" type="number" step="50" min="0" value="1200"></label>
+        <label class="field" for="f-carry">Carry (%)<input id="f-carry" type="number" step="1" min="0" value="20"></label>
+        <label class="field" for="f-gp">GP commitment (%)<input id="f-gp" type="number" step="0.5" min="0" value="1"></label>
+        <label class="field" for="f-gross">Gross multiple on invested<input id="f-gross" type="number" step="0.1" min="0" value="3"></label>
+      </div>
+      <div class="out" id="fundOut"></div>
+    </div>
+    <div class="takeaway" id="fundTake"></div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Check yourself</div>
+    <div class="quiz" data-quiz="m1"></div>
+    <p class="score" data-score="m1"></p>
+  </div>
+
+  <div class="skillbox">
+    <div class="block-label">Skill builder · Read a real LPA</div>
+    <p>The Institutional Limited Partners Association (ILPA) publishes a Model LPA, a full limited partnership agreement written from the LP side. Read these sections and write one sentence each on what they protect:</p>
+    <ol>
+      <li>The distribution waterfall.</li>
+      <li>Key person provisions (what happens if you stop working on the fund).</li>
+      <li>Removal of the general partner, for cause and without.</li>
+      <li>The LP advisory committee and conflicts of interest.</li>
+    </ol>
+  </div>
+
+  <div class="reflect">
+    <label for="j-m1a">At $25M the fee pays for about one and a half people. Who are they, what does each cost, and what do you do without?</label>
+    <textarea class="jr" id="j-m1a" data-j="m1a" data-label="Pre-seed · The team the fee pays for"></textarea>
+    <label for="j-m1b">Would you charge less than 2 and 20 to signal the mission? What would it cost you, and what would it buy?</label>
+    <textarea class="jr short" id="j-m1b" data-j="m1b" data-label="Pre-seed · My fee and carry"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+
+  <div class="foot"><button class="btn ghost done-btn" data-mod="m1">Mark module complete</button><button class="btn" data-go="m2">Next: The power law →</button></div>
+</section>
+
+<!-- ================= M2 ================= -->
+<section class="page" id="p-m2" hidden>
+  <div class="eyebrow"><span class="chip">Seed</span>Module 2 · Explore</div>
+  <h2>The power law</h2>
+  <p class="big-idea">In venture, one company can matter more than all the others put together. Everything about how a venture fund is built follows from that.</p>
+
+  <div class="block">
+    <div class="block-label">Explore</div>
+    <p>Venture outcomes are not a bell curve. Most startups return less than the money put in. A few return 10×. Once in a while one returns 100× or more, and that one pays for the whole fund. Horsley Bridge, a large LP, found that across thirty years of venture investments about 6% of deals produced about 60% of returns.</p>
+    <h3>What follows from it</h3>
+    <ul>
+      <li><b>Missing a winner costs more than backing a loser.</b> A failed investment loses 1×. Passing on the company that returns 100× costs you the fund.</li>
+      <li><b>Ownership times exit size.</b> To return a $25M fund from one company that sells for $1B, you need 2.5% of it at exit, after every later round dilutes you. That usually means 5–10% going in.</li>
+      <li><b>Reserves.</b> Most seed funds keep 30–50% of the fund to buy more of the companies that are working.</li>
+      <li><b>Losses aren’t the enemy.</b> The same Horsley Bridge data showed that the best funds often have as many write-offs as average funds. They just also have bigger winners.</li>
+      <li><b>Consensus is expensive.</b> If every investor agrees a deal is good, the price already says so. Returns come from being right when most people think you’re wrong.</li>
+    </ul>
+    <div class="takeaway"><b>The tension with your mission.</b> Contribution Units in a company that fails are worth nothing. A venture fund makes a lot of people wealthy only through its few big winners. A buyout fund (next module) pays out more often and in smaller amounts. Which one serves Scoreboard 2 better is a real question, and you should answer it before you raise.</div>
+  </div>
+
+  <div class="tryit">
+    <div class="tryit-head"><h3>Try it: Simulate 2,000 seed funds</h3><span class="meta">Equal checks · outcomes drawn from a seed-stage distribution</span></div>
+    <div class="tool">
+      <div class="fields">
+        <div class="range"><div class="top-line"><label for="s-n">Companies in the portfolio</label><b class="mono" id="s-nv">30</b></div><input id="s-n" type="range" min="5" max="80" step="1" value="30"></div>
+        <div class="range"><div class="top-line"><label for="s-edge">Your selection edge</label><b class="mono" id="s-edgev">0%</b></div><input id="s-edge" type="range" min="0" max="150" step="5" value="0"></div>
+        <p class="note" style="margin:4px 0 0">Edge 0% is an average seed fund. Edge moves probability out of total losses and into the 3× and better outcomes. 100% doubles your odds of a big winner, which almost nobody sustains.</p>
+        <button class="btn small ghost" id="s-run" type="button">Run again</button>
+      </div>
+      <div class="out">
+        <svg class="hist" id="hist" viewBox="0 0 360 190" role="img" aria-label="Histogram of simulated fund gross multiples"></svg>
+      </div>
+    </div>
+    <div class="stats" id="simStats"></div>
+    <div class="takeaway" id="simTake"></div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Check yourself</div>
+    <div class="quiz" data-quiz="m2"></div>
+    <p class="score" data-score="m2"></p>
+  </div>
+
+  <div class="skillbox">
+    <div class="block-label">Skill builder · Return-the-fund math</div>
+    <p>Pick five startups you read about this week. For each, write one line: <i>“At a $X entry valuation with $Y check, we own Z%. After three more rounds at 20% dilution each we own W%. To return a $25M fund this company has to sell for $V.”</i> Then ask whether $V is believable. Most of the time it won’t be, and that’s the lesson.</p>
+  </div>
+
+  <div class="reflect">
+    <label for="j-m2a">Run the simulator at edge 0%. How do you feel about a 1-in-4 chance of losing your investors’ money while doing everything right?</label>
+    <textarea class="jr" id="j-m2a" data-j="m2a" data-label="Seed · Living with the power law"></textarea>
+    <label for="j-m2b">Venture or buyouts for Fund I? Write your answer today; you’ll revisit it after Module 3.</label>
+    <textarea class="jr short" id="j-m2b" data-j="m2b" data-label="Seed · Venture or buyouts (first answer)"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+
+  <div class="foot"><button class="btn ghost done-btn" data-mod="m2">Mark module complete</button><button class="btn" data-go="m3">Next: Buyouts →</button></div>
+</section>
+
+<!-- ================= M3 ================= -->
+<section class="page" id="p-m3" hidden>
+  <div class="eyebrow"><span class="chip">Series A</span>Module 3 · Explore</div>
+  <h2>Buyouts: the other game</h2>
+  <p class="big-idea">Private equity buys control of a business that already works. When you own the company you don’t have to persuade anyone to adopt an ownership pool. You can put one in on the day you close.</p>
+
+  <div class="block">
+    <div class="block-label">Explore</div>
+    <p>A buyout fund buys a majority of an established, profitable company, usually with a mix of its own equity and borrowed money. Returns come from three places:</p>
+    <div class="cards">
+      <div class="card"><h4>Grow earnings</h4><p>More customers, better pricing, better operations. EBITDA (earnings before interest, taxes, depreciation and amortization) goes up.</p></div>
+      <div class="card"><h4>Pay down debt</h4><p>Cash flow repays the loan, so more of the company’s value belongs to the equity at exit.</p></div>
+      <div class="card"><h4>Sell at a higher multiple</h4><p>A bigger, cleaner, less owner-dependent business sells for more times its earnings. Don’t count on it.</p></div>
+    </div>
+    <h3>What $25M buys</h3>
+    <p>Small, profitable private businesses (HVAC, distribution, specialty manufacturing, services) with $1–5M of EBITDA often sell for roughly 4–7× EBITDA. Many are owned by founders nearing retirement with no one to sell to. $25M of equity, with bank or SBA debt, buys three to six of them. There are four common ways in:</p>
+    <ul>
+      <li><b>A committed fund.</b> Raise the $25M first, then buy. LPs need to trust you without seeing the deals.</li>
+      <li><b>Independent sponsor.</b> Find and sign a deal first, then raise equity for that one deal. The fastest way to build a buyout record.</li>
+      <li><b>Search fund.</b> Investors pay your salary while you search for one company to buy and then run as CEO.</li>
+      <li><b>Holding company.</b> Buy businesses with permanent capital and never sell. Good for employees, harder for LP liquidity.</li>
+    </ul>
+    <h3>The precedent you’ll cite</h3>
+    <p>KKR has given rank-and-file employees equity in many of its portfolio companies since 2011, an effort led by Pete Stavros. When it sold CHI Overhead Doors in 2022, hourly workers and truck drivers received payouts averaging about $175,000. In 2022 Stavros co-founded <b>Ownership Works</b>, a nonprofit that helps companies and PE firms set up broad-based ownership programs. <b>Teamshares</b> takes another approach: it buys small businesses from retiring owners and moves ownership to employees over time.</p>
+  </div>
+
+  <div class="tryit">
+    <div class="tryit-head"><h3>Try it: A napkin buyout with an ownership pool</h3><span class="meta">35% of each year’s EBITDA repays debt</span></div>
+    <div class="tool">
+      <div class="fields">
+        <label class="field" for="l-ebitda">EBITDA today ($M)<input id="l-ebitda" type="number" step="0.1" min="0.1" value="2"></label>
+        <label class="field" for="l-entry">Purchase multiple (×)<input id="l-entry" type="number" step="0.25" min="1" value="5.5"></label>
+        <label class="field" for="l-debt">Debt (× EBITDA)<input id="l-debt" type="number" step="0.25" min="0" value="3"></label>
+        <label class="field" for="l-growth">EBITDA growth per year (%)<input id="l-growth" type="number" step="1" value="7"></label>
+        <label class="field" for="l-years">Years held<input id="l-years" type="number" step="1" min="1" max="15" value="5"></label>
+        <label class="field" for="l-exit">Exit multiple (×)<input id="l-exit" type="number" step="0.25" min="1" value="6"></label>
+        <label class="field" for="l-emp">Employees<input id="l-emp" type="number" step="1" min="1" value="45"></label>
+        <label class="field" for="l-sal">Average pay ($K)<input id="l-sal" type="number" step="1" min="1" value="58"></label>
+        <label class="field" for="l-pool">Ownership pool (% of exit equity)<input id="l-pool" type="number" step="1" min="0" max="50" value="10"></label>
+      </div>
+      <div class="out" id="lboOut"></div>
+    </div>
+    <div class="takeaway" id="lboTake"></div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Check yourself</div>
+    <div class="quiz" data-quiz="m3"></div>
+    <p class="score" data-score="m3"></p>
+  </div>
+
+  <div class="skillbox">
+    <div class="block-label">Skill builder · Ten listings, ten napkins</div>
+    <p>Business-for-sale marketplaces list thousands of small companies with their cash flow and asking price. Pick ten. For each, write the asking multiple, how much a bank would lend (about 3× is a reasonable start), the equity needed, the number of employees, and what a 10% pool would pay each of them if you doubled the equity. Notice which kinds of businesses make the employee number big.</p>
+  </div>
+
+  <div class="reflect">
+    <label for="j-m3a">Play with employees and pool size. What makes the payout per person large? What does that tell you about which companies to buy or back?</label>
+    <textarea class="jr" id="j-m3a" data-j="m3a" data-label="Series A · What makes the payout large"></textarea>
+    <label for="j-m3b">Venture or buyouts for Fund I? Has your answer from the Seed module changed?</label>
+    <textarea class="jr short" id="j-m3b" data-j="m3b" data-label="Series A · Venture or buyouts (second answer)"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+
+  <div class="foot"><button class="btn ghost done-btn" data-mod="m3">Mark module complete</button><button class="btn" data-go="m4">Next: Judgment →</button></div>
+</section>
+
+<!-- ================= M4 ================= -->
+<section class="page" id="p-m4" hidden>
+  <div class="eyebrow"><span class="chip">Series B</span>Module 4 · Explore</div>
+  <h2>Judgment you can measure</h2>
+  <p class="big-idea">An investor’s feedback loop is seven to ten years long and full of luck. You can’t learn fast from outcomes, so you learn from your own written predictions.</p>
+
+  <div class="block">
+    <div class="block-label">Explore</div>
+    <p>A great outcome can come from a bad decision and a good decision can lose money. Annie Duke calls judging decisions by their results “resulting.” Investors who get better over decades protect themselves from it with a written record.</p>
+    <ul>
+      <li><b>Start from the base rate.</b> Before you think about this company, ask how often companies like it succeed. Philip Tetlock’s research on forecasters found that the best ones start with the outside view and then adjust.</li>
+      <li><b>Write the memo before you decide.</b> What has to be true? What kills it? What’s the return-the-fund math? Why now, and why this team?</li>
+      <li><b>Put a number on it.</b> “Likely” means 55% to one person and 85% to another. Write “70% chance they raise a Series A within 24 months.”</li>
+      <li><b>Run a pre-mortem.</b> Imagine it’s three years from now and the investment failed. Write the story of why. Gary Klein’s technique finds risks that optimism hides.</li>
+      <li><b>Keep an anti-portfolio.</b> Bessemer publishes the famous companies it passed on. Track yours, with the reason you passed.</li>
+      <li><b>Score yourself.</b> A Brier score measures how close your probabilities were to what happened. 0 is perfect. Always saying 50% scores 0.25.</li>
+    </ul>
+  </div>
+
+  <div class="tryit">
+    <div class="tryit-head"><h3>Try it: Your prediction log</h3><span class="meta">Five a week · resolve them honestly</span></div>
+    <p style="font-size:14.5px">Write predictions you can check: a startup raising its next round, a public company’s quarter, a deal closing, an exit. Give each a probability and a date. Come back when the date passes and mark what happened.</p>
+    <form class="pform" id="pform">
+      <label for="p-text">Prediction<input id="p-text" type="text" placeholder="e.g. A startup I’m watching raises a Series A by June" required></label>
+      <label for="p-prob">Chance (%)<input id="p-prob" type="number" min="1" max="99" value="70" required></label>
+      <label for="p-date">Check on<input id="p-date" type="date" required></label>
+      <button class="btn" type="submit">Log it</button>
+    </form>
+    <div class="stats" id="predStats"></div>
+    <div class="plist" id="plist"></div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Check yourself</div>
+    <div class="quiz" data-quiz="m4"></div>
+    <p class="score" data-score="m4"></p>
+  </div>
+
+  <div class="skillbox">
+    <div class="block-label">Skill builder · The one-page memo</div>
+    <p>Pick a startup from a recent accelerator demo day. Write one page with exactly these headings, then log two predictions about it.</p>
+    <ol>
+      <li>What it is, in one sentence a stranger understands.</li>
+      <li>What has to be true for it to be worth $1B.</li>
+      <li>Why now: what changed in the last two years.</li>
+      <li>Why this team.</li>
+      <li>Pre-mortem: the most likely way it dies.</li>
+      <li>Return-the-fund math.</li>
+      <li>Decision: in or out, and the probability you’d put on being wrong.</li>
+    </ol>
+  </div>
+
+  <div class="reflect">
+    <label for="j-m4a">Name a decision you made that turned out well for the wrong reasons. What would your written memo have said at the time?</label>
+    <textarea class="jr" id="j-m4a" data-j="m4a" data-label="Series B · Right for the wrong reasons"></textarea>
+    <label for="j-m4b">What do you believe about the next ten years that most investors don’t? That’s the start of your thesis.</label>
+    <textarea class="jr short" id="j-m4b" data-j="m4b" data-label="Series B · A non-consensus belief"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+
+  <div class="foot"><button class="btn ghost done-btn" data-mod="m4">Mark module complete</button><button class="btn" data-go="m5">Next: Access and winning →</button></div>
+</section>
+
+<!-- ================= M5 ================= -->
+<section class="page" id="p-m5" hidden>
+  <div class="eyebrow"><span class="chip">Series C</span>Module 5 · Explore</div>
+  <h2>Access, winning and helping</h2>
+  <p class="big-idea">The best companies have a choice of investors. Your judgment is worth nothing if the founder picks someone else.</p>
+
+  <div class="block">
+    <div class="block-label">Explore</div>
+    <div class="cards">
+      <div class="card"><h4>Access: get in the room</h4><p>Be useful before you invest. Publish a point of view so the right founders find you. Earn a reputation with founders who never took your money. Make it easy to get to you.</p></div>
+      <div class="card"><h4>Winning: get picked</h4><p>Be fast, clear and honest. Offer clean terms. Have founders vouch for you, including ones whose companies failed. Know their business better than the other investors in the race.</p></div>
+      <div class="card"><h4>Helping: earn the next deal</h4><p>Only a few things matter: key hires, the next round, the first big customers, and staying calm in bad board meetings. Do those well and skip the rest.</p></div>
+    </div>
+    <p><b>Your edge here is Contribution Units.</b> A founder who adopts them gets a recruiting pitch nobody else can match: everyone here owns part of what they build, and they keep it if they leave. If you can show it helps them hire and keep people, Contribution Units become a reason to pick you, not a cost of taking your money.</p>
+    <h3>Term sheet basics</h3>
+    <div class="tw"><table>
+      <thead><tr><th>Term</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><b>Pre- and post-money</b></td><td>Value before and after the new money. Your ownership is check ÷ post-money.</td></tr>
+        <tr><td><b>Liquidation preference</b></td><td>On a sale, investors get their money back first. Standard is 1× non-participating: the greater of your money back or your share.</td></tr>
+        <tr><td><b>Option pool shuffle</b></td><td>Requiring a bigger option pool <i>before</i> the money comes in, which dilutes only the founders. Watch for it with the Contribution Unit pool too.</td></tr>
+        <tr><td><b>Pro rata</b></td><td>The right to invest in later rounds to keep your ownership. Where reserves get spent.</td></tr>
+        <tr><td><b>SAFE</b></td><td>Y Combinator’s simple agreement for future equity. A post-money SAFE’s cap fixes the investor’s ownership when it converts.</td></tr>
+        <tr><td><b>Protective provisions</b></td><td>Things the company can’t do without investor approval, such as selling, raising senior stock, or changing the charter.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Check yourself</div>
+    <div class="quiz" data-quiz="m5"></div>
+    <p class="score" data-score="m5"></p>
+  </div>
+
+  <div class="tryit">
+    <div class="tryit-head"><h3>Try it: Publish your thesis</h3><span class="meta">One essay · one week</span></div>
+    <ol>
+      <li>Rewrite your Contribution Units paper as an essay for founders, not investors. Lead with what it does for their hiring.</li>
+      <li>End with an offer: you’ll model their cap table with and without a pool, for free.</li>
+      <li>Publish it under your own name. Send it to twenty founders you respect and ask for their honest reaction.</li>
+      <li>Count the replies, the objections and the founders who ask for the model. That is your first measure of access.</li>
+    </ol>
+  </div>
+
+  <div class="skillbox">
+    <div class="block-label">Skill builder · The reference call</div>
+    <p>Before you invest in a founder, talk to people they didn’t list. Practice on someone you know well with these questions, and take notes.</p>
+    <ol>
+      <li>How do you know them, and for how long?</li>
+      <li>When things went badly, what did they do in the first week?</li>
+      <li>Who is the best person they ever hired, and how did they get them?</li>
+      <li>Would you work for them again? Why or why not?</li>
+      <li>What should I ask that I haven’t?</li>
+    </ol>
+  </div>
+
+  <div class="reflect">
+    <label for="j-m5a">Why would the best founder in your area pick you over a well-known fund offering the same price? Write the honest answer, then the answer you want to be true in three years.</label>
+    <textarea class="jr" id="j-m5a" data-j="m5a" data-label="Series C · Why a founder picks me"></textarea>
+    <label for="j-m5b">What did the twenty founders say about Contribution Units?</label>
+    <textarea class="jr short" id="j-m5b" data-j="m5b" data-label="Series C · What founders said"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+
+  <div class="foot"><button class="btn ghost done-btn" data-mod="m5">Mark module complete</button><button class="btn" data-go="m6">Next: Ownership that pays →</button></div>
+</section>
+
+<!-- ================= M6 ================= -->
+<section class="page" id="p-m6" hidden>
+  <div class="eyebrow"><span class="chip">Growth</span>Module 6 · Explore</div>
+  <h2>Ownership that pays</h2>
+  <p class="big-idea">LPs will love the mission and then ask one question: does it cost me returns? You need an answer with numbers in it.</p>
+
+  <div class="block">
+    <div class="block-label">Explore · the case you have to make</div>
+    <p>Your own model gives the size of the ask. In the Contribution Units paper, investors finish at 62.5% of the company instead of 64.8%. To come out even, the company has to sell for about 3.7% more. Over a ten-year hold that is less than half a point of extra growth a year. The question is whether broad ownership buys that much.</p>
+    <h3>What the evidence says</h3>
+    <ul>
+      <li>Research on US employee ownership, much of it from Rutgers (Joseph Blasi, Douglas Kruse) and summarized in <i>The Citizen’s Share</i>, generally finds modest productivity gains and lower turnover and layoffs. The gains are strongest when ownership comes with real information and a voice in how work is done.</li>
+      <li>KKR’s portfolio companies with broad ownership have reported lower turnover and better safety and engagement. Treat company-reported numbers as encouraging, not proof.</li>
+      <li>No one has a clean, long-run study of an all-employee pool in venture-backed startups. That gap is your opportunity: you could be the one who measures it.</li>
+    </ul>
+    <h3>What could go wrong</h3>
+    <ul>
+      <li><b>Dilution.</b> If the pool isn’t refilled at each round, it shrinks to nothing by Series C. Your paper handles this; your term sheets have to enforce it.</li>
+      <li><b>Tax and securities rules.</b> Units in an LLC, restricted stock or RSUs in a corporation, Rule 701 for compensatory grants, 409A valuations. The structure differs by company type. This is work for counsel, early.</li>
+      <li><b>People don’t value what they don’t understand.</b> Equity nobody explains does nothing for retention. Budget for statements and education.</li>
+      <li><b>Mission drift.</b> In a bad year, the pool is the easiest thing to cut. Write it into your fund’s documents so you can’t.</li>
+    </ul>
+    <div class="takeaway"><b>Measure it from deal one.</b> For every portfolio company, record turnover, time to fill roles, offer acceptance rate and engagement, before and after. In five years you will have the only dataset on this, and Fund II’s pitch writes itself.</div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Check yourself</div>
+    <div class="quiz" data-quiz="m6"></div>
+    <p class="score" data-score="m6"></p>
+  </div>
+
+  <div class="tryit">
+    <div class="tryit-head"><h3>Try it: Steelman the skeptic</h3><span class="meta">Three objections · three answers</span></div>
+    <p style="font-size:14.5px">Write the three strongest objections a smart, skeptical LP would raise, in their words, not yours. Then answer each with a number, a precedent, or a mechanism you will build. If you can’t answer one, that’s the gap to close before you raise.</p>
+    <div class="reflect" style="margin:0">
+      <label for="j-m6o1">Objection 1 and your answer</label>
+      <textarea class="jr short" id="j-m6o1" data-j="m6o1" data-label="Growth · Objection 1"></textarea>
+      <label for="j-m6o2">Objection 2 and your answer</label>
+      <textarea class="jr short" id="j-m6o2" data-j="m6o2" data-label="Growth · Objection 2"></textarea>
+      <label for="j-m6o3">Objection 3 and your answer</label>
+      <textarea class="jr short" id="j-m6o3" data-j="m6o3" data-label="Growth · Objection 3"></textarea>
+      <span class="saved" aria-live="polite"></span>
+    </div>
+  </div>
+
+  <div class="skillbox">
+    <div class="block-label">Skill builder · Talk to the people on Scoreboard 2</div>
+    <p>Find three people who got a meaningful equity payout and three who held options that ended up worthless or were too expensive to exercise. Ask what they understood about their equity when they joined, whether it changed how they worked, and what they did with the money. Their answers belong in your pitch.</p>
+  </div>
+
+  <div class="reflect">
+    <label for="j-m6a">“As many people as possible.” Who counts? Employees only, or the families of your LPs, your portfolio’s customers, people who can’t invest in funds at all? Where does Fund I stop?</label>
+    <textarea class="jr" id="j-m6a" data-j="m6a" data-label="Growth · Who counts"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+
+  <div class="foot"><button class="btn ghost done-btn" data-mod="m6">Mark module complete</button><button class="btn" data-go="m7">Next: Capstone →</button></div>
+</section>
+
+<!-- ================= M7 ================= -->
+<section class="page" id="p-m7" hidden>
+  <div class="eyebrow"><span class="chip">Exit</span>Module 7 · Capstone</div>
+  <h2>Write Fund I</h2>
+  <p class="big-idea">Everything so far goes into one document: the memo you’d hand an anchor investor. Write it here. Rewrite it every time a conversation teaches you something.</p>
+
+  <div class="reflect">
+    <label for="j-c1">Name and thesis, in two sentences</label>
+    <textarea class="jr short" id="j-c1" data-j="c1" data-label="Fund I · Name and thesis"></textarea>
+    <label for="j-c2">Strategy: venture or buyouts, stage, check size, target ownership, number of companies, reserves</label>
+    <textarea class="jr" id="j-c2" data-j="c2" data-label="Fund I · Strategy"></textarea>
+    <label for="j-c3">Why you: the advantage that gets you deals others don’t see or can’t win</label>
+    <textarea class="jr" id="j-c3" data-j="c3" data-label="Fund I · Why us"></textarea>
+    <label for="j-c4">How Contribution Units enter every deal (and what you do when a founder says no)</label>
+    <textarea class="jr" id="j-c4" data-j="c4" data-label="Fund I · Contribution Units in every deal"></textarea>
+    <label for="j-c5">Terms: size, fee, carry, GP commitment, and why</label>
+    <textarea class="jr short" id="j-c5" data-j="c5" data-label="Fund I · Terms"></textarea>
+    <label for="j-c6">Both scoreboards: what you’ll report to LPs and how often</label>
+    <textarea class="jr short" id="j-c6" data-j="c6" data-label="Fund I · Two scoreboards"></textarea>
+    <label for="j-c7">The raise: your anchor, your first twenty LPs by name, and your first-close target</label>
+    <textarea class="jr" id="j-c7" data-j="c7" data-label="Fund I · The raise"></textarea>
+    <label for="j-c8">Track record: every investment you’ve made or would have made, with the date you decided</label>
+    <textarea class="jr" id="j-c8" data-j="c8" data-label="Fund I · Track record"></textarea>
+    <span class="saved" aria-live="polite"></span>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Rate yourself again</div>
+    <p>Same six areas as the Welcome page. The gap between the two is the next year of work.</p>
+    <div class="selfcheck" id="selfcheck2"></div>
+  </div>
+
+  <div class="foot"><button class="btn ghost done-btn" data-mod="m7">Mark module complete</button><button class="btn" id="copyMemo" type="button">Copy the memo</button></div>
+  <p class="saved" id="memoMsg" aria-live="polite"></p>
+</section>
+
+<!-- ================= PATH ================= -->
+<section class="page" id="p-path" hidden>
+  <div class="eyebrow">Beyond the modules</div>
+  <h2>The plan: the company, then the firm</h2>
+  <p class="lede">You and your brother start a company that runs Contribution Units from the first hire. You publish the template and talk about it. Once the company can run without you, you leave to run the firm and raise Fund I on what the company proved.</p>
+
+  <div class="block">
+    <div class="block-label">Why this order</div>
+    <div class="cards">
+      <div class="card"><h4>The company is the proof</h4><p>“We run it ourselves, and here is what happened to hiring and turnover” is the evidence LPs ask for in Module 6. You’ll have it before you raise.</p></div>
+      <div class="card"><h4>The template is the access</h4><p>Founders who adopt it already agree with you and know your name. That is the deal flow problem from Module 5, partly solved.</p></div>
+      <div class="card"><h4>LPs back operators</h4><p>A founder who turned into an investor, with a thesis that came out of their own company, is a story LPs know how to fund.</p></div>
+    </div>
+  </div>
+
+  <div class="timeline">
+    <div class="stage"><div class="when">Year 0</div><div><h3>Found it right</h3>
+      <ul><li>Put Contribution Units in the cap table and founders’ agreement before the first hire.</li>
+      <li>Have counsel settle the structure: C-corp or LLC, real units or a share of sale proceeds (Module 6). Whatever they build for you becomes the template.</li>
+      <li>Write the split terms now, while everyone gets along (the checklist below).</li></ul></div></div>
+    <div class="stage"><div class="when">Years 0–2</div><div><h3>Build, measure, publish</h3>
+      <ul><li>Measure from employee one: turnover, time to fill roles, offer acceptance, and whether people understand their units.</li>
+      <li>Publish the template once your own version has survived counsel. Write the essay for founders; give the talks.</li>
+      <li>On the side: small angel checks, five predictions a week, a memo for every deal you see.</li></ul></div></div>
+    <div class="stage"><div class="when">Years 2–4</div><div><h3>Prove it spreads</h3>
+      <ul><li>Count the startups that adopt the template, and keep in touch with each.</li>
+      <li>Lead a few SPVs (single-deal vehicles) or one deal-by-deal buyout. Everyone who invests with you is a future LP.</li>
+      <li>The company reaches the split triggers you wrote down in year 0.</li></ul></div></div>
+    <div class="stage"><div class="when">The split</div><div><h3>Hand it over</h3><p>Your brother or a hired CEO runs the company. You keep what the agreement says, and you start the firm.</p></div></div>
+    <div class="stage"><div class="when">Years 4–6</div><div><h3>Raise Fund I</h3><p>Pitch on three things: the company’s data, the companies that adopted the template, and your angel and SPV record. Hire fund counsel, find an anchor for 10–20%, hold a first close around 40–60% of target and a final close within about a year.</p></div></div>
+    <div class="stage"><div class="when">Years 6–20</div><div><h3>Become very good</h3><p>The best investors are judged on three funds, not one. Fund II is raised on Fund I’s early marks and your Scoreboard 2 data. Fund III is raised on cash returned.</p></div></div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">The split · write it down in year 0</div>
+    <ul>
+      <li><b>What triggers it.</b> A revenue level, a Series A, or a CEO in place who isn’t you. Something you can both check.</li>
+      <li><b>Your equity when you leave.</b> How much has vested, what keeps vesting, and whether you keep a board seat.</li>
+      <li><b>The firm investing in the company.</b> Allowed, with your fund’s LP advisory committee approving the conflict.</li>
+      <li><b>Who owns the template and the name.</b> The company, you, or an open license nobody owns.</li>
+      <li><b>Conflicts.</b> A written policy for when the firm invests in the company’s customers or competitors.</li>
+    </ul>
+  </div>
+
+  <div class="block">
+    <div class="block-label">An idea to test · the product is the tooling</div>
+    <p>The company could sell what makes Contribution Units easy: plan documents, a ledger that runs off payroll, statements for employees, and handling the pool at a sale. Then the company, the template and the talks are one thing. Every customer is a startup that adopted Contribution Units, which becomes the firm’s deal flow, and the company’s data is the evidence. Test whether the market is big enough to build a real company. If it isn’t, build the company you two are best placed to win and run Contribution Units inside it.</p>
+  </div>
+
+  <div class="block">
+    <div class="block-label">An honest read, October 2026</div>
+    <div class="tw"><table>
+      <thead><tr><th>Question</th><th>Where it stands</th></tr></thead>
+      <tbody>
+        <tr><td><b>Does the idea hold up?</b></td><td>Yes. KKR, Ownership Works and Teamshares show broad ownership can coexist with market returns in buyouts. Pay-weighted, never-forfeited, refilled pools are new for startups.</td></tr>
+        <tr><td><b>The biggest open problem</b></td><td>Tax. In a C-corp, stock granted continuously and never forfeited is generally taxable when granted, with nothing to sell to pay the tax. A share of sale proceeds (taxed at payout, as income) is the likely fix. Settle it first.</td></tr>
+        <tr><td><b>Will founders adopt it?</b></td><td>Only if it helps them hire and keep people, because they pay most of the cost (about a fifth of their stake). Your company’s data is how you show that.</td></tr>
+        <tr><td><b>Raising $25M with no record</b></td><td>Unlikely in three years. The company-first plan is how you build the record.</td></tr>
+        <tr><td><b>Impact of one fund</b></td><td>A few hundred people over ten years. Real, but small.</td></tr>
+        <tr><td><b>Where the big impact is</b></td><td>The example. Clean data showing it doesn’t cost returns, plus a template anyone can adopt, is what lets other firms copy you.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Fund I at $25M · the structure</div>
+    <div class="diagram">
+      <svg viewBox="0 0 640 230" role="img" aria-label="LPs commit to the fund; the GP controls the fund and receives carry; the management company receives the fee and employs the team; the fund invests in portfolio companies.">
+        <g font-family="Public Sans, system-ui, sans-serif" font-size="13">
+          <rect x="10" y="20" width="150" height="54" fill="var(--soft)" stroke="var(--accent)"/>
+          <text x="85" y="43" text-anchor="middle" fill="var(--ink)" font-weight="700">LPs</text>
+          <text x="85" y="61" text-anchor="middle" fill="var(--muted)" font-size="11.5">40–80 people and offices</text>
+          <rect x="245" y="20" width="150" height="54" fill="var(--surface)" stroke="var(--ink)"/>
+          <text x="320" y="43" text-anchor="middle" fill="var(--ink)" font-weight="700">The fund (LP)</text>
+          <text x="320" y="61" text-anchor="middle" fill="var(--muted)" font-size="11.5">$25M committed</text>
+          <rect x="480" y="20" width="150" height="54" fill="var(--surface)" stroke="var(--ink)"/>
+          <text x="555" y="43" text-anchor="middle" fill="var(--ink)" font-weight="700">General partner</text>
+          <text x="555" y="61" text-anchor="middle" fill="var(--muted)" font-size="11.5">LLC · you · carry</text>
+          <rect x="480" y="150" width="150" height="54" fill="var(--surface)" stroke="var(--ink)"/>
+          <text x="555" y="173" text-anchor="middle" fill="var(--ink)" font-weight="700">Management co.</text>
+          <text x="555" y="191" text-anchor="middle" fill="var(--muted)" font-size="11.5">LLC · fee · team</text>
+          <rect x="245" y="150" width="150" height="54" fill="var(--brass-soft)" stroke="var(--brass)"/>
+          <text x="320" y="173" text-anchor="middle" fill="var(--ink)" font-weight="700">Portfolio</text>
+          <text x="320" y="191" text-anchor="middle" fill="var(--muted)" font-size="11.5">every one with a pool</text>
+        </g>
+        <g stroke="var(--muted)" stroke-width="1.4" fill="none">
+          <line x1="160" y1="47" x2="239" y2="47"/><polyline points="233,42 240,47 233,52"/>
+          <line x1="474" y1="47" x2="401" y2="47"/><polyline points="407,42 400,47 407,52"/>
+          <line x1="320" y1="74" x2="320" y2="144"/><polyline points="315,138 320,145 325,138"/>
+          <line x1="555" y1="150" x2="555" y2="80"/><polyline points="550,86 555,79 560,86"/>
+        </g>
+        <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="var(--muted)">
+          <text x="200" y="39" text-anchor="middle">commit</text>
+          <text x="437" y="39" text-anchor="middle">controls</text>
+          <text x="328" y="114">invests</text>
+          <text x="563" y="118">advises · paid fee</text>
+        </g>
+      </svg>
+    </div>
+    <div class="tw"><table>
+      <thead><tr><th>What you need</th><th class="r">Typical range</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>GP commitment</td><td class="r mono">$250–500K</td><td>1–2% of the fund, paid in as capital is called over 3–5 years. Sometimes partly covered by waiving fees.</td></tr>
+        <tr><td>Costs before first close</td><td class="r mono">$75–200K</td><td>Fund counsel, entity formation, travel. Much of it reimbursed by the fund at first close, up to the formation-cost cap.</td></tr>
+        <tr><td>Your runway while raising</td><td class="r mono">12–24 months</td><td>No fee until first close. The company, savings or a salary carries you.</td></tr>
+        <tr><td>Annual fee after close</td><td class="r mono">$500K</td><td>At 2%. Pays the team, travel, software, compliance.</td></tr>
+        <tr><td>Annual fund operations</td><td class="r mono">$80–150K</td><td>Fund administrator, audit, tax returns, insurance. Usually charged to the fund.</td></tr>
+        <tr><td>Investors</td><td class="r mono">40–80 LPs</td><td>Wealthy individuals, founders and operators who have sold companies, family offices, a few emerging-manager programs. Checks of $100K–$1M; an anchor at $2.5–5M.</td></tr>
+      </tbody>
+    </table></div>
+    <p><b>Who’s involved:</b> you and ideally one partner; fund counsel; a fund administrator; an auditor and tax preparer; a bank; a compliance consultant; an LP advisory committee of three to five investors; and a few venture partners or advisors who bring deals.</p>
+    <p class="note">For counsel: whether the fund relies on the 3(c)(1) exemption (up to 100 investors, or up to 250 for a qualifying venture fund of $10M or less) or 3(c)(7) (qualified purchasers only); whether you can be an exempt reporting adviser (the venture capital fund or private fund adviser exemption) and what your state requires; and whether you raise under Rule 506(b) (no public marketing) or 506(c) (public marketing, verified accredited investors only). Publishing your thesis essay is fine. Publicly promoting the fund itself is a 506(c) decision.</p>
+  </div>
+</section>
+
+<!-- ================= KIT ================= -->
+<section class="page" id="p-kit" hidden>
+  <div class="eyebrow">Beyond the modules</div>
+  <h2>Field kit</h2>
+  <p class="lede">Read these roughly in order. The first five cover the plumbing; the rest are for the long game.</p>
+
+  <div class="block">
+    <div class="block-label">Books</div>
+    <div class="kit">
+      <div class="item"><b>Venture Deals</b><span>Brad Feld and Jason Mendelson. Term sheets and fund economics, line by line.</span></div>
+      <div class="item"><b>Secrets of Sand Hill Road</b><span>Scott Kupor. How venture firms and their LPs actually work.</span></div>
+      <div class="item"><b>The Business of Venture Capital</b><span>Mahendra Ramsinghani. Raising a fund, from the manager’s side.</span></div>
+      <div class="item"><b>The Power Law</b><span>Sebastian Mallaby. The history of venture and why it works the way it does.</span></div>
+      <div class="item"><b>The Citizen’s Share</b><span>Blasi, Freeman and Kruse. The history and evidence for broad employee ownership in the US.</span></div>
+      <div class="item"><b>Thinking in Bets</b><span>Annie Duke. Separating decision quality from outcomes.</span></div>
+      <div class="item"><b>Superforecasting</b><span>Philip Tetlock and Dan Gardner. How the best forecasters get calibrated.</span></div>
+      <div class="item"><b>The Outsiders</b><span>William Thorndike. CEOs who were really capital allocators.</span></div>
+      <div class="item"><b>Private Equity at Work</b><span>Eileen Appelbaum and Rosemary Batt. The critics’ case against PE. Know it better than they do.</span></div>
+      <div class="item"><b>Venture Capital and the Finance of Innovation</b><span>Andrew Metrick and Ayako Yasuda. The textbook, for when you want the math.</span></div>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Writing to follow</div>
+    <div class="kit">
+      <div class="item"><b>Howard Marks’ memos</b><span>Oaktree. Risk, cycles and second-level thinking.</span></div>
+      <div class="item"><b>Berkshire Hathaway letters</b><span>Warren Buffett. Fifty years of allocating capital in plain English.</span></div>
+      <div class="item"><b>Paul Graham’s essays</b><span>How founders think, and what early-stage investors miss.</span></div>
+      <div class="item"><b>AVC</b><span>Fred Wilson’s blog. Decades of a working venture investor thinking out loud.</span></div>
+      <div class="item"><b>“We Have Met the Enemy… and He Is Us”</b><span>Kauffman Foundation, 2012. An LP’s hard look at venture fund returns.</span></div>
+      <div class="item"><b>Pete Stavros on broad-based ownership</b><span>His talks and Ownership Works’ published materials.</span></div>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="block-label">Programs, groups and data</div>
+    <div class="kit">
+      <div class="item"><b>Ownership Works</b><span>The nonprofit for broad-based ownership in PE and companies. Your closest allies.</span></div>
+      <div class="item"><b>NCEO and Rutgers’ employee ownership institute</b><span>Research, data and people who study this for a living.</span></div>
+      <div class="item"><b>Kauffman Fellows</b><span>A two-year program for working investors. Apply once you’re investing.</span></div>
+      <div class="item"><b>VC Lab</b><span>A program for first-time fund managers on forming and raising a fund.</span></div>
+      <div class="item"><b>ILPA</b><span>Model LPA, reporting templates and principles. How LPs expect to be treated.</span></div>
+      <div class="item"><b>NVCA model documents and YC’s SAFE</b><span>The standard venture financing documents.</span></div>
+      <div class="item"><b>Carta and PitchBook-NVCA reports</b><span>Round sizes, valuations, dilution and fund performance data.</span></div>
+      <div class="item"><b>Cambridge Associates benchmarks</b><span>The returns you’ll be compared with.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= JOURNAL ================= -->
+<section class="page" id="p-journal" hidden>
+  <div class="eyebrow">Beyond the modules</div>
+  <h2>Journal</h2>
+  <p class="lede">Everything you’ve written, in course order. Copy it into a doc when you want to share it with a partner or advisor.</p>
+  <div class="foot" style="margin:0 0 18px; border:0; padding:0"><button class="btn" id="copyJournal" type="button">Copy the journal</button><span class="saved" id="jMsg" aria-live="polite"></span></div>
+  <div class="jout" id="jout"></div>
+</section>
+
+    </main>
+  </div>
+</div>
+<script type="application/json" id="quiz-data">
+{
+ "m1": [
+  {
+   "q": "A $25M fund charges a 2% management fee. In year one, before any money is invested, the fee is:",
+   "o": [
+    "$500,000, charged on committed capital",
+    "$0, because nothing has been invested yet",
+    "$50,000, charged on the first capital call"
+   ],
+   "a": 0,
+   "w": "During the investment period the fee is charged on commitments, so the team can be paid before deals close. That’s why fees add up to 15–20% of a fund."
+  },
+  {
+   "q": "Your fund reports 2.5× TVPI and 0.3× DPI. What have your LPs actually received?",
+   "o": [
+    "$2.50 in cash per dollar paid in",
+    "30 cents in cash per dollar paid in; the rest is unrealized value",
+    "Nothing until DPI passes 1.0×"
+   ],
+   "a": 1,
+   "w": "DPI is cash in hand. TVPI adds the value of companies you still hold, which you estimate yourself. LPs trust DPI."
+  },
+  {
+   "q": "Under a whole-fund (European) waterfall, when does the GP start receiving carry?",
+   "o": [
+    "When each individual deal makes a profit",
+    "After LPs have received back all the capital they contributed (plus any preferred return)",
+    "At the end of the investment period"
+   ],
+   "a": 1,
+   "w": "Whole-fund waterfalls pay LPs back first, which is what ILPA recommends. Deal-by-deal (American) waterfalls pay carry sooner and usually need clawback protection."
+  },
+  {
+   "q": "What GP commitment do LPs typically expect?",
+   "o": [
+    "0%: the GP contributes time, not money",
+    "About 1–2% of the fund",
+    "At least 10% of the fund"
+   ],
+   "a": 1,
+   "w": "1% has long been the norm, and some LPs push first-time managers higher. At $25M that’s $250–500K over the investment period."
+  }
+ ],
+ "m2": [
+  {
+   "q": "Which mistake usually costs a seed fund more?",
+   "o": [
+    "Investing in a company that goes to zero",
+    "Passing on a company that returns 100×"
+   ],
+   "a": 1,
+   "w": "A loss is capped at 1× the check. A missed outlier can be worth more than the rest of the portfolio combined."
+  },
+  {
+   "q": "To return a $25M fund from a single $1B exit, how much of the company do you need to own when it sells?",
+   "o": [
+    "0.25%",
+    "2.5%",
+    "25%"
+   ],
+   "a": 1,
+   "w": "2.5% × $1B = $25M. With dilution from later rounds, that usually means buying 5% or more at seed."
+  },
+  {
+   "q": "Horsley Bridge’s data on top-performing venture funds showed that, compared with average funds, they:",
+   "o": [
+    "Almost never lose money on a deal",
+    "Often have as many write-offs, but bigger winners",
+    "Invest in far fewer companies"
+   ],
+   "a": 1,
+   "w": "Great funds aren’t defined by avoiding losses. They’re defined by the size of their best outcomes."
+  }
+ ],
+ "m3": [
+  {
+   "q": "Which three sources drive buyout returns?",
+   "o": [
+    "Earnings growth, debt paydown and a higher exit multiple",
+    "Management fees, carry and recycling",
+    "Revenue, gross margin and headcount"
+   ],
+   "a": 0,
+   "w": "Grow EBITDA, repay debt from cash flow, and (sometimes) sell at a higher multiple. The first two you control."
+  },
+  {
+   "q": "When KKR sold CHI Overhead Doors in 2022, about how much did the average hourly worker receive from the ownership program?",
+   "o": [
+    "About $5,000",
+    "About $175,000",
+    "About $2 million"
+   ],
+   "a": 1,
+   "w": "Roughly $175,000 on average, reported widely at the time of the sale. It’s the case LPs and founders will already have heard of."
+  },
+  {
+   "q": "What does an independent sponsor do?",
+   "o": [
+    "Raises a blind-pool fund before finding deals",
+    "Finds and signs a deal first, then raises equity for that one deal",
+    "Advises companies on their sale for a fee"
+   ],
+   "a": 1,
+   "w": "It’s the most common way to build a buyout track record without a fund."
+  }
+ ],
+ "m4": [
+  {
+   "q": "You give ten predictions 50% each. What Brier score do you get, whatever happens?",
+   "o": [
+    "0",
+    "0.25",
+    "0.5"
+   ],
+   "a": 1,
+   "w": "(0.5 − 0)² and (0.5 − 1)² are both 0.25. To beat 0.25 you have to commit to probabilities away from 50% and be right."
+  },
+  {
+   "q": "What is a pre-mortem?",
+   "o": [
+    "A review of an investment after it fails",
+    "Imagining the investment has already failed and writing down why, before you decide",
+    "A check on a company’s finances before closing"
+   ],
+   "a": 1,
+   "w": "Gary Klein’s method. It makes it safe to say what everyone is privately worried about."
+  },
+  {
+   "q": "Roughly what share of seed-funded US startups go on to raise a Series A?",
+   "o": [
+    "About 90%",
+    "About a third to a half, depending on the year",
+    "About 5%"
+   ],
+   "a": 1,
+   "w": "It varies by cohort and market (Carta publishes current data). Start every memo from a base rate like this one, then adjust."
+  }
+ ],
+ "m5": [
+  {
+   "q": "You invest $2M on a post-money SAFE with a $20M cap. What does it convert into, before the new round’s money?",
+   "o": [
+    "About 9%",
+    "10%",
+    "It depends on the size of the Series A"
+   ],
+   "a": 1,
+   "w": "Post-money SAFEs fix ownership at check ÷ cap: $2M ÷ $20M = 10%. The new round dilutes everyone after that."
+  },
+  {
+   "q": "An investor with a 1× non-participating preference puts in $5M for 20%. The company sells for $15M. What does the investor get?",
+   "o": [
+    "$3M (20% of $15M)",
+    "$5M (its money back)",
+    "$8M (its money back plus 20% of the rest)"
+   ],
+   "a": 1,
+   "w": "Non-participating means the greater of the preference ($5M) or its share ($3M). $8M would be a participating preference."
+  },
+  {
+   "q": "What does a pro rata right give you?",
+   "o": [
+    "A share of every exit in proportion to your fund size",
+    "The right to invest in later rounds to keep your ownership",
+    "A seat on the board"
+   ],
+   "a": 1,
+   "w": "It’s where reserves go, and one of the most valuable rights a seed investor can hold."
+  }
+ ],
+ "m6": [
+  {
+   "q": "In the Contribution Units model, investors end at 62.5% instead of 64.8%. About how much more must the company sell for to leave investors even?",
+   "o": [
+    "About 3.7% more",
+    "About 7% more",
+    "About 18% more"
+   ],
+   "a": 0,
+   "w": "64.8 ÷ 62.5 ≈ 1.037. That’s the hurdle your evidence has to clear."
+  },
+  {
+   "q": "What makes Contribution Units different from a qualified ESOP?",
+   "o": [
+    "ESOPs are allocated by salary; Contribution Units aren’t",
+    "Contribution Units are never forfeited and aren’t a regulated retirement plan",
+    "There’s no real difference"
+   ],
+   "a": 1,
+   "w": "Both cover everyone and allocate by pay. The difference is permanence and the legal vehicle, as the paper says."
+  },
+  {
+   "q": "What does Teamshares do?",
+   "o": [
+    "Runs a stock-trading app for employees",
+    "Buys small businesses from retiring owners and moves ownership to employees over time",
+    "Administers ESOPs for public companies"
+   ],
+   "a": 1,
+   "w": "It’s a working example of a buyout-style path to employee ownership in small businesses."
+  }
+ ]
+}
+</script>
