@@ -1,6 +1,7 @@
 // Listing rows, shared by the page's API (api.mjs) and the email ingest (ingest.mjs).
 // A listing is a home for sale, filed under a neighborhood (hoodId) or unsorted (null), ranked
-// within it. Rows: pk = TOOL, sk = LISTING#<id>.
+// within it. A rejected one is hidden on the page but kept, so a later alert about the same house
+// updates it (still rejected) instead of adding it again. Rows: pk = TOOL, sk = LISTING#<id>.
 
 export const STATUSES = ['active', 'pending', 'sold', 'gone'];
 // What a listing alert said about a home; ingest maps these onto status
@@ -55,7 +56,7 @@ export function cleanListing(body, id) {
       id, hoodId: body.hoodId || null, address, city: str(body.city, 60),
       price: body.price ?? null, beds: body.beds ?? null, baths: body.baths ?? null, sqft: body.sqft ?? null,
       url: listingUrl(body.url, address, str(body.city, 60)), status, event: EVENTS.includes(body.event) ? body.event : '', summary: str(body.summary, 400),
-      notes: str(body.notes, 5000), rank: body.rank ?? null, reviewed: body.reviewed === true,
+      notes: str(body.notes, 5000), rank: body.rank ?? null, reviewed: body.reviewed === true, rejected: body.rejected === true,
       source: body.source === 'email' ? 'email' : 'manual',
       firstSeenAt: iso(body.firstSeenAt), lastSeenAt: iso(body.lastSeenAt),
       history: history.filter((h) => h && iso(h.at) && EVENTS.includes(h.kind)).slice(-30)
@@ -67,7 +68,7 @@ export function cleanListing(body, id) {
 export const listingOut = (i) => ({
   id: i.sk.slice(8), hoodId: i.hoodId ?? null, address: i.address, city: i.city || '', price: i.price ?? null,
   beds: i.beds ?? null, baths: i.baths ?? null, sqft: i.sqft ?? null, url: i.url || '', status: i.status, event: i.event || '',
-  summary: i.summary || '', notes: i.notes || '', rank: i.rank ?? null, reviewed: !!i.reviewed, source: i.source || 'manual',
+  summary: i.summary || '', notes: i.notes || '', rank: i.rank ?? null, reviewed: !!i.reviewed, rejected: !!i.rejected, source: i.source || 'manual',
   firstSeenAt: i.firstSeenAt || null, lastSeenAt: i.lastSeenAt || null, history: i.history || [],
   rev: i.rev, updatedAt: i.updatedAt, updatedByName: i.updatedByName || '',
 });

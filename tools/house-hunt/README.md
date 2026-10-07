@@ -25,7 +25,8 @@ Lambda, which takes mail only from `allowed_senders` (your Gmail addresses and t
 only when it passes DMARC. Claude on Bedrock (`var.model`) reads the email as untrusted data and returns
 the homes in a fixed schema, each matched to one of our neighborhood ids or none. A home we already have
 (same street address) gets its price, status and history updated; our notes, rank and neighborhood stay.
-New homes go to the bottom of their neighborhood's list, or the inbox. The ingest is bundled with
+New homes go to the bottom of their neighborhood's list, or the inbox. A listing you reject is hidden but kept (`rejected`), so a later
+alert about that house updates it quietly instead of adding it back; the inbox can show rejected ones to undo. The ingest is bundled with
 `npm run build` (it uses `mailparser` and the Bedrock SDK).
 
 `scripts/hoods.mjs` is the starting data: the Greer Trail Neighborhoods map (2026-09-27) merged with the

@@ -285,6 +285,28 @@ test('rank listings with ↑ ↓, and move one to another neighborhood (it joins
   p.close();
 });
 
+test('reject a listing: it drops out of its list and the counts, and can be shown and un-rejected', async () => {
+  await L('a', { rank: 1, reviewed: false });
+  await L('b', { rank: 2 });
+  const p = await open('Luke');
+  assert.deepEqual(p.lst('pf'), ['a Main St', 'b Main St']);
+  await p.click('[data-lreject="a"]');
+  assert.equal((await call('GET', '/all')).body.listings.find((l) => l.id === 'a').rejected, true);
+  assert.deepEqual(p.lst('pf'), ['b Main St']);
+  assert.doesNotMatch(p.el('#hood-pf .listings-head').textContent, /to review/);
+  assert.match(p.el('.inbox').textContent, /1 rejected listing hidden/);
+  assert.match(p.el('#status').textContent, /a Main St rejected/);
+
+  await p.click('[data-showrejected]');
+  assert.deepEqual(p.lst('pf'), ['a Main St', 'b Main St']);
+  assert.ok(p.el('[data-listing="a"]').classList.contains('rejected'));
+  assert.match(p.el('[data-listing="a"]').textContent, /Rejected/);
+  await p.click('[data-lreject="a"]');
+  assert.equal((await call('GET', '/all')).body.listings.find((l) => l.id === 'a').rejected, false);
+  assert.equal(p.d.querySelector('[data-showrejected]'), null, 'nothing rejected, no toggle');
+  p.close();
+});
+
 test('add a listing by hand, mark one reviewed, keep notes on it, and delete it', async () => {
   await L('a', { reviewed: false });
   const p = await open('Amber');

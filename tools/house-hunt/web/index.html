@@ -105,7 +105,7 @@ ol.lst { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; min-h
 ol.lst:empty::before { content: "Drag listings here, or add one."; color: var(--muted); font-size: 13px; display: block; padding: 8px 10px; border: 1.5px dashed var(--line); border-radius: var(--r-sm) }
 .lst > li { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 2px 8px; align-items: start; padding: 8px 10px; background: var(--raised); border-radius: var(--r-sm) }
 .lst > li.unread { box-shadow: inset 3px 0 0 var(--sun) }
-.lst > li.sold, .lst > li.gone { opacity: .6 }
+.lst > li.sold, .lst > li.gone, .lst > li.rejected { opacity: .6 }
 .lrank { font: 700 13px/1.6 var(--display); color: var(--muted); min-width: 1.4em; text-align: right }
 .lmain { min-width: 0 }
 .lmain a, .lmain .addr { font-weight: 600; color: var(--ink); overflow-wrap: anywhere }
@@ -159,7 +159,7 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
 <script>
 (function () {
   var cfg, me = "", hoods = [], places = [], listings = [], mail = [], notes = { text: "", rev: 0 };
-  var addingListing = null, openNotes = {}, sortables = [];
+  var addingListing = null, openNotes = {}, sortables = [], showRejected = false;
   var editing = null, armed = null, sort = "price";
   // Notes typed but not yet saved, kept across re-renders: { "NOTES" | hoodId: text }
   var drafts = {}, conflicts = {}, saving = {};
@@ -430,12 +430,13 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
   }
 
   // ---- listings ----
+  // A neighborhood's listings in rank order; rejected ones only while "Show rejected" is on
   function inHood(hoodId) {
-    return listings.filter(function (l) { return (l.hoodId || null) === hoodId; })
+    return listings.filter(function (l) { return (l.hoodId || null) === hoodId && (showRejected || !l.rejected); })
       .sort(function (a, b) { return (a.rank || 999) - (b.rank || 999) || String(a.firstSeenAt).localeCompare(String(b.firstSeenAt)); });
   }
   function findListing(id) { return listings.filter(function (l) { return l.id === id; })[0]; }
-  function unread(hoodId) { return inHood(hoodId).filter(function (l) { return !l.reviewed; }).length; }
+  function unread(hoodId) { return inHood(hoodId).filter(function (l) { return !l.reviewed && !l.rejected; }).length; }
   // Last price change, from the alert history: "cut" with the amount, or null
   function priceChange(l) {
     var p = (l.history || []).map(function (h) { return h.price; }).filter(function (x) { return x != null; });
@@ -449,14 +450,15 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
     var chg = priceChange(l), facts = [];
     if (l.beds) facts.push(l.beds + " bd"); if (l.baths) facts.push(l.baths + " ba"); if (l.sqft) facts.push(Number(l.sqft).toLocaleString("en-US") + " sqft");
     if (l.city) facts.push(l.city);
-    var tags = (!l.reviewed && l.event !== "price_cut" ? '<span class="ltag new">New</span>' : "") +
+    var tags = (!l.reviewed && !l.rejected && l.event !== "price_cut" ? '<span class="ltag new">New</span>' : "") +
       (chg ? '<span class="ltag ' + (chg.cut ? "cut" : "") + '">' + (chg.cut ? "Price cut " : "Price up ") + money(chg.amount) + "</span>" : "") +
-      (STATUS_TAG[l.status] ? '<span class="ltag ' + l.status + '">' + STATUS_TAG[l.status] + "</span>" : "");
+      (STATUS_TAG[l.status] ? '<span class="ltag ' + l.status + '">' + STATUS_TAG[l.status] + "</span>" : "") +
+      (l.rejected ? '<span class="ltag gone">Rejected</span>' : "");
     var moveOpts = '<option value="">Unsorted</option>' + hoods.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (h) {
       return '<option value="' + esc(h.id) + '"' + (h.id === l.hoodId ? " selected" : "") + ">" + esc(h.name) + "</option>";
     }).join("");
     var draft = drafts["L:" + l.id];
-    return '<li class="' + (l.reviewed ? "" : "unread ") + esc(l.status) + '" data-listing="' + esc(l.id) + '">' +
+    return '<li class="' + (l.reviewed || l.rejected ? "" : "unread ") + esc(l.status) + (l.rejected ? " rejected" : "") + '" data-listing="' + esc(l.id) + '">' +
       '<button class="drag ldrag" type="button" aria-label="Drag ' + esc(l.address) + ' to rank it" title="Drag to rank">⠿</button>' +
       '<span class="lrank">' + (i + 1) + "</span>" +
       '<div class="lmain">' + (l.url ? '<a href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">' + esc(l.address) + "</a>" : '<span class="addr">' + esc(l.address) + "</span>") + tags +
@@ -470,6 +472,7 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
       '<select data-lhood="' + esc(l.id) + '" aria-label="Neighborhood for ' + esc(l.address) + '">' + moveOpts + "</select>" +
       (map ? '<button class="small-btn" data-lmap="' + esc(l.id) + '">Show on map</button>' : "") +
       '<button class="small-btn" data-lnotes="' + esc(l.id) + '">' + (l.notes ? "Notes (1)" : "Notes") + "</button>" +
+      '<button class="small-btn" data-lreject="' + esc(l.id) + '">' + (l.rejected ? "Un-reject" : "Reject") + "</button>" +
       '<button class="small-btn" data-ldel="' + esc(l.id) + '">Delete</button></div>' +
       (openNotes[l.id] ? '<div class="lnotes"><textarea data-notes="L:' + esc(l.id) + '" aria-label="Notes on ' + esc(l.address) + '" placeholder="Showing notes, questions for the agent…">' + esc(draft != null ? draft : l.notes) + "</textarea>" +
         conflictNote("L:" + l.id, "notes on this listing", conflicts["L:" + l.id] && conflicts["L:" + l.id].notes) +
@@ -487,13 +490,15 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
   }
   function inboxCard() {
     var last = mail[0];
-    var unsorted = inHood(null);
+    var unsorted = inHood(null), nRejected = listings.filter(function (l) { return l.rejected; }).length;
     return '<section class="card inbox"><h2>Listings inbox</h2>' +
       '<p class="caveat" style="margin:0">Forward listing alerts (Zillow, Redfin, your agent) to <code>househunt@dot-y.co</code>. Claude files each home under its neighborhood; ones it can’t place land here. Drag any listing by its ⠿ handle to rank it or move it to a neighborhood.</p>' +
       (mail.length ? '<ul class="mail-log">' + mail.slice(0, 3).map(function (m) {
         return "<li>" + esc(when(m.receivedAt)) + " · " + esc(m.subject || "(no subject)") + " · " +
           esc(m.outcome === "ok" ? m.added + " new, " + m.updated + " updated" : m.outcome) + "</li>";
       }).join("") + "</ul>" : "") +
+      (nRejected ? '<p class="caveat" style="margin:0">' + nRejected + (nRejected === 1 ? " rejected listing " : " rejected listings ") + (showRejected ? "shown, dimmed." : "hidden.") +
+        ' <button class="small-btn" data-showrejected>' + (showRejected ? "Hide them" : "Show them") + "</button></p>" : "") +
       (unsorted.length || addingListing === "" ? listingsBlock(null) : "") + "</section>";
   }
 
@@ -633,6 +638,13 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
       showAddress(lp.address + ", " + (lp.city || "Greer") + ", SC", lp.address,
         "<br>" + esc(money(lp.price)) + (lp.url ? ' · <a href="' + esc(lp.url) + '" target="_blank" rel="noopener noreferrer">Listing</a>' : ""));
     }
+    else if (t.dataset.lreject) {
+      // Rejected listings stay in the table (hidden), so a later alert about the house doesn't bring it back
+      var lj = findListing(t.dataset.lreject);
+      saveListing(lj, { rejected: !lj.rejected, reviewed: true }, lj.address + (lj.rejected ? " is back" : " rejected. It stays hidden, even if an alert mentions it again."))
+        .then(render, function () { render(); });
+    }
+    else if (t.dataset.showrejected != null) { showRejected = !showRejected; render(); }
     else if (t.dataset.lnotes) { openNotes[t.dataset.lnotes] = !openNotes[t.dataset.lnotes]; render(); }
     else if (t.dataset.ldel) {
       var lid = t.dataset.ldel;

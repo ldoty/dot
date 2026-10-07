@@ -96,6 +96,19 @@ test('a later alert about the same house updates it, keeping our notes, rank and
   assert.equal(after.firstSeenAt, '2026-10-05T12:00:00.000Z');
 });
 
+test('a rejected house stays rejected when a later alert mentions it, and isn’t added again', async () => {
+  reply = answer([home()]);
+  await ingest()(record());
+  const [row] = listings().filter((l) => l.source === 'email');
+  table.put({ ...row, rejected: true, rev: row.rev + 1 });
+  reply = answer([home({ price: 589000, event: 'price_cut' })]);
+  const r = await ingest('2026-10-12T12:00:00.000Z')(record({ id: 'msg2' }));
+  assert.deepEqual([r.added, r.updated], [0, 1]);
+  const now = listings().filter((l) => l.source === 'email');
+  assert.equal(now.length, 1);
+  assert.deepEqual([now[0].rejected, now[0].price], [true, 589000]);
+});
+
 test('pending and sold alerts change the status', async () => {
   reply = answer([home()]);
   await ingest()(record());
