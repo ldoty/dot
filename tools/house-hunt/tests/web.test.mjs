@@ -330,6 +330,24 @@ test('add a listing by hand, mark one reviewed, keep notes on it, and delete it'
   p.close();
 });
 
+test('dragging within explore keeps the dropped order: it’s saved for both of us and the list sorts by it', async () => {
+  await call('PUT', '/hoods/ro', { name: 'River Oaks', price: 645000, rev: 0 });
+  const p = await open('Luke', { withSortable: true });
+  assert.deepEqual(p.names('explore'), ['Sudduth Farms', 'Pelham Falls', 'River Oaks'], 'by price to start');
+  const explore = p.el('[data-cards="explore"]');
+  // Sortable has moved River Oaks to the top; this is the drop it reports
+  explore.insertBefore(p.el('#hood-ro'), p.el('#hood-sf'));
+  p.w.Sortable.get(explore).options.onEnd({ item: p.el('#hood-ro'), from: explore, to: explore, newDraggableIndex: 0 });
+  await wait(80);
+  assert.deepEqual(p.names('explore'), ['River Oaks', 'Sudduth Farms', 'Pelham Falls'], 'no snapping back to price order');
+  assert.equal(p.el('#sort').value, 'order');
+  const order = Object.fromEntries((await call('GET', '/all')).body.hoods.map((h) => [h.id, h.order]));
+  assert.deepEqual([order.ro, order.sf, order.pf], [1, 2, 3]);
+  p.el('#sort').value = 'price'; p.fire('#sort', 'change'); await wait();
+  assert.deepEqual(p.names('explore'), ['Sudduth Farms', 'Pelham Falls', 'River Oaks'], 'price sorts are still there');
+  p.close();
+});
+
 test('dragging: a neighborhood dropped into the shortlist takes that rank; a listing dropped elsewhere moves there', async () => {
   await call('PUT', '/hoods/bm', { name: 'Brushy Meadows', price: 528000, status: 'shortlist', rank: 1, rev: 0 });
   await L('a', { rank: 1 }); await L('b', { hoodId: 'sf', rank: 1 });

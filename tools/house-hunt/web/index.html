@@ -160,7 +160,10 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
 (function () {
   var cfg, me = "", hoods = [], places = [], listings = [], mail = [], notes = { text: "", rev: 0 };
   var addingListing = null, openNotes = {}, sortables = [], showRejected = false;
+  // How explore and no-go are sorted: "order" (ours, set by dragging) or by price. Remembered per browser.
   var editing = null, armed = null, sort = "price";
+  try { sort = localStorage.getItem("househunt.sort") || "price"; } catch (e) {}
+  function setSort(v) { sort = v; try { localStorage.setItem("househunt.sort", v); } catch (e) {} }
   // Notes typed but not yet saved, kept across re-renders: { "NOTES" | hoodId: text }
   var drafts = {}, conflicts = {}, saving = {};
   var GROUPS = [
@@ -187,7 +190,9 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
   function find(id) { return hoods.filter(function (h) { return h.id === id; })[0]; }
   function shortlist() { return hoods.filter(function (h) { return h.status === "shortlist"; }).sort(byRank); }
   function byRank(a, b) { return (a.rank || 99) - (b.rank || 99) || a.name.localeCompare(b.name); }
+  function byOrder(a, b) { return (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name); }
   function byPrice(a, b) {
+    if (sort === "order") return byOrder(a, b);
     if (a.price == null || b.price == null) return (a.price == null) - (b.price == null); // unpriced last
     return sort === "price" ? a.price - b.price : b.price - a.price;
   }
@@ -228,15 +233,18 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
   }
 
   // Moves a neighborhood to shortlist position `rank` (1-based), "explore" or "nogo", renumbering the shortlist.
-  function placeHood(id, where) {
+  // `order` (ids top to bottom, from a drag in explore or no-go) saves that list's order too.
+  function placeHood(id, where, order) {
     var h = find(id), list = shortlist().filter(function (x) { return x.id !== id; });
     var rank = /^\d+$/.test(where) ? Number(where) : null;
     if (rank) list.splice(rank - 1, 0, h);
     var want = {};
     list.forEach(function (x, i) { want[x.id] = { status: "shortlist", rank: i + 1 }; });
     if (!rank) want[id] = { status: where, rank: null };
-    var todo = Object.keys(want).filter(function (k) { var x = find(k); return x.status !== want[k].status || x.rank !== want[k].rank; });
-    var label = rank ? "Shortlisted #" + rank : where === "nogo" ? "Marked no-go" : "Moved to explore";
+    (order || []).forEach(function (k, i) { want[k] = Object.assign(want[k] || {}, { order: i + 1 }); });
+    var todo = Object.keys(want).filter(function (k) { var x = find(k); return Object.keys(want[k]).some(function (f) { return x[f] !== want[k][f]; }); });
+    var moved = find(id).status !== where;
+    var label = rank ? "Shortlisted #" + rank : !moved ? "Moved" : where === "nogo" ? "Marked no-go" : "Moved to explore";
     todo.reduce(function (p, k) { return p.then(function () { return saveHood(find(k), want[k]); }); }, Promise.resolve())
       .then(function () { render(); status(h.name + ": " + label); }, function (err) {
         if (err.current) { status("Someone else changed the list just now. Here’s the latest; try again."); reload(); } else render();
@@ -418,7 +426,7 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
     main.innerHTML = notesCard() + inboxCard() + GROUPS.map(function (g) {
       var list = hoods.filter(function (h) { return h.status === g.key; }).sort(g.key === "shortlist" ? byRank : byPrice);
       return '<section class="group" data-group="' + g.key + '"><div class="group-head"><h2>' + g.title + " <small>" + list.length + "</small></h2>" +
-        (g.key === "explore" ? '<select id="sort" aria-label="Sort"><option value="price"' + (sort === "price" ? " selected" : "") + '>Price: low to high</option><option value="price-desc"' + (sort === "price-desc" ? " selected" : "") + ">Price: high to low</option></select>" : "") +
+        (g.key === "explore" ? '<select id="sort" aria-label="Sort"><option value="order"' + (sort === "order" ? " selected" : "") + '>Our order (drag to change)</option><option value="price"' + (sort === "price" ? " selected" : "") + '>Price: low to high</option><option value="price-desc"' + (sort === "price-desc" ? " selected" : "") + ">Price: high to low</option></select>" : "") +
         '</div><div class="cards" data-cards="' + g.key + '">' + list.map(hoodCard).join("") + "</div>" +
         (list.length ? "" : '<p class="empty">' + g.empty + "</p>") + "</section>";
     }).join("") +
@@ -545,9 +553,10 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
         group: "hoods", handle: ".hood-head .drag", draggable: ".hood", animation: 150, delay: 120, delayOnTouchOnly: true,
         onEnd: function (e) {
           var id = e.item.dataset.hood, to = e.to.dataset.cards, from = e.from.dataset.cards;
-          if (to === "shortlist") placeHood(id, String(e.newDraggableIndex + 1));
-          else if (to !== from) placeHood(id, to);
-          else render(); // explore and no-go stay sorted by price
+          if (to === "shortlist") { placeHood(id, String(e.newDraggableIndex + 1)); return; }
+          // Dropped in explore or no-go: keep it where it was dropped, which means sorting by our order
+          setSort("order");
+          placeHood(id, to, Array.prototype.map.call(e.to.querySelectorAll(".hood"), function (c) { return c.dataset.hood; }));
         },
       }));
     });
@@ -614,7 +623,7 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
     setTimeout(function () { saveNotes(key); }, 0);
   });
   main.addEventListener("change", function (e) {
-    if (e.target.id === "sort") { sort = e.target.value; render(); return; }
+    if (e.target.id === "sort") { setSort(e.target.value); render(); return; }
     if (e.target.dataset.place) placeHood(e.target.dataset.place, e.target.value);
     if (e.target.dataset.lhood) moveListing(e.target.dataset.lhood, e.target.value || null, Infinity);
   });
