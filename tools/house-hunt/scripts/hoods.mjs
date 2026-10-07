@@ -112,6 +112,17 @@ export const HOODS = [
     facts: ['Walk to shops and restaurants on Trade St.', 'Greer City Park loop, pond and amphitheater', 'Mostly older homes on small lots'],
     drives: drives([[19, 8.7], [19, 9.9], [11, 5.6], [4, 0.9]]), ll: [34.9336, -82.2254],
   },
+  // To explore: added 2026-10-07 (Palmetto Park; county and school district from the Census geocoder)
+  {
+    id: 'dillard-creek-crossing', name: 'Dillard Creek Crossing', status: 'explore', ...RIVERSIDE,
+    summary: 'Newer homes (2008–2015) off Horton Grove Rd, close to Hwy 14, Pelham Rd and GSP. Minutes from Pelham Falls.',
+    pool: 'Pool with a lighted cabana; playground', price: 565000, sales: 9,
+    priceNote: 'Up 8.7% on the year. Recent sales $400,000–$630,000.',
+    schoolNote: 'In Spartanburg County, but zoned for Greenville County Schools.',
+    facts: ['Homes built 2008–2015, mostly Craftsman and traditional; about 4 bedrooms on 0.2-acre lots', 'Pool, lighted cabana, playground and sidewalks',
+      'Spartanburg County address (county taxes and services), Greenville County Schools'],
+    drives: drives([[13, 6.8], [12, 5.8], [5, 1.6], [16, 7.3]]), ll: [34.8579, -82.2081], source: `${PP}dillard-creek-crossing`,
+  },
 ];
 
 export const PLACES = [
