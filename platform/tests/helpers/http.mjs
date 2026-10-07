@@ -2,6 +2,7 @@
 //
 //   const call = caller(handler, ['GET /items', 'PUT /items/{id}']);
 //   const { status, body } = await call('PUT', '/items/x1', { name: 'Milk' }, token);
+//   await call('GET', '/search?q=milk', undefined, token);   // -> queryStringParameters
 //
 // Unknown routes get API Gateway's 404 without reaching the handler.
 export function caller(handler, routeKeys) {
@@ -10,13 +11,15 @@ export function caller(handler, routeKeys) {
     const re = new RegExp(`^${pattern.replace(/\{(\w+)\}/g, '(?<$1>[^/]+)')}$`);
     return { key, method, re };
   });
-  return async (method, path, body, token) => {
+  return async (method, url, body, token) => {
+    const [path, query] = url.split('?');
     const route = routes.find((r) => r.method === method && r.re.test(path));
     if (!route) return { status: 404, body: { message: 'Not Found' } };
     const params = route.re.exec(path).groups;
     const res = await handler({
       routeKey: route.key,
       pathParameters: params ? { ...params } : undefined,
+      queryStringParameters: query ? Object.fromEntries(new URLSearchParams(query)) : undefined,
       headers: token ? { authorization: `Bearer ${token}` } : {},
       body: body === undefined ? undefined : JSON.stringify(body),
     });

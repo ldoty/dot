@@ -1,7 +1,8 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { forgedToken, accessToken } from '../../../platform/tests/helpers/tokens.mjs';
-import { CLIENT_ID, call, table } from './helpers/house-hunt-api.mjs';
+import { CLIENT_ID, ROUTES, call, table } from './helpers/house-hunt-api.mjs';
+import { geocode } from '../api/geocode.mjs';
 
 beforeEach(() => table.clear());
 const hood = (o = {}) => ({ name: 'Pelham Falls', pool: 'Two pools', high: 'Riverside High', price: 510000, sales: 15, rev: 0, ...o });
@@ -143,4 +144,56 @@ test('the inbox shows the latest emails first', async () => {
   table.put({ pk: 'TOOL', sk: 'MAIL#2026-10-01T00:00:00Z#a', receivedAt: '2026-10-01T00:00:00Z', subject: 'Old', from: 'z', outcome: 'ok', found: 1, added: 1, updated: 0 });
   table.put({ pk: 'TOOL', sk: 'MAIL#2026-10-05T00:00:00Z#b', receivedAt: '2026-10-05T00:00:00Z', subject: 'New', from: 'z', outcome: 'ok', found: 2, added: 1, updated: 1 });
   assert.deepEqual((await call('GET', '/all')).body.mail.map((m) => m.subject), ['New', 'Old']);
+});
+
+// A fetch that answers the Census and Nominatim geocoders from canned replies, and records the calls
+function geoFetch({ census = [], osm = [], fail = [] } = {}) {
+  const calls = [];
+  const f = async (url, o = {}) => {
+    const host = new URL(url).host;
+    calls.push({ host, q: new URL(url).searchParams.get(host.startsWith('geocoding') ? 'address' : 'q'), ua: o.headers?.['user-agent'] });
+    if (fail.some((h) => host.includes(h))) return { ok: false, status: 503, json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => (host.startsWith('geocoding') ? { result: { addressMatches: census } } : osm) };
+  };
+  f.calls = calls;
+  return f;
+}
+const CENSUS_HIT = { matchedAddress: '12 SUGAR LAKE CT, GREER, SC, 29650', coordinates: { x: -82.2112345, y: 34.8576789 } };
+
+test('geocode: the Census match first; OpenStreetMap only when Census has none or fails, and it says how exact', async () => {
+  let f = geoFetch({ census: [CENSUS_HIT], osm: [{ lat: '1', lon: '2', addresstype: 'building' }] });
+  assert.deepEqual(await geocode('12 Sugar Lake Ct, Greer, SC', { fetch: f, log: () => {} }),
+    { ll: [34.85768, -82.21123], label: '12 SUGAR LAKE CT, GREER, SC, 29650', precision: 'address' });
+  assert.deepEqual(f.calls.map((c) => c.host), ['geocoding.geo.census.gov']);
+
+  f = geoFetch({ osm: [{ lat: '34.8812', lon: '-82.1778', addresstype: 'road', display_name: 'Algeddis Drive, Greer' }] });
+  assert.deepEqual(await geocode('1317 Algeddis Dr, Greer, SC', { fetch: f, log: () => {} }),
+    { ll: [34.8812, -82.1778], label: 'Algeddis Drive, Greer', precision: 'street' });
+  assert.deepEqual(f.calls.map((c) => c.q), ['1317 Algeddis Dr, Greer, SC', '1317 Algeddis Dr, Greer, SC']);
+  assert.match(f.calls[1].ua, /dot-y\.co/, 'Nominatim asks for a real User-Agent');
+
+  f = geoFetch({ fail: ['census'], osm: [{ lat: '34.9', lon: '-82.2', addresstype: 'house' }] });
+  assert.equal((await geocode('1 Main St', { fetch: f, log: () => {} })).precision, 'address');
+  assert.equal(await geocode('nowhere at all', { fetch: geoFetch(), log: () => {} }), null);
+});
+
+test('GET /geocode looks up the address for members; too short is refused, nothing found is 404', async () => {
+  const real = globalThis.fetch;
+  try {
+    globalThis.fetch = geoFetch({ census: [CENSUS_HIT] });
+    const r = await call('GET', '/geocode?q=' + encodeURIComponent('12 Sugar Lake Ct, Greer'));
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.ll, [34.85768, -82.21123]);
+    assert.equal((await call('GET', '/geocode?q=ab')).status, 400);
+    globalThis.fetch = geoFetch();
+    assert.equal((await call('GET', '/geocode?q=nowhere', undefined)).status, 404);
+    assert.equal((await call('GET', '/geocode?q=12+Sugar+Lake', undefined, null)).status, 401);
+  } finally { globalThis.fetch = real; }
+});
+
+test('API Gateway routes match the ones the handler serves', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const tf = await readFile(new URL('../infra/api.tf', import.meta.url), 'utf8');
+  const block = /routes = \[([\s\S]*?)\]/.exec(tf)[1];
+  assert.deepEqual([...block.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort(), [...ROUTES].sort());
 });

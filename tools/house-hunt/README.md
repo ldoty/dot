@@ -11,7 +11,9 @@ Neighborhoods and listings are ranked by dragging (SortableJS, `web/sortable/`, 
 the menus and ↑ ↓ buttons. Each neighborhood has its own ranked listings; unmatched ones wait in the inbox.
 
 API: `GET /all`, `PUT`/`DELETE /hoods/{id}` (deleting one moves its listings to unsorted), `PUT /notes`,
-`PUT`/`DELETE /listings/{id}`.
+`PUT`/`DELETE /listings/{id}`, `GET /geocode?q=` (an address to a map point: the US Census geocoder, then
+OpenStreetMap, which may only know the street; `api/geocode.mjs`). “Show on map” on a listing, or the address
+box under the map, drops one pin there and names the closest neighborhood pin.
 Table rows (`pk = TOOL`): `HOOD#<id>`, `LISTING#<id>`, `PLACE#<id>` (map reference points, read-only in
 the app), `MAIL#<time>#<messageId>` (what the ingest did with each email), `NOTES`.
 

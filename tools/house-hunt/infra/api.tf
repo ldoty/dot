@@ -1,5 +1,5 @@
 locals {
-  routes = ["GET /all", "PUT /hoods/{id}", "DELETE /hoods/{id}", "PUT /notes", "PUT /listings/{id}", "DELETE /listings/{id}"]
+  routes = ["GET /all", "PUT /hoods/{id}", "DELETE /hoods/{id}", "PUT /notes", "PUT /listings/{id}", "DELETE /listings/{id}", "GET /geocode"]
 }
 
 # The tool's handler plus the platform's shared token check
@@ -17,6 +17,10 @@ data "archive_file" "api" {
   source {
     content  = file("${path.module}/../api/listing.mjs")
     filename = "listing.mjs"
+  }
+  source {
+    content  = file("${path.module}/../api/geocode.mjs")
+    filename = "geocode.mjs"
   }
 }
 

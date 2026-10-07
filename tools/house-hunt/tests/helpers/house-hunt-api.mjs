@@ -8,5 +8,6 @@ Object.assign(process.env, { TABLE: 'family-house-hunt', GROUP: 'family_house_hu
 export const table = fakeTable();
 const { handler } = await import('../../api/api.mjs');
 export const memberToken = () => accessToken({ clientId: CLIENT_ID, group: 'family_house_hunt' });
-const callApi = caller(handler, ['GET /all', 'PUT /hoods/{id}', 'DELETE /hoods/{id}', 'PUT /notes', 'PUT /listings/{id}', 'DELETE /listings/{id}']);
+export const ROUTES = ['GET /all', 'PUT /hoods/{id}', 'DELETE /hoods/{id}', 'PUT /notes', 'PUT /listings/{id}', 'DELETE /listings/{id}', 'GET /geocode'];
+const callApi = caller(handler, ROUTES);
 export const call = (method, path, body, token = memberToken()) => callApi(method, path, body, token);

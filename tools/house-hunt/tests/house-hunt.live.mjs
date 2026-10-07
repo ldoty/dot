@@ -8,7 +8,7 @@ const SITE = 'https://house-hunt.dot-y.co';
 const config = await (await fetch(`${SITE}/config.json`)).json();
 
 test('every API route refuses requests without a token', async () => {
-  for (const [method, path] of [['GET', '/all'], ['PUT', '/hoods/x1'], ['DELETE', '/hoods/x1'], ['PUT', '/notes'], ['PUT', '/listings/x1'], ['DELETE', '/listings/x1']]) {
+  for (const [method, path] of [['GET', '/all'], ['PUT', '/hoods/x1'], ['DELETE', '/hoods/x1'], ['PUT', '/notes'], ['PUT', '/listings/x1'], ['DELETE', '/listings/x1'], ['GET', '/geocode?q=12+Main+St']]) {
     assert.equal((await fetch(config.apiUrl + path, { method })).status, 401, `${method} ${path}`);
   }
 });

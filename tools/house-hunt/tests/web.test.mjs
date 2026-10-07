@@ -20,6 +20,7 @@ async function open(name = 'Luke', { withMap = false, withSortable = false } = {
       // jsdom has no layout; Leaflet only draws pins on a map with a size
       if (withMap) {
         for (const [k, v] of [['clientWidth', 800], ['clientHeight', 440]]) Object.defineProperty(w.HTMLElement.prototype, k, { get: () => v });
+        w.Element.prototype.scrollIntoView = () => {};
         w.HTMLCanvasElement.prototype.getContext = undefined; // jsdom claims canvas but can't draw; with neither SVG nor canvas the rings are skipped
       }
       w.FamilyAuth = { init: async () => ({ given_name: name }), accessToken: async () => memberToken(), autoLogin: () => false, login() {}, logout() {} };
@@ -213,6 +214,39 @@ test('the map pins neighborhoods and places, and lists what has no location yet'
   assert.ok(p.d.querySelector('[data-show="pf"]'), 'pinned neighborhoods get Show on map');
   assert.equal(p.d.querySelector('[data-show="sf"]'), null);
   p.close();
+});
+
+test('show on map: a listing’s address or a typed one gets a pin, with how exact it is and the closest neighborhood', async () => {
+  await call('PUT', '/hoods/pf', { name: 'Pelham Falls', price: 510000, rev: 1, ll: [34.8495, -82.2227] });
+  await call('PUT', '/listings/a', { address: '12 Sugar Lake Ct', city: 'Taylors', hoodId: 'pf', price: 615000, url: 'https://www.zillow.com/a', rev: 0 });
+  const real = globalThis.fetch, asked = [];
+  // The API's geocoders: Census knows Sugar Lake; OpenStreetMap only knows the street of Algeddis; nothing else exists
+  globalThis.fetch = async (url) => {
+    const u = new URL(url), q = u.searchParams.get('address') || u.searchParams.get('q');
+    asked.push(q);
+    const census = /Sugar Lake/.test(q) ? [{ matchedAddress: '12 SUGAR LAKE CT, TAYLORS, SC', coordinates: { x: -82.2227, y: 34.8640 } }] : [];
+    const osm = /Algeddis/.test(q) ? [{ lat: '34.8812', lon: '-82.1778', addresstype: 'road', display_name: 'Algeddis Drive' }] : [];
+    return { ok: true, status: 200, json: async () => (u.host.startsWith('geocoding') ? { result: { addressMatches: census } } : osm) };
+  };
+  try {
+    const p = await open('Luke', { withMap: true });
+    await p.click('[data-lmap="a"]'); await wait(1000);
+    assert.equal(asked[0], '12 Sugar Lake Ct, Taylors, SC');
+    let pop = p.el('.leaflet-popup-content').textContent;
+    assert.match(pop, /12 Sugar Lake Ct\$615,000 · Listing12 SUGAR LAKE CT, TAYLORS, SC/);
+    assert.match(pop, /Closest neighborhood pin: Pelham Falls, 1\.0 mi/);
+    assert.equal(p.d.querySelectorAll('.pin.found').length, 1);
+
+    p.el('#find input').value = '1317 Algeddis Dr'; p.fire('#find', 'submit'); await wait(1000);
+    assert.equal(asked.at(-1), '1317 Algeddis Dr, Greer, SC', 'no town given: Greer');
+    pop = p.el('.leaflet-popup-content').textContent;
+    assert.match(pop, /1317 Algeddis DrOnly the street is mapped, not the house/);
+    assert.equal(p.d.querySelectorAll('.pin.found').length, 1, 'one pin at a time');
+
+    p.el('#find input').value = 'Nowhere Ln, Atlantis'; p.fire('#find', 'submit'); await wait();
+    assert.match(p.el('#status').textContent, /Couldn’t find “Nowhere Ln, Atlantis” on the map/);
+    p.close();
+  } finally { globalThis.fetch = real; }
 });
 
 const L = (id, o = {}) => call('PUT', `/listings/${id}`, { address: `${id} Main St`, hoodId: 'pf', price: 500000, rank: 1, rev: 0, reviewed: true, ...o });

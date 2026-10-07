@@ -42,6 +42,10 @@ textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 64
 .leaflet-popup-content { font: 14px/1.45 var(--body) }
 .leaflet-popup-content b { font-family: var(--display); font-size: 16px }
 .pop-meta { color: #666; font-size: 12.5px }
+.pin.found { font-size: 16px }
+form.find { display: flex; gap: 6px; padding: 10px 14px 0 }
+form.find input { flex: 1; min-width: 0; background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 6px 9px; color: var(--ink); font: inherit }
+form.find .btn { padding: 5px 14px; font-size: 13px; white-space: nowrap }
 .unpinned { padding: 0 14px 10px; margin: 0; font-size: 12.5px; color: var(--muted) }
 
 /* Shared notes */
@@ -135,6 +139,7 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
   <p class="status" id="status" role="status"></p>
   <div class="card map-card" id="map-card" hidden>
     <div id="map" role="region" aria-label="Map of the neighborhoods"></div>
+    <form class="find" id="find"><input name="q" placeholder="Find an address: 123 Main St, Taylors" aria-label="Address to find on the map" maxlength="200" autocomplete="street-address"><button class="btn primary">Show on map</button></form>
     <div class="legend" aria-label="Legend">
       <span><i class="sw" style="background:var(--sun)"></i>Shortlist</span>
       <span><i class="sw" style="background:var(--pool)"></i>To explore</span>
@@ -142,6 +147,7 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
       <span><i class="sw sq" style="background:var(--leaf)"></i>Park or trail</span>
       <span><i class="sw sq" style="background:var(--bloom)"></i>Family &amp; gym</span>
       <span><i class="sw" style="background:var(--ink)"></i>GSP (rings at 3, 6, 9 mi)</span>
+      <span><i class="sw" style="background:var(--ember)"></i>Address you looked up</span>
     </div>
     <p class="unpinned" id="unpinned"></p>
   </div>
@@ -238,7 +244,7 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
   }
 
   // ---- map ----
-  var COLORS = { shortlist: "--sun", explore: "--pool", nogo: "--muted", park: "--leaf", gym: "--bloom", family: "--bloom", airport: "--ink" };
+  var COLORS = { found: "--ember", shortlist: "--sun", explore: "--pool", nogo: "--muted", park: "--leaf", gym: "--bloom", family: "--bloom", airport: "--ink" };
   function color(kind) { return "var(" + (COLORS[kind] || "--pool") + ")"; }
   function pin(cls, kind, glyph, size) {
     return L.divIcon({ className: "", html: '<div class="pin ' + cls + '" style="background:' + color(kind) + '">' + glyph + "</div>", iconSize: [size, size], iconAnchor: [size / 2, size / 2], popupAnchor: [0, -size / 2] });
@@ -283,6 +289,46 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
       .concat(places.filter(function (p) { return !p.ll; }).map(function (p) { return p.name; }));
     document.getElementById("unpinned").textContent = missing.length ? "Not on the map yet (add a location under Edit details): " + missing.join(", ") + "." : "";
   }
+
+  // ---- finding an address (a listing's, or one typed in the box under the map) ----
+  // The API geocodes (geocode.mjs); answers are kept for the visit. One pin at a time, drawn
+  // outside the neighborhood layer so re-renders don't clear it.
+  var geo = {}, foundPin = null;
+  function miles(a, b) {
+    var r = Math.PI / 180, x = (b[1] - a[1]) * r * Math.cos((a[0] + b[0]) / 2 * r), y = (b[0] - a[0]) * r;
+    return Math.sqrt(x * x + y * y) * 3959;
+  }
+  function nearestHood(ll) {
+    return hoods.filter(function (h) { return h.ll; }).map(function (h) { return { h: h, mi: miles(ll, h.ll) }; })
+      .sort(function (a, b) { return a.mi - b.mi; })[0];
+  }
+  // A typed address without a town is taken to be in Greer
+  function showAddress(q, title, extra) {
+    if (!map) return;
+    q = q.trim(); if (q.indexOf(",") < 0) q += ", Greer, SC";
+    status("Finding " + title + "…");
+    var look = geo[q] ? Promise.resolve(geo[q]) : api("GET", "/geocode?q=" + encodeURIComponent(q)).then(function (g) { geo[q] = g; return g; });
+    return look.then(function (g) {
+      status("");
+      var near = nearestHood(g.ll);
+      var where = g.precision === "address" ? g.label : g.precision === "street" ? "Only the street is mapped, not the house" : "Approximate: " + g.label;
+      if (foundPin) foundPin.remove();
+      foundPin = L.marker(g.ll, { title: title, icon: pin("found", "found", "⌂", 30), zIndexOffset: 1000 })
+        .bindPopup("<b>" + esc(title) + "</b>" + (extra || "") + '<br><span class="pop-meta">' + esc(where) + "</span>" +
+          (near ? "<br>Closest neighborhood pin: " + esc(near.h.name) + ", " + near.mi.toFixed(1) + " mi" : ""), { maxWidth: 260 }).addTo(map);
+      document.getElementById("map-card").scrollIntoView({ behavior: "smooth", block: "center" });
+      map.flyTo(g.ll, g.precision === "address" ? 16 : 15, { duration: 0.8 });
+      setTimeout(function () { if (foundPin) foundPin.openPopup(); }, 850);
+    }, function (err) {
+      status(err.message === "not found" ? "Couldn’t find “" + q + "” on the map. Try adding the town." : "Couldn’t look that up: " + err.message);
+    });
+  }
+  document.getElementById("find").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var q = e.target.elements.q.value.trim();
+    if (q.length < 3) { e.target.elements.q.focus(); return; }
+    showAddress(q, q);
+  });
 
   // ---- rendering ----
   function notesCard() {
@@ -422,6 +468,7 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
       '<button class="small-btn" data-lmove="' + esc(l.id) + '" data-dir="-1" aria-label="Move ' + esc(l.address) + ' up"' + (i === 0 ? " disabled" : "") + ">↑</button>" +
       '<button class="small-btn" data-lmove="' + esc(l.id) + '" data-dir="1" aria-label="Move ' + esc(l.address) + ' down">↓</button>' +
       '<select data-lhood="' + esc(l.id) + '" aria-label="Neighborhood for ' + esc(l.address) + '">' + moveOpts + "</select>" +
+      (map ? '<button class="small-btn" data-lmap="' + esc(l.id) + '">Show on map</button>' : "") +
       '<button class="small-btn" data-lnotes="' + esc(l.id) + '">' + (l.notes ? "Notes (1)" : "Notes") + "</button>" +
       '<button class="small-btn" data-ldel="' + esc(l.id) + '">Delete</button></div>' +
       (openNotes[l.id] ? '<div class="lnotes"><textarea data-notes="L:' + esc(l.id) + '" aria-label="Notes on ' + esc(l.address) + '" placeholder="Showing notes, questions for the agent…">' + esc(draft != null ? draft : l.notes) + "</textarea>" +
@@ -580,6 +627,11 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
     else if (t.dataset.lmove) {
       var lm = findListing(t.dataset.lmove), at = inHood(lm.hoodId || null).indexOf(lm);
       moveListing(lm.id, lm.hoodId || null, at + Number(t.dataset.dir));
+    }
+    else if (t.dataset.lmap) {
+      var lp = findListing(t.dataset.lmap);
+      showAddress(lp.address + ", " + (lp.city || "Greer") + ", SC", lp.address,
+        "<br>" + esc(money(lp.price)) + (lp.url ? ' · <a href="' + esc(lp.url) + '" target="_blank" rel="noopener noreferrer">Listing</a>' : ""));
     }
     else if (t.dataset.lnotes) { openNotes[t.dataset.lnotes] = !openNotes[t.dataset.lnotes]; render(); }
     else if (t.dataset.ldel) {
