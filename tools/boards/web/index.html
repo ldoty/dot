@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Two Boards</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="family.css">
+<style>
+/* Layout: a field guide. Tabs across the top; people in a responsive grid; one flashcard at a time.
+   The first org wears pool, the second bloom, and what joins them wears wood. */
+:root {
+  --o1: var(--pool); --o1-soft: color-mix(in srgb, var(--pool) 12%, var(--surface));
+  --o2: color-mix(in srgb, var(--bloom) 78%, var(--ink)); --o2-soft: color-mix(in srgb, var(--bloom) 14%, var(--surface));
+  --both: var(--wood); --both-soft: color-mix(in srgb, var(--wood) 13%, var(--surface));
+  --good: var(--leaf); --bad: var(--ember);
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 64px }
+.top { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: end; justify-content: space-between; padding-bottom: 16px }
+.top p { margin-top: 6px; color: var(--muted) }
+.home { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px }
+.home a { color: var(--muted); text-decoration: none; font-size: 14px }
+h1 { font-size: clamp(34px, 5vw, 52px) }
+.muted { color: var(--muted) }
+button { color: inherit; cursor: pointer }
+.chips { display: flex; flex-wrap: wrap; gap: 8px }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-pill); padding: 6px 12px; font-size: 14px; font-weight: 500 }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink) }
+.tag { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; border-radius: var(--r-pill); padding: 2px 9px; white-space: nowrap }
+.tag.o1 { background: var(--o1-soft); color: var(--o1) } .tag.o2 { background: var(--o2-soft); color: var(--o2) }
+.tag.both { background: var(--both-soft); color: var(--both) } .tag.plain, .tag.lens { background: var(--raised); color: var(--ink); font-weight: 500 }
+.tag.plain { color: var(--muted) }
+
+nav.tabs { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line); margin-bottom: 20px }
+nav.tabs button { background: none; border: 0; padding: 12px 14px; font-weight: 600; color: var(--muted); border-bottom: 3px solid transparent; white-space: nowrap; font-family: var(--display) }
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink) }
+.section-h { display: flex; align-items: baseline; gap: 12px; margin: 28px 0 12px }
+.section-h:first-child { margin-top: 4px }
+
+/* people */
+.bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 14px }
+.search { flex: 1 1 240px; max-width: 360px; border: 1.5px solid var(--line); background: var(--surface); border-radius: var(--r-sm); padding: 9px 12px; color: var(--ink) }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px }
+.pcard { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; text-align: left; padding: 0; display: flex; flex-direction: column }
+.pcard:hover { border-color: var(--muted) }
+.pcard .ph { aspect-ratio: 1 / 1; width: 100%; max-width: 100% }
+.pcard .meta { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 4px; min-width: 0 }
+.pcard .nm { font-family: var(--display); font-weight: 600; font-size: 16px; line-height: 1.2 }
+.pcard .af { font-size: 13px; color: var(--muted); line-height: 1.4 }
+.tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px }
+.ph { background: var(--raised); object-fit: cover; object-position: 50% 25%; display: block }
+.mono { display: grid; place-items: center; font-family: var(--display); font-weight: 600; font-size: 44px; color: var(--on-accent) }
+.mono.o1 { background: var(--o1) } .mono.o2 { background: var(--o2) }
+
+/* person sheet */
+.sheet-bg { position: fixed; inset: 0; background: rgba(20, 28, 24, .4); z-index: 20; display: flex; justify-content: flex-end }
+.sheet { background: var(--surface); width: min(560px, 100%); height: 100%; overflow-y: auto; padding: 20px 20px calc(32px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 16px }
+.sheet .head { display: flex; gap: 16px; align-items: center }
+.sheet .head .ph { width: 104px; height: 104px; border-radius: 50%; flex: none }
+.sheet .head .mono { font-size: 36px }
+.sheet .x { margin-left: auto; align-self: flex-start; border: 1px solid var(--line); background: var(--surface); border-radius: 50%; width: 36px; height: 36px; flex: none }
+.sheet ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px }
+.box { background: var(--raised); border-radius: var(--r-sm); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px }
+.box.bridge { background: var(--both-soft) }
+.src a { font-size: 13px; color: var(--muted); word-break: break-all }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 14px; margin: 0 }
+.kv dt { color: var(--muted) } .kv dd { margin: 0; min-width: 0 }
+
+/* overlap */
+.venn svg { width: 100%; max-width: 720px; height: auto; display: block; margin: 0 auto }
+.cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px }
+@media (max-width: 760px) { .cols { grid-template-columns: minmax(0, 1fr) } }
+.col { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0 }
+.col.o1 { border-top: 4px solid var(--o1) } .col.o2 { border-top: 4px solid var(--o2) } .col.both { border-top: 4px solid var(--both) }
+.bridge-row { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-top: 1px solid var(--line) }
+.bridge-row:first-child { border-top: 0 }
+.bridge-sides { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; font-size: 14px }
+@media (max-width: 520px) { .bridge-sides { grid-template-columns: minmax(0, 1fr) } }
+.bridge-sides div { min-width: 0 }
+.strength { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted) }
+.strength.strong { color: var(--both) }
+.person-link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px }
+.sponsors { font-size: 13.5px; color: var(--muted); line-height: 1.7 }
+
+/* orgs */
+.orgs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px }
+@media (max-width: 860px) { .orgs { grid-template-columns: minmax(0, 1fr) } }
+.org { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0 }
+.org.o1 { border-top: 6px solid var(--o1) } .org.o2 { border-top: 6px solid var(--o2) }
+.nums { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px }
+.num { background: var(--raised); border-radius: var(--r-sm); padding: 10px 12px }
+.num b { display: block; font-family: var(--display); font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.25 }
+.num span { font-size: 12.5px; color: var(--muted) }
+.tl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px }
+.tl li { display: grid; grid-template-columns: 58px 1fr; gap: 10px; font-size: 14px }
+.tl b { font-variant-numeric: tabular-nums; font-family: var(--display) }
+ul.plain { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; font-size: 14px }
+details summary { cursor: pointer; font-weight: 600 }
+
+/* plan */
+.plan { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; max-width: 860px }
+.plan-intro { font-size: 17px; max-width: 65ch }
+.phase { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; padding-top: 16px; border-top: 2px solid var(--ink) }
+@media (max-width: 640px) { .phase { grid-template-columns: minmax(0, 1fr); gap: 8px } }
+.phase .when { font-family: var(--display); font-weight: 600; font-variant-numeric: tabular-nums }
+.phase ol { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px }
+.faces { display: inline-flex; gap: 4px; vertical-align: middle; margin-left: 6px }
+.faces .ph { width: 26px; height: 26px; border-radius: 50%; font-size: 11px }
+.callouts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px }
+@media (max-width: 640px) { .callouts { grid-template-columns: minmax(0, 1fr) } }
+.callout { border-radius: var(--r-md); padding: 14px 16px; background: var(--both-soft) }
+.callout.alt { background: var(--raised) }
+
+/* study */
+.study { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 24px; align-items: start }
+@media (max-width: 860px) { .study { grid-template-columns: minmax(0, 1fr) } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px; display: flex; flex-direction: column; gap: 14px }
+.panel .chips { gap: 6px; margin-top: 6px }
+.meter { height: 8px; border-radius: 99px; background: var(--raised); overflow: hidden; display: flex; margin-top: 6px }
+.meter i { display: block; height: 100% }
+.legend { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 6px }
+.stage { display: flex; flex-direction: column; align-items: center; gap: 16px }
+.flash { width: min(520px, 100%); min-height: 360px; perspective: 1400px; background: none; border: 0; padding: 0 }
+.flash .inner { position: relative; width: 100%; min-height: 360px; transition: transform .5s cubic-bezier(.2, .7, .2, 1); transform-style: preserve-3d }
+.flash.flipped .inner { transform: rotateY(180deg) }
+.face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 40px 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; box-shadow: 0 10px 30px -18px rgba(30, 42, 36, .35) }
+.face.back { transform: rotateY(180deg) }
+.face .ph { width: 180px; height: 180px; border-radius: 50% }
+.face .mono { font-size: 60px }
+.face .q { font-family: var(--display); font-size: clamp(19px, 3.4vw, 24px); font-weight: 600; line-height: 1.3; max-width: 30ch }
+.face .a { font-family: var(--display); font-size: clamp(22px, 4vw, 30px); font-weight: 600; line-height: 1.15 }
+.face .sub { color: var(--muted); max-width: 44ch }
+.face .hint { position: absolute; bottom: 14px; font-size: 12px; color: var(--muted) }
+.face .kind { position: absolute; top: 14px; left: 16px }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center }
+.btn.good { border-color: var(--good); color: var(--good); background: var(--surface) }
+.btn.bad { border-color: var(--bad); color: var(--bad); background: var(--surface) }
+.choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: min(520px, 100%) }
+@media (max-width: 460px) { .choices { grid-template-columns: minmax(0, 1fr) } }
+.choice { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-sm); padding: 12px; font-weight: 600; text-align: left; min-width: 0 }
+.choice.right { border-color: var(--good); background: color-mix(in srgb, var(--good) 14%, var(--surface)) }
+.choice.wrong { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, var(--surface)) }
+.feedback { min-height: 1.5em; font-weight: 600 }
+.feedback.good { color: var(--good) } .feedback.bad { color: var(--bad) }
+.kbd { font-size: 12px; color: var(--muted); font-weight: 400 }
+.foot { margin-top: 40px; font-size: 13px; color: var(--muted); max-width: 75ch }
+.sync { font-size: 12px; color: var(--muted) }
+.gate { max-width: 520px; margin: 18vh auto 0; text-align: center; display: grid; gap: 14px; justify-items: center }
+@media (prefers-reduced-motion: reduce) { .flash .inner { transition: none } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="home"><a href="https://dot-y.co/">← dot-y.co</a><span class="sync" id="sync"></span></div>
+  <div id="app"><div class="gate"><h1>Two Boards</h1><p class="muted" id="gate-msg">Loading…</p></div></div>
+</div>
+<div class="sheet-bg" id="sheetBg" hidden><aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Person details"></aside></div>
+<script src="family-auth.js"></script>
+<script>
+/* The guide: study deck, plan, people, overlap and organizations, drawn from the guide the API serves.
+   Nothing about the people or the two organizations is written in this file. State `S` is saved by save():
+   to this browser at once and to your account by the loader. */
+window.startGuide = function (G, initial) {
+  var KEY = "boards-v1";
+  var people = G.people, orgs = G.orgs, overlaps = G.overlaps, PHOTOS = G.photos || {}, LT = G.lens_tags;
+  var S = initial || {};
+  S.boxes = S.boxes || {};   // card id -> Leitner box 0..4
+  S.study = S.study || { deck: "faces", scope: "all", mode: "choose" };
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
+    if (window.boardsSync) window.boardsSync(S);
+  }
+
+  var byId = {}; people.forEach(function (p) { byId[p.id] = p; });
+  var ORG = {}; orgs.forEach(function (o, i) { ORG[o.id] = { name: o.short, cls: "o" + (i + 1), aliases: o.aliases || [o.short] }; });
+  var O1 = orgs[0], O2 = orgs[1];
+
+  function $(s) { return document.querySelector(s); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function initials(n) { return n.replace(/^Mayor\s+/, "").split(/\s+/).map(function (w) { return w.charAt(0); }).filter(function (c) { return /[A-Z]/.test(c); }).slice(0, 2).join(""); }
+  function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  function photo(p) {
+    var src = PHOTOS[p.id];
+    if (src) return '<img class="ph" alt="' + esc(p.name) + '" src="' + src + '">';
+    return '<div class="ph mono ' + ORG[p.org].cls + '" aria-hidden="true">' + esc(initials(p.name)) + "</div>";
+  }
+  function orgTag(p) { return '<span class="tag ' + ORG[p.org].cls + '">' + esc(ORG[p.org].name) + " " + (p.group === "staff" ? "staff" : "board") + "</span>"; }
+  function roleLine(p) { return (p.title && !/^(director|board member)$/i.test(p.title) ? p.title + " · " : "") + (p.affiliation || ""); }
+  function lensTags(p) { return p.lens ? p.lens.tags.map(function (t) { return '<span class="tag lens">' + esc(LT[t]) + "</span>"; }).join("") : ""; }
+
+  $("#app").innerHTML =
+    '<header class="top"><div><div class="eyebrow">Board prep</div><h1>Two Boards</h1>' +
+    "<p>Everyone on both boards and staffs, where they overlap, the plan, and a deck to learn names, faces and facts.</p></div>" +
+    '<div class="chips" id="counts"></div></header>' +
+    '<nav class="tabs" role="tablist">' +
+    [["study", "Study"], ["plan", "Plan"], ["people", "People"], ["overlap", "Overlap"], ["orgs", "Organizations"]].map(function (t) {
+      return '<button role="tab" type="button" data-tab="' + t[0] + '" aria-selected="false">' + t[1] + "</button>";
+    }).join("") + "</nav>" +
+    '<section id="tab-study" role="tabpanel" hidden><div class="study"><aside class="panel">' +
+    '<div><div class="eyebrow">Deck</div><div class="chips" id="deckChips"></div></div>' +
+    '<div><div class="eyebrow">Who</div><div class="chips" id="scopeChips"></div></div>' +
+    '<div><div class="eyebrow">Answer by</div><div class="chips" id="modeChips"></div></div>' +
+    '<div><div class="eyebrow">Progress in this deck</div><div class="meter" id="meter"></div><div class="legend" id="legend"></div></div>' +
+    '<button class="chip" id="resetDeck" type="button">Reset this deck’s progress</button>' +
+    '<div id="resetConfirm" hidden class="chips"><span class="muted" style="font-size:13px;align-self:center">Clear progress?</span><button class="chip" id="resetYes" type="button">Clear</button><button class="chip" id="resetNo" type="button">Keep</button></div>' +
+    '</aside><div class="stage" id="stage"></div></div></section>' +
+    '<section id="tab-plan" role="tabpanel" hidden><div class="plan" id="plan"></div></section>' +
+    '<section id="tab-people" role="tabpanel" hidden><div class="bar"><input class="search" id="q" type="search" placeholder="Search names, employers, facts" aria-label="Search people"><div class="chips" id="peopleChips"></div></div>' +
+    '<div class="bar"><div class="chips" id="lensChips"></div></div><div id="peopleList"></div></section>' +
+    '<section id="tab-overlap" role="tabpanel" hidden><div class="venn" id="venn"></div>' +
+    '<div class="section-h"><h2>Bridges</h2><span class="muted">Where one board touches the other, strongest first</span></div><div class="col both" id="bridges"></div>' +
+    '<div class="section-h"><h2>Sponsors</h2><span class="muted">Who funds each, and who funds both</span></div><div class="cols" id="sponsorCols"></div></section>' +
+    '<section id="tab-orgs" role="tabpanel" hidden><div class="orgs" id="orgs"></div></section>' +
+    '<p class="foot" id="foot"></p>';
+
+  // ---------- header counts
+  var n1 = people.filter(function (p) { return p.org === O1.id; }).length, n2 = people.length - n1;
+  $("#counts").innerHTML = '<span class="tag o1">' + n1 + " " + esc(O1.short) + '</span><span class="tag o2">' + n2 + " " + esc(O2.short) + '</span><span class="tag both">' + people.filter(function (p) { return p.bridge; }).length + " bridges</span>";
+  $("#foot").textContent = G.note || "";
+
+  // ---------- tabs
+  var TABS = ["study", "plan", "people", "overlap", "orgs"];
+  function showTab(name) {
+    document.querySelectorAll("nav.tabs button").forEach(function (b) { b.setAttribute("aria-selected", b.getAttribute("data-tab") === name ? "true" : "false"); });
+    document.querySelectorAll("[role=tabpanel]").forEach(function (s) { s.hidden = s.id !== "tab-" + name; });
+    if (S.tab !== name) { S.tab = name; save(); }
+  }
+  document.querySelectorAll("nav.tabs button").forEach(function (b) { b.addEventListener("click", function () { showTab(b.getAttribute("data-tab")); }); });
+  var hashTab = (location.hash || "").slice(1);
+  showTab(TABS.indexOf(hashTab) >= 0 ? hashTab : (TABS.indexOf(S.tab) >= 0 ? S.tab : "study"));
+
+  // ---------- person sheet
+  function openPerson(id) {
+    var p = byId[id]; if (!p) return;
+    var h = '<div class="head">' + photo(p) + '<div style="min-width:0"><h2>' + esc(p.name) + '</h2><div class="muted">' + esc(roleLine(p)) + '</div><div class="tags">' + orgTag(p) + (p.bridge ? '<span class="tag both">Bridge</span>' : "") + '</div></div><button class="x" type="button" aria-label="Close">✕</button></div>';
+    if (p.overlap) h += '<div class="box bridge"><div class="eyebrow">Tie to the other board</div><div>' + esc(p.overlap) + "</div></div>";
+    if (p.lens) h += '<div class="box"><div class="eyebrow">Partner Track</div><div class="tags">' + lensTags(p) + "</div><div>" + esc(p.lens.why) + "</div></div>";
+    if (p.opener) h += '<div class="box"><div class="eyebrow">Conversation opener</div><div>' + esc(p.opener) + "</div></div>";
+    if (p.bio) h += "<div>" + esc(p.bio) + "</div>";
+    if (p.facts && p.facts.length) h += '<div><div class="eyebrow">Facts to know</div><ul>' + p.facts.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul></div>";
+    var kv = "";
+    if (p.education) kv += "<dt>Education</dt><dd>" + esc(p.education) + "</dd>";
+    var ob = (p.other_boards || []).filter(Boolean);
+    if (ob.length) kv += "<dt>Other boards</dt><dd>" + esc(ob.join("; ")) + "</dd>";
+    if (p.confidence) kv += "<dt>Confidence</dt><dd>" + esc(p.confidence) + "</dd>";
+    if (kv) h += '<dl class="kv">' + kv + "</dl>";
+    if (p.sources && p.sources.length) h += '<details class="src"><summary>Sources (' + p.sources.length + ')</summary><div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">' + p.sources.map(function (s) { return '<a href="' + esc(s) + '" target="_blank" rel="noopener">' + esc(s) + "</a>"; }).join("") + "</div></details>";
+    $("#sheet").innerHTML = h;
+    $("#sheetBg").hidden = false;
+    $("#sheet .x").addEventListener("click", closePerson);
+    $("#sheet .x").focus();
+  }
+  function closePerson() { $("#sheetBg").hidden = true; }
+  $("#sheetBg").addEventListener("click", function (e) { if (e.target.id === "sheetBg") closePerson(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closePerson(); });
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-person]"); if (t) { e.preventDefault(); openPerson(t.getAttribute("data-person")); }
+  });
+
+  // ---------- people
+  var PF = [["all", "Everyone"], ["bridge", "Bridges"], [O1.id, O1.short], [O2.id, O2.short]];
+  S.pfilter = S.pfilter || "all"; S.lfilter = S.lfilter || "";
+  function renderPeopleChips() {
+    $("#peopleChips").innerHTML = PF.map(function (f) { return '<button class="chip" type="button" data-pf="' + f[0] + '" aria-pressed="' + (S.pfilter === f[0]) + '">' + esc(f[1]) + "</button>"; }).join("");
+    $("#lensChips").innerHTML = '<span class="eyebrow" style="align-self:center">Partner Track</span>' + Object.keys(LT).map(function (k) { return '<button class="chip" type="button" data-lf="' + k + '" aria-pressed="' + (S.lfilter === k) + '">' + esc(LT[k]) + "</button>"; }).join("");
+  }
+  $("#peopleChips").addEventListener("click", function (e) { var b = e.target.closest("[data-pf]"); if (!b) return; S.pfilter = b.getAttribute("data-pf"); save(); renderPeopleChips(); renderPeople(); });
+  $("#lensChips").addEventListener("click", function (e) { var b = e.target.closest("[data-lf]"); if (!b) return; var k = b.getAttribute("data-lf"); S.lfilter = S.lfilter === k ? "" : k; save(); renderPeopleChips(); renderPeople(); });
+  function cardHtml(p) {
+    return '<button class="pcard" type="button" data-person="' + p.id + '">' + photo(p) + '<div class="meta"><div class="nm">' + esc(p.name) + '</div><div class="af">' + esc(roleLine(p)) + '</div><div class="tags">' + orgTag(p) + (p.bridge ? '<span class="tag both">Bridge</span>' : "") + lensTags(p) + "</div></div></button>";
+  }
+  function renderPeople() {
+    var q = $("#q").value.trim().toLowerCase();
+    var list = people.filter(function (p) {
+      if (S.pfilter === "bridge" && !p.bridge) return false;
+      if (S.pfilter !== "all" && S.pfilter !== "bridge" && p.org !== S.pfilter) return false;
+      if (S.lfilter && !(p.lens && p.lens.tags.indexOf(S.lfilter) >= 0)) return false;
+      if (!q) return true;
+      return [p.name, p.affiliation, p.title, p.bio, (p.facts || []).join(" "), p.overlap, p.lens ? p.lens.why : ""].join(" ").toLowerCase().indexOf(q) >= 0;
+    });
+    var h = "";
+    orgs.forEach(function (o) {
+      ["board", "staff"].forEach(function (g) {
+        var ps = list.filter(function (p) { return p.org === o.id && p.group === g; }); if (!ps.length) return;
+        h += '<div class="section-h"><h2>' + esc(o.short) + " " + g + '</h2><span class="muted">' + ps.length + '</span></div><div class="grid">' + ps.map(cardHtml).join("") + "</div>";
+      });
+    });
+    $("#peopleList").innerHTML = h || '<p class="muted">No one matches. Try a last name or an employer, or clear the filters.</p>';
+  }
+  $("#q").addEventListener("input", renderPeople);
+  renderPeopleChips(); renderPeople();
+
+  // ---------- overlap
+  var sp = G.sponsors;
+  $("#venn").innerHTML = '<svg viewBox="0 0 720 320" role="img" aria-label="Venn diagram of the two boards">' +
+    '<circle cx="270" cy="160" r="140" fill="var(--o1)" fill-opacity=".12" stroke="var(--o1)" stroke-width="2"/>' +
+    '<circle cx="450" cy="160" r="140" fill="var(--o2)" fill-opacity=".12" stroke="var(--o2)" stroke-width="2"/>' +
+    '<text x="185" y="60" text-anchor="middle" font-family="Jost, sans-serif" font-weight="600" font-size="22" fill="var(--o1)">' + esc(O1.short) + "</text>" +
+    '<text x="535" y="60" text-anchor="middle" font-family="Jost, sans-serif" font-weight="600" font-size="22" fill="var(--o2)">' + esc(O2.short) + "</text>" +
+    '<text x="190" y="150" text-anchor="middle" font-family="Jost, sans-serif" font-weight="600" font-size="44" fill="var(--ink)">' + n1 + "</text>" +
+    '<text x="190" y="176" text-anchor="middle" font-size="13" fill="var(--muted)">people</text>' +
+    '<text x="530" y="150" text-anchor="middle" font-family="Jost, sans-serif" font-weight="600" font-size="44" fill="var(--ink)">' + n2 + "</text>" +
+    '<text x="530" y="176" text-anchor="middle" font-size="13" fill="var(--muted)">people</text>' +
+    '<text x="360" y="140" text-anchor="middle" font-family="Jost, sans-serif" font-weight="600" font-size="44" fill="var(--both)">' + overlaps.length + "</text>" +
+    '<text x="360" y="164" text-anchor="middle" font-size="13" fill="var(--muted)">bridges</text>' +
+    '<text x="360" y="182" text-anchor="middle" font-size="13" fill="var(--muted)">' + sp.both.length + " shared sponsors</text>" +
+    '<text x="360" y="308" text-anchor="middle" font-size="13" fill="var(--muted)">' + esc(G.venn_note || "") + "</text></svg>";
+  function linkify(text, ids) {
+    var t = esc(text);
+    (ids || []).forEach(function (id) { var p = byId[id]; if (p) t = t.replace(esc(p.name), '<button class="person-link" type="button" data-person="' + id + '">' + esc(p.name) + "</button>"); });
+    return t;
+  }
+  var RANK = { strong: 0, medium: 1, weak: 2 };
+  $("#bridges").innerHTML = overlaps.slice().sort(function (a, b) { return RANK[a.strength] - RANK[b.strength]; }).map(function (o) {
+    return '<div class="bridge-row"><div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap"><h3>' + esc(o.what) + '</h3><span class="strength ' + o.strength + '">' + o.strength + "</span></div>" +
+      '<div class="bridge-sides"><div><span class="tag o1">' + esc(O1.short) + "</span><div>" + linkify(o[O1.id + "_side"], o.people) + '</div></div><div><span class="tag o2">' + esc(O2.short) + "</span><div>" + linkify(o[O2.id + "_side"], o.people) + "</div></div></div>" +
+      (o.why ? '<div class="muted" style="font-size:14px">' + esc(o.why) + "</div>" : "") + "</div>";
+  }).join("");
+  $("#sponsorCols").innerHTML =
+    '<div class="col o1"><h3>' + esc(O1.short) + ' only</h3><div class="sponsors">' + esc(sp[O1.id].join(" · ")) + "</div></div>" +
+    '<div class="col both"><h3>Both</h3><div class="sponsors" style="color:var(--ink)">' + esc(sp.both.join(" · ")) + "</div></div>" +
+    '<div class="col o2"><h3>' + esc(O2.short) + ' only</h3><div class="sponsors">' + esc(sp[O2.id].join(" · ")) + "</div></div>";
+
+  // ---------- organizations
+  $("#orgs").innerHTML = orgs.map(function (o) {
+    var h = '<article class="org ' + ORG[o.id].cls + '"><div><div class="eyebrow">' + esc(o.legal_name || "") + (o.founded ? " · since " + esc(o.founded) : "") + "</div><h2>" + esc(o.name) + "</h2></div>";
+    if (o.mission) h += "<div><b>Mission.</b> " + esc(o.mission) + "</div>";
+    if (o.summary) h += "<div>" + esc(o.summary) + "</div>";
+    if (o.key_numbers && o.key_numbers.length) h += '<div class="nums">' + o.key_numbers.map(function (n) { return '<div class="num"><b>' + esc(n.value) + "</b><span>" + esc(n.label) + "</span></div>"; }).join("") + "</div>";
+    if (o.timeline && o.timeline.length) h += '<div><div class="eyebrow" style="margin-bottom:8px">Timeline</div><ul class="tl">' + o.timeline.map(function (t) { return "<li><b>" + esc(t.year) + "</b><span>" + esc(t.event) + "</span></li>"; }).join("") + "</ul></div>";
+    if (o.programs && o.programs.length) h += '<details open><summary>Programs</summary><ul class="plain">' + o.programs.map(function (p) { return "<li><b>" + esc(p.name) + ".</b> " + esc(p.what) + "</li>"; }).join("") + "</ul></details>";
+    if (o.events && o.events.length) h += '<details open><summary>Events</summary><ul class="plain">' + o.events.map(function (p) { return "<li><b>" + esc(p.name) + "</b>" + (p.when ? " (" + esc(p.when) + ")" : "") + ". " + esc(p.what) + "</li>"; }).join("") + "</ul></details>";
+    if (o.board_process) h += '<div class="box"><div class="eyebrow">How the board works</div><div>' + esc(o.board_process) + "</div></div>";
+    if (o.financials) h += '<div><div class="eyebrow">Financials</div>' + esc(o.financials) + "</div>";
+    if (o.facts && o.facts.length) h += "<details><summary>All facts (" + o.facts.length + ')</summary><ul class="plain">' + o.facts.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul></details>";
+    if (o.sources && o.sources.length) h += '<details class="src"><summary>Sources</summary><div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">' + o.sources.map(function (s) { return '<a href="' + esc(s) + '" target="_blank" rel="noopener">' + esc(s) + "</a>"; }).join("") + "</div></details>";
+    return h + "</article>";
+  }).join("");
+
+  // ---------- plan
+  (function () {
+    var pl = G.plan;
+    function faces(ids) {
+      ids = (ids || []).filter(function (id) { return byId[id]; });
+      return ids.length ? '<span class="faces">' + ids.map(function (id) { return '<button class="person-link" type="button" data-person="' + id + '" title="' + esc(byId[id].name) + '" aria-label="' + esc(byId[id].name) + '" style="text-decoration:none">' + photo(byId[id]) + "</button>"; }).join("") + "</span>" : "";
+    }
+    var h = '<div><div class="eyebrow">Our plan</div><h2 style="font-size:30px;margin-top:4px">' + esc(pl.title) + "</h2></div>" +
+      '<p class="plan-intro">' + esc(pl.intro) + "</p>" +
+      '<div class="callouts"><div class="callout"><div class="eyebrow">The test</div>' + esc(pl.test) + '</div><div class="callout alt"><div class="eyebrow">Guardrail</div>' + esc(pl.guardrail) + "</div></div>";
+    pl.phases.forEach(function (ph) {
+      h += '<div class="phase"><div class="when">' + esc(ph.when) + "</div><div><h3>" + esc(ph.title) + "</h3><ol>" + ph.steps.map(function (s) { return "<li>" + esc(s.text) + faces(s.people) + "</li>"; }).join("") + "</ol></div></div>";
+    });
+    $("#plan").innerHTML = h;
+  })();
+
+  // ---------- study
+  var DECKS = [["faces", "Faces"], ["roles", "Name → role"], ["facts", "Fact → person"], ["orgs", "Which org?"], ["bridges", "Bridges"], ["lens", "Partner Track"]];
+  var SCOPES = [["all", "Both boards"], [O1.id, O1.short], [O2.id, O2.short], ["bridge", "Bridges only"]];
+  var MODES = [["choose", "Multiple choice"], ["flip", "Flip card"]];
+  var ORG_CHOICES = [O1.short, O2.short, "Both"];
+  var st = S.study, boxes = S.boxes;
+
+  function inScope(p) {
+    if (st.scope === "bridge") return !!p.bridge;
+    return st.scope === "all" || p.org === st.scope;
+  }
+  function blank(text, words) {
+    // Hide the answer inside the question so the card tests recall, not reading. Longest first, so
+    // "Next Venture Summit" goes before "NEXT".
+    words.slice().sort(function (a, b) { return b.length - a.length; }).forEach(function (w) { if (w) text = text.split(w).join("____"); });
+    return text;
+  }
+  function nameParts(p) { return [p.name].concat(p.name.replace(/^Mayor\s+/, "").split(/\s+/).filter(function (w) { return w.length > 2; })); }
+  function buildCards() {
+    var ps = people.filter(inScope), cards = [];
+    if (st.deck === "faces") ps.filter(function (p) { return PHOTOS[p.id]; }).forEach(function (p) {
+      cards.push({ id: "face:" + p.id, kind: "Face", person: p, front: { photo: p }, back: { a: p.name, sub: roleLine(p) }, answer: p.name, pool: "name" });
+    });
+    if (st.deck === "roles") ps.forEach(function (p) {
+      cards.push({ id: "role:" + p.id, kind: "Role", person: p, front: { q: p.name, sub: ORG[p.org].name + " " + p.group }, back: { a: p.affiliation || "—", sub: p.title }, answer: p.affiliation, pool: "affiliation" });
+    });
+    if (st.deck === "facts") ps.forEach(function (p) {
+      (p.facts || []).forEach(function (f, i) {
+        cards.push({ id: "fact:" + p.id + ":" + i, kind: "Who?", person: p, front: { q: blank(f, nameParts(p)) }, back: { a: p.name, sub: roleLine(p) }, answer: p.name, pool: "name" });
+      });
+    });
+    if (st.deck === "orgs") {
+      var all = [].concat(ORG[O1.id].aliases, ORG[O2.id].aliases);
+      orgs.forEach(function (o) {
+        (o.facts || []).forEach(function (f, i) {
+          cards.push({ id: "org:" + o.id + ":" + i, kind: "Which org?", front: { q: blank(f, all) }, back: { a: o.short, sub: f }, answer: o.short, fixed: ORG_CHOICES });
+        });
+      });
+      overlaps.forEach(function (o, i) {
+        cards.push({ id: "ovl:" + i, kind: "Which org?", front: { q: o.what }, back: { a: "Both", sub: o[O1.id + "_side"] + " / " + o[O2.id + "_side"] }, answer: "Both", fixed: ORG_CHOICES });
+      });
+    }
+    if (st.deck === "bridges") overlaps.forEach(function (o, i) {
+      cards.push({ id: "br:" + i, kind: "Bridge", front: { q: o.what, sub: "What connects the two boards here?" }, back: { a: o.what, sub: O1.short + ": " + o[O1.id + "_side"] + "\n" + O2.short + ": " + o[O2.id + "_side"] + (o.why ? "\n" + o.why : "") }, flipOnly: true });
+    });
+    if (st.deck === "lens") ps.filter(function (p) { return p.lens; }).forEach(function (p) {
+      var labels = p.lens.tags.map(function (t) { return LT[t]; });
+      var front = PHOTOS[p.id] ? { photo: p, q: p.name, sub: "How do they fit your fund plan?" } : { q: p.name, sub: roleLine(p) + " · How do they fit your fund plan?" };
+      cards.push({ id: "lens:" + p.id, kind: "Partner Track", person: p, front: front, back: { a: labels.join(" · "), sub: p.lens.why }, answer: labels[0], accept: labels, fixed: Object.keys(LT).map(function (k) { return LT[k]; }) });
+    });
+    return cards;
+  }
+  function pick(cards, lastId) {
+    // Weight low boxes heavily: a new or missed card is 16 times as likely as a known one.
+    var pool = cards.length > 1 ? cards.filter(function (c) { return c.id !== lastId; }) : cards;
+    var total = 0, w = pool.map(function (c) { var x = Math.pow(2, 4 - (boxes[c.id] || 0)); total += x; return x; });
+    var r = Math.random() * total;
+    for (var i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) return pool[i]; }
+    return pool[pool.length - 1];
+  }
+  function optionsFor(card) {
+    if (card.fixed) return card.fixed;
+    var val = function (p) { return card.pool === "affiliation" ? p.affiliation : p.name; };
+    // Distractors from the same org, so the org doesn't give the answer away.
+    var same = people.filter(function (p) { return p.org === card.person.org; }).map(val);
+    var cands = shuffle(same.length >= 4 ? same : people.map(val)).filter(function (v) { return v && v !== card.answer; });
+    var out = [card.answer], seen = {};
+    cands.forEach(function (v) { if (out.length < 4 && !seen[v]) { seen[v] = 1; out.push(v); } });
+    return shuffle(out);
+  }
+
+  var cur = null, cards = [], lastId = null, answered = false;
+  function chipRow(el, items, key) {
+    el.innerHTML = items.map(function (it) { return '<button class="chip" type="button" data-v="' + esc(it[0]) + '" aria-pressed="' + (st[key] === it[0]) + '">' + esc(it[1]) + "</button>"; }).join("");
+    el.onclick = function (e) { var b = e.target.closest("[data-v]"); if (!b) return; st[key] = b.getAttribute("data-v"); save(); renderStudy(); };
+  }
+  function renderProgress() {
+    var n = [0, 0, 0, 0, 0];
+    cards.forEach(function (c) { n[boxes[c.id] || 0]++; });
+    var total = cards.length || 1, learning = n[1] + n[2], known = n[3] + n[4];
+    $("#meter").innerHTML = '<i style="width:' + (known / total * 100) + '%;background:var(--good)"></i><i style="width:' + (learning / total * 100) + '%;background:var(--sun)"></i>';
+    $("#legend").innerHTML = '<span id="known">' + known + " known</span><span>" + learning + " learning</span><span>" + n[0] + " new or missed</span>";
+  }
+  function grade(ok) {
+    boxes[cur.id] = ok ? Math.min(4, (boxes[cur.id] || 0) + 1) : 0;
+    save(); renderProgress();
+  }
+  function faceHtml(f) {
+    var h = "";
+    if (f.photo) h += photo(f.photo);
+    if (f.q) h += '<div class="q">' + esc(f.q) + "</div>";
+    if (f.a) h += '<div class="a">' + esc(f.a) + "</div>";
+    if (f.sub) h += '<div class="sub">' + esc(f.sub).replace(/\n/g, "<br>") + "</div>";
+    return h;
+  }
+  function isFlip() { return st.mode === "flip" || (cur && cur.flipOnly); }
+  function next() {
+    if (!cards.length) {
+      $("#stage").innerHTML = '<div class="panel" style="width:min(520px,100%)"><h3>No cards here yet</h3><p class="muted">' + (st.deck === "faces" ? "No one in this group has a photo. Try “Name → role”, or set Who to Both boards." : "Pick another deck or widen Who.") + "</p></div>";
+      return;
+    }
+    cur = pick(cards, lastId); lastId = cur.id; answered = false;
+    var flip = isFlip();
+    var h = '<button class="flash" id="flash" type="button" aria-label="Flashcard"><div class="inner">' +
+      '<div class="face front"><span class="kind tag plain">' + esc(cur.kind) + "</span>" + faceHtml(cur.front) + (flip ? '<span class="hint">Tap or press space to flip</span>' : "") + "</div>" +
+      '<div class="face back"><span class="kind tag plain">' + esc(cur.kind) + "</span>" + faceHtml(cur.back) + (cur.person ? '<span class="hint"><span class="person-link" data-person="' + cur.person.id + '">Open profile</span></span>' : "") + "</div>" +
+      "</div></button>";
+    if (flip) {
+      h += '<div class="actions" id="gradeBtns" hidden><button class="btn bad" type="button" id="miss">Missed it <span class="kbd">1</span></button><button class="btn good" type="button" id="got">Knew it <span class="kbd">2</span></button></div>';
+    } else {
+      h += '<div class="choices" id="choices">' + optionsFor(cur).map(function (o, i) { return '<button class="choice" type="button" data-o="' + esc(o) + '"><span class="kbd">' + (i + 1) + "</span> " + esc(o) + "</button>"; }).join("") + "</div>" +
+        '<div class="feedback" id="fb" aria-live="polite"></div><div class="actions"><button class="btn primary" type="button" id="nextBtn" hidden>Next card <span class="kbd" style="color:inherit">↵</span></button></div>';
+    }
+    $("#stage").innerHTML = h;
+    $("#flash").addEventListener("click", function (e) {
+      if (e.target.closest("[data-person]")) return;
+      if (flip) { $("#flash").classList.toggle("flipped"); $("#gradeBtns").hidden = false; }
+    });
+    if (flip) {
+      $("#miss").onclick = function () { grade(false); next(); };
+      $("#got").onclick = function () { grade(true); next(); };
+    } else {
+      $("#choices").onclick = function (e) { var b = e.target.closest("[data-o]"); if (b) choose(b); };
+      $("#nextBtn").onclick = next;
+    }
+  }
+  function choose(b) {
+    if (answered) return; answered = true;
+    var accept = cur.accept || [cur.answer];
+    var ok = accept.indexOf(b.getAttribute("data-o")) >= 0;
+    document.querySelectorAll(".choice").forEach(function (c) { if (accept.indexOf(c.getAttribute("data-o")) >= 0) c.classList.add("right"); });
+    if (!ok) b.classList.add("wrong");
+    $("#fb").className = "feedback " + (ok ? "good" : "bad");
+    $("#fb").textContent = ok ? (accept.length > 1 ? "Right. All of: " + accept.join(", ") + "." : "Right.") : (accept.length > 1 ? "Any of: " + accept.join(", ") + "." : "It’s " + cur.answer + ".");
+    $("#flash").classList.add("flipped");
+    $("#nextBtn").hidden = false; $("#nextBtn").focus();
+    grade(ok);
+  }
+  document.addEventListener("keydown", function (e) {
+    if ($("#tab-study").hidden || !$("#sheetBg").hidden || /INPUT|TEXTAREA/.test(e.target.tagName) || !cur) return;
+    if (isFlip()) {
+      if (e.key === " ") { e.preventDefault(); $("#flash").classList.toggle("flipped"); $("#gradeBtns").hidden = false; return; }
+      if ($("#gradeBtns").hidden) return;
+      if (e.key === "1") { grade(false); next(); }
+      if (e.key === "2") { grade(true); next(); }
+    } else {
+      var n = parseInt(e.key, 10), opts = document.querySelectorAll(".choice");
+      if (n >= 1 && n <= opts.length) choose(opts[n - 1]);
+      if (e.key === "Enter" && answered && document.activeElement && document.activeElement.id !== "nextBtn") next();
+    }
+  });
+  $("#resetDeck").onclick = function () { $("#resetConfirm").hidden = false; $("#resetDeck").hidden = true; };
+  $("#resetNo").onclick = function () { $("#resetConfirm").hidden = true; $("#resetDeck").hidden = false; };
+  $("#resetYes").onclick = function () { cards.forEach(function (c) { delete boxes[c.id]; }); save(); $("#resetNo").onclick(); renderProgress(); };
+
+  function renderStudy() {
+    chipRow($("#deckChips"), DECKS, "deck");
+    chipRow($("#scopeChips"), SCOPES, "scope");
+    chipRow($("#modeChips"), MODES, "mode");
+    cards = buildCards(); lastId = null;
+    renderProgress(); next();
+  }
+  renderStudy();
+};
+</script>
+<script>
+/* Signs in, then loads the guide and your saved progress from the API and starts the page.
+   It runs after startGuide is defined: with cached responses the loads can finish before a later script would.
+   The guide (research on real people) is served by the API so it isn't public. Progress is kept in this
+   browser and saved to your account a moment after each change, so every device picks up where you left off. */
+(function () {
+  var KEY = "boards-v1", cfg, pending = null, timer = null, saving = false;
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method, keepalive: method === "PUT",
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    });
+  }
+  function status(text) { var el = document.getElementById("sync"); if (el) el.textContent = text; }
+  function push() {
+    clearTimeout(timer); timer = null;
+    if (saving || !pending) return;
+    var body = pending; pending = null; saving = true;
+    var retry = false;
+    api("PUT", "/progress", { progress: body }).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      status("Saved to your account");
+    }).catch(function () {
+      if (!pending) pending = body; retry = true;
+      status("Saved in this browser · retrying");
+    }).then(function () {
+      saving = false;
+      if (pending) timer = setTimeout(push, retry ? 5000 : 200);
+    });
+  }
+  window.boardsSync = function (state) {
+    pending = JSON.parse(JSON.stringify(state));
+    clearTimeout(timer); timer = setTimeout(push, 1000);
+  };
+  window.addEventListener("pagehide", push);
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") push(); });
+
+  function gate(msg, signIn) {
+    document.getElementById("gate-msg").textContent = msg;
+    if (signIn && !document.getElementById("signin")) {
+      var b = document.createElement("button"); b.id = "signin"; b.className = "btn primary"; b.textContent = "Sign in";
+      b.onclick = function () { FamilyAuth.login(); };
+      document.querySelector(".gate").appendChild(b);
+    }
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.", true);
+    return Promise.all([api("GET", "/guide"), api("GET", "/progress")]).then(function (r) {
+      if (r[0].status === 403) return gate("Your account doesn’t have access to Two Boards.");
+      if (!r[0].ok || !(r[1].ok || r[1].status === 404)) throw new Error("load failed");
+      return Promise.all([r[0].json(), r[1].status === 404 ? null : r[1].json()]).then(function (x) {
+        var local = null;
+        try { local = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+        var start = x[1] ? x[1].progress : local;
+        try { if (start) localStorage.setItem(KEY, JSON.stringify(start)); } catch (e) {}
+        if (!x[1] && local) window.boardsSync(local);
+        window.startGuide(x[0].guide, start);
+        status(x[1] || !local ? "Saved to your account" : "Saved in this browser");
+      });
+    });
+  }).catch(function () {
+    gate("Couldn’t load Two Boards. Reload to try again.", true);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "people": [
+    { "id": "ada-north", "name": "Ada North", "org": "alpha", "group": "board", "title": "Chair", "affiliation": "Founder, Northwind Labs", "bio": "Ada North founded Northwind Labs.", "facts": ["Ada North sold Northwind Labs in 2019", "Rows for the river club"], "opener": "Ask about the river club.", "overlap": "Married to Ben North of Beta.", "sources": ["https://example.com/ada"], "confidence": "high", "bridge": true, "lens": { "tags": ["coinvestor", "exited"], "why": "Writes angel checks." } },
+    { "id": "cal-reyes", "name": "Cal Reyes", "org": "alpha", "group": "board", "title": "Board member", "affiliation": "Partner, Reyes Capital", "facts": ["Runs a seed fund"], "confidence": "medium", "bridge": false },
+    { "id": "dee-park", "name": "Dee Park", "org": "alpha", "group": "staff", "title": "Executive Director", "affiliation": "Alpha", "facts": ["Joined in 2021"], "confidence": "high", "bridge": false },
+    { "id": "eli-moss", "name": "Eli Moss", "org": "alpha", "group": "board", "title": "Board member", "affiliation": "City Manager", "facts": ["First planner in the job"], "confidence": "high", "bridge": false },
+    { "id": "ben-north", "name": "Ben North", "org": "beta", "group": "board", "title": "Director", "affiliation": "Community volunteer", "facts": ["Chairs the gala"], "confidence": "low", "bridge": true, "lens": { "tags": ["lp"], "why": "Family capital." } },
+    { "id": "fay-oak", "name": "Fay Oak", "org": "beta", "group": "board", "title": "Board Chair", "affiliation": "President, Oak Bank", "facts": ["Thirty years in banking"], "confidence": "high", "bridge": false },
+    { "id": "gus-lee", "name": "Gus Lee", "org": "beta", "group": "staff", "title": "President & CEO", "affiliation": "Beta", "facts": ["Ran a ballet company"], "confidence": "high", "bridge": false },
+    { "id": "hal-ito", "name": "Hal Ito", "org": "beta", "group": "board", "title": "Director", "affiliation": "Mayor", "facts": ["Mayor since 1995"], "confidence": "high", "bridge": false }
+  ],
+  "orgs": [
+    { "id": "alpha", "name": "Alpha Founders Network", "short": "Alpha", "aliases": ["Alpha", "Alpha Summit"], "legal_name": "Alpha Inc", "founded": "2006", "mission": "Help founders.", "summary": "A founders network.", "key_numbers": [{ "label": "Founders served", "value": "150" }], "timeline": [{ "year": "2006", "event": "Founded" }], "programs": [{ "name": "Mentors", "what": "Team mentoring" }], "events": [{ "name": "Alpha Summit", "when": "September", "what": "Pitches" }], "facts": ["Alpha began in 2006", "The Alpha Summit is held in September"], "sources": ["https://example.com/alpha"] },
+    { "id": "beta", "name": "Beta Arts Festival", "short": "Beta", "aliases": ["Beta"], "legal_name": "Beta Festival", "founded": "2005", "mission": "Art for all.", "summary": "A downtown festival.", "key_numbers": [], "timeline": [], "programs": [], "events": [], "facts": ["Beta is held in May"], "sources": [] }
+  ],
+  "overlaps": [
+    { "what": "The Norths", "strength": "strong", "people": ["ada-north", "ben-north"], "alpha_side": "Ada North chairs the board.", "beta_side": "Ben North is a director.", "why": "One household on both boards." },
+    { "what": "Oak Bank", "strength": "weak", "people": [], "alpha_side": "A sponsor.", "beta_side": "A sponsor.", "why": "" }
+  ],
+  "sponsors": { "alpha": ["Reyes Capital"], "both": ["Oak Bank"], "beta": ["Northwind Labs"] },
+  "lens_tags": { "coinvestor": "Co-investor", "lp": "Future LP or anchor", "exited": "Exited founder" },
+  "plan": { "title": "Alpha now, Beta later", "intro": "Start with Alpha.", "test": "Would you want it anyway?", "guardrail": "Two commitments at most.", "phases": [{ "when": "Now", "title": "Ask", "steps": [{ "text": "Ask Dee Park about a seat.", "people": ["dee-park"] }] }] },
+  "venn_note": "You: an Alpha mentor",
+  "note": "Invented people for tests.",
+  "photos": { "ada-north": "data:image/gif;base64,R0lGODlhAQABAAAAACw=", "cal-reyes": "data:image/gif;base64,R0lGODlhAQABAAAAACw=", "eli-moss": "data:image/gif;base64,R0lGODlhAQABAAAAACw=", "dee-park": "data:image/gif;base64,R0lGODlhAQABAAAAACw=" }
+}

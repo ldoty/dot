@@ -22,6 +22,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/links` | links.dot-y.co | `family_links` | Family bookmarks |
 | `tools/biomap` | biomap.dot-y.co | `lukes_biomap` | Field-guide flashcards from a private photo collection |
 | `tools/tempi` | tempi.dot-y.co | `family_tempi` | An OT course, served to members only |
+| `tools/boards` | boards.dot-y.co | `lukes_boards` | Field guide + flashcards for two nonprofit boards; the guide lives in gitignored `private/` |
 | `tools/house-hunt` | house-hunt.dot-y.co | `family_house_hunt` | Neighborhoods on a map, ranked listings; listing emails to househunt@dot-y.co are filed by Claude |
 | `tools/sms` | (API only) | | SMS opt-in consent records for the Dot-y texting program |
 | `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail |
