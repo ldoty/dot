@@ -129,6 +129,18 @@ test('only web links and real neighborhoods are kept, whatever Claude returns', 
   assert.deepEqual([l.url, l.hoodId], ['', null]);
 });
 
+test('a Redfin tour link is filed as the home’s page, and Redfin tracking is dropped', async () => {
+  reply = answer([
+    home({ address: '1317 Algeddis Dr', url: 'https://www.redfin.com/tours/checkout/times?listingId=1&inquirySource=111&propertyId=194507028&utm_source=myredfin' }),
+    home({ address: '321 Upwey Pl', url: 'https://www.redfin.com/SC/Greer/321-Upwey-Pl-29651/home/205994015?utm_source=myredfin&riftinfo=abc' }),
+  ]);
+  await ingest()(record());
+  const byAddress = Object.fromEntries(listings().map((l) => [l.address, l.url]));
+  assert.equal(byAddress['1317 Algeddis Dr'], 'https://www.redfin.com/SC/Greer/1317-Algeddis-Dr/home/194507028');
+  assert.equal(byAddress['321 Upwey Pl'], 'https://www.redfin.com/SC/Greer/321-Upwey-Pl-29651/home/205994015');
+  assert.match(requests[0].system, /tour link only when it is the only link/);
+});
+
 test('sender rules: exact addresses, domains with subdomains, nothing look-alike', () => {
   assert.ok(senderAllowed('Luke <Luke.Doty@gmail.com>', ALLOWED));
   assert.ok(senderAllowed('instant-updates@mail.zillow.com', ALLOWED));

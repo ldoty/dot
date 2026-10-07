@@ -13,6 +13,23 @@ export const webUrl = (v) => {
   try { const u = new URL(str(v, 1000)); return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : ''; } catch { return ''; }
 };
 
+// Redfin alerts often link a home only through "Go tour" (/tours/checkout/times?propertyId=…), a
+// scheduling page. Redfin redirects /<state>/<city>/<any slug>/home/<propertyId> to the home's own
+// page, so we keep that instead; on its home pages we drop the tracking query (utm_*, riftinfo).
+export function listingUrl(v, address, city) {
+  const href = webUrl(v);
+  if (!href) return '';
+  const u = new URL(href);
+  if (!/(^|\.)redfin\.com$/i.test(u.hostname)) return href;
+  const slug = (s) => s.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'x';
+  const propertyId = u.searchParams.get('propertyId');
+  if (u.pathname.startsWith('/tours/') && /^\d+$/.test(propertyId || '')) {
+    return `https://www.redfin.com/SC/${slug(city || 'Greer')}/${slug(address)}/home/${propertyId}`;
+  }
+  if (/\/home\/\d+\/?$/.test(u.pathname)) return u.origin + u.pathname;
+  return href;
+}
+
 // "123 Sugar Lake Court, Greer, SC 29650" and "123 sugar lake ct" are the same house
 const ABBREV = { road: 'rd', drive: 'dr', court: 'ct', street: 'st', lane: 'ln', circle: 'cir', avenue: 'ave', boulevard: 'blvd', place: 'pl', trail: 'trl', terrace: 'ter', parkway: 'pkwy', north: 'n', south: 's', east: 'e', west: 'w' };
 export function addressKey(address) {
@@ -37,7 +54,7 @@ export function cleanListing(body, id) {
     listing: {
       id, hoodId: body.hoodId || null, address, city: str(body.city, 60),
       price: body.price ?? null, beds: body.beds ?? null, baths: body.baths ?? null, sqft: body.sqft ?? null,
-      url: webUrl(body.url), status, event: EVENTS.includes(body.event) ? body.event : '', summary: str(body.summary, 400),
+      url: listingUrl(body.url, address, str(body.city, 60)), status, event: EVENTS.includes(body.event) ? body.event : '', summary: str(body.summary, 400),
       notes: str(body.notes, 5000), rank: body.rank ?? null, reviewed: body.reviewed === true,
       source: body.source === 'email' ? 'email' : 'manual',
       firstSeenAt: iso(body.firstSeenAt), lastSeenAt: iso(body.lastSeenAt),

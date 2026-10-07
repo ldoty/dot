@@ -47,7 +47,7 @@ For each distinct home:
 - address: street address only (number and street), as written. Skip homes without one.
 - city: the city if shown, else "".
 - price: the asking price in whole dollars, else 0. beds, sqft: whole numbers, else 0. baths: a number like 2.5, else 0.
-- url: the link to that home's listing, copied exactly from the email's links, else "".
+- url: the link to that home's own listing page, copied exactly from the email's links, else "". Prefer the home's page (e.g. "View home", the address, a .../home/... link) over links to schedule a tour, contact an agent or get financing; use a tour link only when it is the only link for that home.
 - event: what the alert says happened: new, price_cut, price_increase, back_on_market, pending, sold, open_house, or other.
 - summary: one short line in your own words (e.g. "4 bd ranch on a cul-de-sac, price cut $15k").
 - hoodId: the id of the neighborhood below that the home is in, or "" if you can't tell. Match only on real evidence: the subdivision named in the listing, or a street that the neighborhood's details or listing history place inside it. Don't guess from the city or zip alone.
