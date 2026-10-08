@@ -37,6 +37,16 @@ test('editing Shared saves only Shared and leaves personal tabs alone until tagg
   p.close();
 });
 
+test('the split moves one percent at a time', async () => {
+  const p = await openBudget('#shared');
+  const r = p.el('#split-r');
+  r.stepUp(); // one press of the arrow key
+  p.type(r, r.value);
+  await saved();
+  assert.equal(doc('shared').split, 51);
+  p.close();
+});
+
 test('save + tag default moves the tag, and personal tabs follow it', async () => {
   const p = await openBudget('#shared');
   p.type('#split-r', '70'); await saved();

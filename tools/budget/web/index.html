@@ -596,7 +596,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       '<aside class="rail">' + versionsPanel(true) + tagsPanel("shared") +
       '<div class="panel"><h3>Split</h3><div class="split-range">' +
       '<div class="ends"><span id="s-luke-pct"></span><span id="s-amber-pct"></span></div>' +
-      '<input type="range" id="split-r" min="0" max="100" step="5" value="' + docs.shared.split + '" aria-label="Luke’s share of shared costs">' +
+      '<input type="range" id="split-r" min="0" max="100" step="1" value="' + docs.shared.split + '" aria-label="Luke’s share of shared costs">' +
       '<div class="split-who"><div><div class="nm">Luke</div><div class="amt" id="s-luke"></div><div class="yr" id="s-luke-yr"></div></div>' +
       '<div><div class="nm">Amber</div><div class="amt" id="s-amber"></div><div class="yr" id="s-amber-yr"></div></div></div>' +
       '<p class="split-foot" id="s-foot"></p></div></div>' + barsPanel + "</aside></div>";
