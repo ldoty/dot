@@ -123,6 +123,18 @@ export const HOODS = [
       'Spartanburg County address (county taxes and services), Greenville County Schools'],
     drives: drives([[13, 6.8], [12, 5.8], [5, 1.6], [16, 7.3]]), ll: [34.8579, -82.2081], source: `${PP}dillard-creek-crossing`,
   },
+  // To explore: added 2026-10-07. MLS files it under Redcroft, so prices are Palmetto Park's Redcroft figures;
+  // HOA from listings; pin is the OpenStreetMap outline's center
+  {
+    id: 'reserve-at-redcroft', name: 'The Reserve at Redcroft', status: 'explore', ...RIVERSIDE,
+    summary: 'Newer homes (mostly 2015–2022) just off Hwy 14, next to Dillard Creek Crossing. Close to Pelham Rd, I-85 and GSP.',
+    pool: 'Pool, cabana and playground', price: 560000, sales: 11,
+    priceNote: 'All of Redcroft. Up 6.7% on the year. For sale now: about $575,000–$735,000. A Stavordale Ct home (2022) sold for $525,000 in Jan 2025.',
+    schoolNote: 'In Spartanburg County, but zoned for Greenville County Schools.',
+    facts: ['Homes built mostly 2015–2022, traditional two-story; 4–6 bedrooms on about 0.23-acre lots', 'HOA about $495 a year, pool included',
+      'Pool, cabana, playground, street lights; wooded buffers behind many lots', 'Spartanburg County address (county taxes and services), Greenville County Schools'],
+    drives: drives([[15, 7.5], [13, 6.5], [5, 1.8], [18, 7.9]]), ll: [34.8523, -82.2012], source: `${PP}redcroft`,
+  },
 ];
 
 export const PLACES = [
