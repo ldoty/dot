@@ -819,10 +819,27 @@ test('Planning: a new household starts an unsaved plan on this month, saved only
   assert.deepEqual(planKeys(), []);
   assert.match(p.text('p-warn'), /Nothing in Shared counts as saved/);
   assert.equal(p.el('[data-pact="plan-del"]').disabled, true, 'the only plan can’t be deleted');
-  p.type('#p-months', '12', 'change'); await saved();
+  const end12 = p.el('#p-end').options[11].value; // the twelfth month from the start
+  p.type('#p-end', end12, 'change'); await saved();
   assert.equal(planKeys().length, 1);
   const row = table.get(PK, planKeys()[0]);
   assert.deepEqual([row.name, row.rev, JSON.parse(row.plan).months], ['Plan', 1, 12]);
+  p.close();
+});
+
+test('Planning: the plan runs to the month it ends, which stays put when the start moves', async () => {
+  seedPlan(); // Jan–Dec 2027
+  const p = await openBudget('#plan');
+  assert.equal(p.el('#p-end').value, '2027-12');
+  p.type('#p-end', '2028-08', 'change'); await saved();
+  assert.equal(savedPlan().months, 20);
+  assert.equal(planRows(p).pop()[0], 'Aug 2028');
+  p.type('#p-start', '2027-03', 'change'); await saved();
+  assert.deepEqual([savedPlan().start, savedPlan().months], ['2027-03', 18]);
+  assert.equal(p.el('#p-end').value, '2028-08');
+  p.type('#p-end', '2027-03', 'change'); await saved(); // a one-month plan
+  assert.equal(savedPlan().months, 1);
+  assert.equal(planRows(p).length, 1);
   p.close();
 });
 

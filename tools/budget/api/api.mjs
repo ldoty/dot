@@ -105,7 +105,7 @@ const isId = (v) => typeof v === 'string' && ID.test(v);
 // that pays the loan down (paidBy, an item name) and whether the month's savings land there.
 // One-offs land in an account, or move money from it to another (to).
 function cleanPlan(p) {
-  if (!isObj(p) || !MONTH.test(p.start) || !Number.isInteger(p.months) || p.months < 6 || p.months > 60) return null;
+  if (!isObj(p) || !MONTH.test(p.start) || !Number.isInteger(p.months) || p.months < 1 || p.months > 120) return null;
   const accounts = p.accounts ?? [];
   if (!Number.isFinite(p.balance ?? 0) || !Array.isArray(p.steps) || !Array.isArray(p.oneOffs) || !Array.isArray(accounts)) return null;
   if (p.steps.length > 60 || p.oneOffs.length > 100 || accounts.length > 20) return null;

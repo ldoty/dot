@@ -895,7 +895,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
   function normalizePlan(p) {
     p = p || newPlan();
     if (!/^\d{4}-\d{2}$/.test(p.start || "")) p.start = thisMonth();
-    if (!(p.months >= 6 && p.months <= 60)) p.months = 24;
+    if (!(p.months >= 1 && p.months <= MAX_MONTHS)) p.months = 24;
     p.balance = Number(p.balance) || 0;
     p.steps = (p.steps || []).slice().sort(function (a, b) { return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; });
     if (!p.steps.length) p.steps = [{ from: p.start, tag: "default" }];
@@ -908,6 +908,9 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
   function acctOf(p, id) { return p.accounts.filter(function (a) { return a.id === id; })[0] || null; }
   function savingsAcct(p) { return p.accounts.filter(function (a) { return a.savings; })[0] || p.accounts[0]; }
   function startTotal(p) { return p.accounts.reduce(function (t, a) { return t + (Number(a.balance) || 0); }, 0); }
+  // A plan runs from its start through the month it ends, at most ten years
+  var MAX_MONTHS = 120;
+  function monthsFrom(a, b) { return (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7)); }
   function planMonths(p) { var out = []; for (var i = 0; i < p.months; i++) out.push(addMonths(p.start, i)); return out; }
   // The step in effect in a month: the latest one that has started, or the first before any has
   function stepAt(p, ym) {
@@ -1157,7 +1160,6 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       '<button class="v-del" data-pact="plan-del"' + (plans.length < 2 ? " disabled" : "") + ">Delete</button></div>" +
       '<div class="fld"><label for="p-cmp">Compare with</label><select id="p-cmp" data-p="cmp"' + (others.length ? "" : " disabled") + '><option value="">' + (others.length ? "Nothing" : "No other plans yet") + "</option>" +
       others.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === planView.cmp ? " selected" : "") + ">" + esc(x.name || "Untitled") + "</option>"; }).join("") + "</select></div></div>";
-    var lengths = [12, 24, 36, 60].map(function (m) { return '<option value="' + m + '"' + (plan.months === m ? " selected" : "") + ">" + m + " months</option>"; }).join("");
     return bar + '<div class="tiles">' + tile("Average spending", "pk-spend") + tile("Saved over the plan", "pk-saved") + tile("Interest", "pk-int") + tile("Running total at the end", "pk-end") + "</div>" +
       '<div class="layout"><div>' +
       '<section class="chart-card"><div class="chart-head"><h2>Month by month</h2><div class="savebar">' +
@@ -1171,7 +1173,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       '<aside class="rail">' +
       '<div class="panel"><h3>Timeline</h3><div class="p-fields">' +
       '<div class="fld"><label for="p-start">Starts</label><select id="p-start" data-p="start">' + monthOptions(plan.start, addMonths(thisMonth(), -12), 37) + "</select></div>" +
-      '<div class="fld"><label for="p-months">Length</label><select id="p-months" data-p="months">' + lengths + "</select></div>" +
+      '<div class="fld"><label for="p-end">Ends</label><select id="p-end" data-p="end">' + monthOptions(addMonths(plan.start, plan.months - 1), plan.start, MAX_MONTHS) + "</select></div>" +
       "</div></div>" +
       '<div class="panel"><h3>Accounts</h3><div class="p-list">' + accts + "</div>" +
       '<button class="add" data-pact="acct-add">+ Add an account</button>' +
@@ -1274,8 +1276,11 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     }
     if (t.dataset.p === "start") {
       // The first step always starts with the plan; later ones keep their months
+      // and the plan keeps its end month, as long as that's still after the start and within ten years
+      var endWas = addMonths(plan.start, plan.months - 1);
       plan.start = t.value; plan.steps[0].from = t.value;
-    } else if (t.dataset.p === "months") plan.months = Number(t.value);
+      plan.months = Math.min(MAX_MONTHS, Math.max(1, monthsFrom(plan.start, endWas) + 1));
+    } else if (t.dataset.p === "end") plan.months = monthsFrom(plan.start, t.value) + 1;
     else if (t.dataset.p === "step-from") { plan.steps[i].from = t.value; plan = normalizePlan(plan); }
     else if (t.dataset.p === "step-tag") plan.steps[i].tag = t.value;
     else if (t.dataset.p === "once-month" && o) o.month = t.value;

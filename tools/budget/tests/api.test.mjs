@@ -169,7 +169,7 @@ test('a plan deleted elsewhere: saving it says so instead of recreating it', asy
 
 test('a malformed plan or name is refused and extra fields are dropped', async () => {
   for (const bad of [
-    plan({ start: '2026-13' }), plan({ months: 3 }), plan({ months: 61 }), plan({ balance: 'lots' }),
+    plan({ start: '2026-13' }), plan({ months: 0 }), plan({ months: 121 }), plan({ balance: 'lots' }),
     plan({ steps: [{ from: '2026-11', tag: 'Bad Tag' }] }), plan({ steps: 'x' }),
     plan({ oneOffs: [{ id: 'o1', month: '2026-12', label: 'x', amount: 'big' }] }),
     plan({ oneOffs: [{ id: 'bad id', month: '2026-12', label: 'x', amount: 1 }] }),
