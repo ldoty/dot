@@ -748,6 +748,34 @@ test('Planning: each month uses its step’s tag; savings and one-offs build the
   p.close();
 });
 
+test('Planning: a category named Savings counts until one is marked, less items with Saved cleared', async () => {
+  // Like a real budget: the Savings category was never switched from Spending
+  const bigger = sharedDoc(1500);
+  bigger.categories.push({ id: 'c2', name: 'Savings', kind: 'spend', items: [
+    { id: 'a8', name: 'To savings', amount: 300, freq: 'mo', who: 'Shared' },
+    { id: 'a7', name: 'Tuition', amount: 50, freq: 'mo', who: 'Shared' },
+  ] });
+  seed({ working: bigger });
+  table.put({ pk: PK, sk: 'DOC#shared#VERSION#v2', name: 'Bigger', savedAt: 2, state: JSON.stringify(bigger) });
+  table.put({ pk: PK, sk: 'TAG#shared#stretch', versionId: 'v2' });
+  table.put({ pk: PK, sk: 'PLAN#p1', name: 'Pay HELOC', rev: 1, plan: JSON.stringify({ ...PLAN1, balance: 0, oneOffs: [], steps: [{ from: '2027-01', tag: 'stretch' }] }) });
+  const p = await openBudget('#plan');
+  assert.deepEqual(planRows(p)[0].slice(2, 4), ['$1,500', '$350']);
+
+  await p.tab('shared');
+  assert.equal(p.el('[data-ckind="c2"]').textContent, 'Savings (by name)');
+  const tuition = p.el('[data-isave="a7"]');
+  assert.equal(tuition.checked, true);
+  tuition.click(); await saved(); // clear Saved: tuition is paid, not kept
+  assert.equal(doc('shared').categories[1].items[1].notSaved, true);
+  assert.equal(p.el('[data-isave="a8"]').checked, true);
+  assert.equal(p.d.querySelector('[data-cat="c1"] [data-isave]'), null, 'only items in a savings category have the box');
+  p.type('#v-name', 'Bigger'); p.click('#v-save'); await wait(50); // save over the tagged version
+  await p.tab('plan');
+  assert.deepEqual(planRows(p)[0].slice(2, 4), ['$1,550', '$300']);
+  p.close();
+});
+
 test('Planning follows a tag when it moves', async () => {
   seedPlan();
   const p = await openBudget('#shared');
@@ -789,7 +817,7 @@ test('Planning: a new household starts an unsaved plan on this month, saved only
   assert.equal(planRows(p).length, 24);
   assert.match(planRows(p)[0][1], /^default → Starting point/);
   assert.deepEqual(planKeys(), []);
-  assert.match(p.text('p-warn'), /Nothing in Shared is marked Savings/);
+  assert.match(p.text('p-warn'), /Nothing in Shared counts as saved/);
   assert.equal(p.el('[data-pact="plan-del"]').disabled, true, 'the only plan can’t be deleted');
   p.type('#p-months', '12', 'change'); await saved();
   assert.equal(planKeys().length, 1);

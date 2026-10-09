@@ -93,6 +93,8 @@ section.cat { margin-bottom: 26px }
 .who-rest { font-size: 11.5px; color: var(--muted); line-height: 1.2 }
 .name-cell { min-width: 0; display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 4px; align-items: center }
 .name-cell small { grid-column: 2 }
+.name-cell .saved-chk { grid-column: 2; display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); padding-left: 8px }
+.name-cell .saved-chk input { width: auto; margin: 0; accent-color: var(--leaf) }
 .grip { cursor: grab; color: var(--muted); opacity: .45; font-size: 15px; line-height: 1; text-align: center; user-select: none; -webkit-user-select: none; border-radius: 4px; padding: 4px 0 }
 .row:hover .grip, .grip:focus-visible { opacity: 1; color: var(--pool) }
 .grip:active { cursor: grabbing }
@@ -432,6 +434,12 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     var marked = st.categories.filter(function (c) { return c.fund === "travel"; });
     return marked.length ? marked : st.categories.filter(function (c) { return /travel/i.test(c.name || ""); });
   }
+  // The Shared categories Planning counts as saved: those marked Savings, or if none is, any with
+  // "saving" in its name. An item in one can still opt out (notSaved: it's paid, not kept, like tuition).
+  function savingCats(st) {
+    var marked = st.categories.filter(function (c) { return c.kind === "save"; });
+    return marked.length ? marked : st.categories.filter(function (c) { return /saving/i.test(c.name || ""); });
+  }
   function sharedSummary(st) {
     var m = st.mortgage, loan = loanOf(m), mort = payment(loan, m.rate, m.years);
     var travelIds = travelCats(st).map(function (c) { return c.id; }), tr = { Luke: 0, Amber: 0 };
@@ -454,7 +462,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     var lp = st.split / 100;
     ctx.shares = { Luke: by.Luke + by.Shared * lp, Amber: by.Amber + by.Shared * (1 - lp) };
     ctx.travel = tr;
-    return { m: m, loan: loan, mort: mort, total: total, by: by, cats: cats, ctx: ctx, luke: ctx.shares.Luke, amber: ctx.shares.Amber };
+    return { st: st, m: m, loan: loan, mort: mort, total: total, by: by, cats: cats, ctx: ctx, luke: ctx.shares.Luke, amber: ctx.shares.Amber };
   }
   function personSummary(pp, ctx) {
     var income = sum(pp.income, ctx), out = 0, save = 0;
@@ -489,9 +497,10 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     return c && c.items;
   }
 
-  function nameCell(it, noteId) {
+  function nameCell(it, noteId, saving) {
     return '<div class="name-cell"><span class="grip" draggable="true" tabindex="0" role="button" data-grip="' + it.id + '" aria-label="Move ' + esc(it.name || "item") + '. Drag, or use the arrow keys." title="Drag to move">⠿</span><input id="n-' + it.id + '" data-f="name" aria-label="Item name" value="' + esc(it.name) + '">' +
-      (noteId ? '<small class="calc-note" id="nt-' + it.id + '"></small>' : it.note ? "<small>" + esc(it.note) + "</small>" : "") + "</div>";
+      (noteId ? '<small class="calc-note" id="nt-' + it.id + '"></small>' : it.note ? "<small>" + esc(it.note) + "</small>" : "") +
+      (saving ? '<label class="saved-chk" title="Counts as saved on the Planning tab. Clear it for money that’s paid, not kept."><input type="checkbox" data-isave="' + it.id + '"' + (it.notSaved ? "" : " checked") + "> Saved</label>" : "") + "</div>";
   }
   function freqSel(it) {
     return '<select id="f-' + it.id + '" data-f="freq" aria-label="Frequency"><option value="mo"' + (it.freq !== "yr" ? " selected" : "") + '>/ mo</option><option value="yr"' + (it.freq === "yr" ? " selected" : "") + ">/ yr</option></select>";
@@ -500,15 +509,15 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     return '<div class="mo" id="m-' + it.id + '"></div>' +
       '<button class="del" data-del="' + it.id + '" aria-label="Remove ' + esc(it.name || "item") + '" title="Remove">&times;</button></div>';
   }
-  function rowHtml(it) {
+  function rowHtml(it, saving) {
     var opts = WHO.map(function (w) { return '<option' + (it.who === w ? " selected" : "") + ">" + w + "</option>"; }).join("");
     var who = '<div class="who-cell"><select id="w-' + it.id + '" data-f="who" aria-label="Paid by">' + opts + "</select>" +
       (it.who === "Split" ? '<label class="who-pct">Luke $<input id="sp-' + it.id + '" class="amt" data-f="luke" inputmode="decimal" value="' + (it.luke || 0) + '" aria-label="Luke pays, of ' + esc(it.name || "this item") + '"></label><span class="who-rest" id="sr-' + it.id + '"></span>' : "") +
       "</div>";
-    if (it.calc === "pctHome") return '<div class="row calc" data-id="' + it.id + '">' + nameCell(it, true) +
+    if (it.calc === "pctHome") return '<div class="row calc" data-id="' + it.id + '">' + nameCell(it, true, saving) +
       '<input id="a-' + it.id + '" class="amt" data-f="rate" inputmode="decimal" aria-label="Percent of home value per year" value="' + (it.rate || 0) + '">' +
       '<span class="per-fixed">% of value / yr</span>' + who + tail(it);
-    return '<div class="row" data-id="' + it.id + '">' + nameCell(it) +
+    return '<div class="row" data-id="' + it.id + '">' + nameCell(it, false, saving) +
       '<input id="a-' + it.id + '" class="amt" data-f="amount" inputmode="decimal" aria-label="Amount" value="' + (it.amount || 0) + '">' +
       freqSel(it) + who + tail(it);
   }
@@ -541,18 +550,20 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
         '<div class="tot"><span id="t-' + c.id + '"></span> <small>/ mo</small></div></div>' + PLABELS + c.items.map(prowHtml).join("") +
         '<p class="locked-note">Your share of the Shared budget, set by the split on the Shared tab: Travel is your part of its travel fund, the rest is shared costs. Money you move into a shared account is filed here in Finances.</p></section>';
     }
-    var save = c.kind === "save";
+    var save = c.kind === "save", byName = !personal && !save && savingCats(docs.shared).indexOf(c) >= 0;
     return '<section class="cat" data-cat="' + c.id + '"><div class="cat-head"><h2>' +
       '<input class="cat-name" id="cn-' + c.id + '" data-cname="' + c.id + '" aria-label="Category name" placeholder="Name this category" maxlength="60" value="' + esc(c.name) + '">' +
-      (!personal && save ? '<span class="chip">Savings</span>' : "") + "</h2>" +
+      (!personal && (save || byName) ? '<span class="chip">Savings</span>' : "") + "</h2>" +
       '<div class="cat-tools">' +
-      '<button class="kind" data-ckind="' + c.id + '" aria-pressed="' + save + '" title="' + (personal ? "Savings count toward Saving &amp; investing instead of Spending" : "Savings count as saved on the Planning tab; everything else is spending") + '">' + (save ? "Savings" : "Spending") + "</button>" +
+      '<button class="kind" data-ckind="' + c.id + '" aria-pressed="' + (save || byName) + '" title="' + (personal ? "Savings count toward Saving &amp; investing instead of Spending"
+        : byName ? "Counts as saved on the Planning tab because of its name, until a category is marked Savings by hand. Click to mark it by hand." : "Savings count as saved on the Planning tab; everything else is spending") + '">' +
+        (save ? "Savings" : byName ? "Savings (by name)" : "Spending") + "</button>" +
       (personal ? "" : fundBtn(c)) +
       '<button data-cmove="' + c.id + '" data-dir="-1" aria-label="Move ' + esc(c.name || "category") + ' up"' + (i && !afterLocked ? "" : " disabled") + ">↑</button>" +
       '<button data-cmove="' + c.id + '" data-dir="1" aria-label="Move ' + esc(c.name || "category") + ' down"' + (i < n - 1 ? "" : " disabled") + ">↓</button>" +
       '<button class="cdel" data-cdel="' + c.id + '">Delete</button></div>' +
       '<div class="tot"><span id="t-' + c.id + '"></span> <small>/ mo</small></div></div>' +
-      (personal ? PLABELS + c.items.map(prowHtml).join("") : LABELS + c.items.map(rowHtml).join("")) +
+      (personal ? PLABELS + c.items.map(prowHtml).join("") : LABELS + c.items.map(function (it) { return rowHtml(it, save || byName); }).join("")) +
       '<button class="add" data-add="' + c.id + '">+ Add item</button></section>';
   }
 
@@ -946,15 +957,16 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
         var C = cache[v.id];
         if (!C) {
           var S = sharedSummary(normalizeShared(clone(v.state)));
-          C = cache[v.id] = { S: S, lines: {} };
+          C = cache[v.id] = { S: S, lines: {}, save: savingCats(S.st).map(function (c) { return c.id; }) };
           // Each Shared line's monthly amount by name, for the loans they pay down
           S.cats.forEach(function (x) { x.c.items.forEach(function (it) { var k = (it.name || "").trim().toLowerCase(); C.lines[k] = (C.lines[k] || 0) + monthly(it, S.ctx); }); });
         }
         lines = C.lines;
         if (C.S.mort) { spend[MORT] = C.S.mort; spent += C.S.mort; }
         C.S.cats.forEach(function (x) {
-          if (x.c.kind === "save") { saved += x.t; return; }
-          var n = x.c.name || "Untitled"; spend[n] = (spend[n] || 0) + x.t; spent += x.t;
+          var n = x.c.name || "Untitled", out = x.t;
+          if (C.save.indexOf(x.c.id) >= 0) x.c.items.forEach(function (it) { if (!it.notSaved) { var v = monthly(it, C.S.ctx); saved += v; out -= v; } });
+          if (out) { spend[n] = (spend[n] || 0) + out; spent += out; }
         });
       }
       var interest = 0, earned = 0, paid = 0;
@@ -1166,7 +1178,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       '<p class="split-foot">Balances when the plan starts; a loan is negative. Interest compounds monthly. A loan paid by a Shared line gets that line’s monthly amount until it’s paid off. The running total is all the accounts added up.</p></div>' +
       '<div class="panel"><h3>Which budget, when</h3><div class="p-list">' + steps + "</div>" +
       '<button class="add" data-pact="step-add">+ Add a change</button>' +
-      '<p class="split-foot">Each month uses the Shared version its tag points to now, so the plan follows when a tag moves. Saved is any Shared category marked Savings.</p></div>' +
+      '<p class="split-foot">Each month uses the Shared version its tag points to now, so the plan follows when a tag moves. Saved is any Shared category marked Savings (or, until one is, named Savings), less items with Saved cleared.</p></div>' +
       '<div class="panel"><h3>One-offs</h3><div class="p-list">' + (once || '<p class="v-empty">Nothing yet. Add money that comes in or goes out once, like a check or a closing.</p>') + "</div>" +
       '<button class="add" data-pact="once-add">+ Add a one-off</button>' +
       '<p class="split-foot">A one-off lands in its account (negative takes money out). “Moved to” moves it from one account to another instead, like paying down a loan from savings.</p></div>' +
@@ -1214,7 +1226,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     var missing = plan.steps.filter(function (s) { return !tagVersion(s.tag); }).map(function (s) { return s.tag; });
     var warn = document.getElementById("p-warn");
     warn.textContent = (missing.length ? "No Shared version is tagged " + missing.join(", ") + ", so those months show nothing. " : "") +
-      (noSavings ? "Nothing in Shared is marked Savings yet: mark a category Savings on the Shared tab to count it as saved." : "");
+      (noSavings ? "Nothing in Shared counts as saved yet: mark a category Savings on the Shared tab (or name one Savings) to count it as saved." : "");
     warn.hidden = !warn.textContent;
     var loans = plan.accounts.some(function (a) { return a.paidBy; });
     document.getElementById("p-head").innerHTML = "<tr><th>Month</th><th>Using</th><th>Spending</th><th>Saved</th><th>Interest</th><th>One-offs</th>" + (loans ? "<th>Paid on loans</th>" : "") + "<th>Running total</th>" +
@@ -1544,7 +1556,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       var fb = app.querySelector('[data-cfund="' + fc.id + '"]'); if (fb) fb.focus();
     } else if (t.dataset.ckind) {
       var kc = tabCats()[catIndex(t.dataset.ckind)]; if (!kc) return;
-      kc.kind = kc.kind === "save" ? "spend" : "save"; persist(); render();
+      kc.kind = kc.kind === "save" ? "spend" : "save"; persist(); render(); // a by-name one becomes marked by hand
       var kb = app.querySelector('[data-ckind="' + kc.id + '"]'); if (kb) kb.focus();
     } else if (t.dataset.cdel) {
       var dcs = tabCats(), di = catIndex(t.dataset.cdel); if (di < 0 || dcs[di].locked) return;
@@ -1713,6 +1725,11 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
   });
   app.addEventListener("change", function (e) {
     if (e.target.dataset.p) { planChange(e.target); return; }
+    if (e.target.dataset.isave) {
+      var si = findItem(e.target.dataset.isave); if (!si) return;
+      if (e.target.checked) delete si.notSaved; else si.notSaved = true;
+      persist(); return;
+    }
     if (e.target.id === "s-luke" || e.target.id === "s-amber") {
       // On leaving the box, show the amount actually kept (one past the pool stops at all of it)
       var sv = sharedSummary(docs.shared); e.target.value = dollars(e.target.id === "s-luke" ? sv.luke : sv.amber); return;
