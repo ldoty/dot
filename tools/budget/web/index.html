@@ -156,13 +156,13 @@ input[type=range] { accent-color: var(--pool); padding: 0; background: none; bor
 .split-range { display: grid; gap: 10px }
 .split-range .ends { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600 }
 .split-range input[type=range] { width: 100% }
-.split-range .ends label { display: flex; align-items: center; gap: 4px }
-.split-range .ends input { width: 3.6em; padding: 2px 6px; font: 600 13px var(--mono); text-align: right }
 .split-who { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px }
 .split-who > div { background: var(--field); border-radius: var(--r-sm); padding: 10px 12px }
 .split-who .nm { font: 600 11px var(--display); color: var(--muted); text-transform: uppercase; letter-spacing: .12em }
 .split-who > div:first-child { box-shadow: inset 3px 0 0 var(--pool) } .split-who > div:last-child { box-shadow: inset 3px 0 0 var(--bloom) }
 .split-who .amt { font: 400 19px var(--serif); font-variant-numeric: tabular-nums }
+.split-who label.amt { display: flex; align-items: baseline; gap: 2px }
+.split-who input.amt { font: inherit; text-align: left; padding: 0 4px; margin-left: -4px; background: var(--surface) }
 .split-who .yr { font: 12px var(--mono); color: var(--muted) }
 .split-foot { font-size: 12.5px; color: var(--muted); margin: 6px 0 0 }
 .v-save { display: flex; gap: 8px }
@@ -597,11 +597,10 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
       '<div class="layout"><div>' + mortgageHtml() + docs.shared.categories.map(function (c, i, a) { return catHtml(c, false, i, a.length); }).join("") + addCatBtn + "</div>" +
       '<aside class="rail">' + versionsPanel(true) + tagsPanel("shared") +
       '<div class="panel"><h3>Split</h3><div class="split-range">' +
-      '<div class="ends"><label>Luke <input id="s-luke-pct" class="amt" type="number" min="0" max="100" step="1" inputmode="numeric" aria-label="Luke’s share, percent">%</label>' +
-      '<label>Amber <input id="s-amber-pct" class="amt" type="number" min="0" max="100" step="1" inputmode="numeric" aria-label="Amber’s share, percent">%</label></div>' +
-      '<input type="range" id="split-r" min="0" max="100" step="1" value="' + docs.shared.split + '" aria-label="Luke’s share of shared costs">' +
-      '<div class="split-who"><div><div class="nm">Luke</div><div class="amt" id="s-luke"></div><div class="yr" id="s-luke-yr"></div></div>' +
-      '<div><div class="nm">Amber</div><div class="amt" id="s-amber"></div><div class="yr" id="s-amber-yr"></div></div></div>' +
+      '<div class="ends"><span id="s-luke-pct"></span><span id="s-amber-pct"></span></div>' +
+      '<input type="range" id="split-r" min="0" max="100" step="1" value="' + Math.round(docs.shared.split) + '" aria-label="Luke’s share of shared costs">' +
+      '<div class="split-who"><div><div class="nm">Luke</div><label class="amt">$<input id="s-luke" class="amt" inputmode="decimal" aria-label="Luke pays per month"></label><div class="yr" id="s-luke-yr"></div></div>' +
+      '<div><div class="nm">Amber</div><label class="amt">$<input id="s-amber" class="amt" inputmode="decimal" aria-label="Amber pays per month"></label><div class="yr" id="s-amber-yr"></div></div></div>' +
       '<p class="split-foot" id="s-foot"></p></div></div>' + barsPanel + "</aside></div>";
   }
   function personBody(p) {
@@ -1385,17 +1384,18 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
         (pct < 20 ? " Under 20% down usually adds mortgage insurance (PMI), which isn’t included here." : "") +
         " Taxes and insurance are in Home & property." : "Paid in cash, no mortgage" +
         (m.down > m.price ? ", with " + money.format(m.down - m.price) + " of the down payment left over" : "") + ". Taxes and insurance are in Home & property.");
+      set("s-luke-pct", "Luke " + pctText(split) + "%"); set("s-amber-pct", "Amber " + pctText(100 - split) + "%");
       // Leave the box being typed in alone, so clearing it to type a new number doesn't refill it
-      ["s-luke-pct", "s-amber-pct"].forEach(function (id, i) {
-        var el = document.getElementById(id); if (el && el !== document.activeElement) el.value = i ? 100 - split : split;
+      [["s-luke", S.luke], ["s-amber", S.amber]].forEach(function (x) {
+        var el = document.getElementById(x[0]); if (el && el !== document.activeElement) el.value = dollars(x[1]);
       });
-      set("s-luke", money.format(S.luke)); set("s-luke-yr", money.format(S.luke * 12) + " / yr");
-      set("s-amber", money.format(S.amber)); set("s-amber-yr", money.format(S.amber * 12) + " / yr");
+      set("s-luke-yr", money.format(S.luke * 12) + " / yr");
+      set("s-amber-yr", money.format(S.amber * 12) + " / yr");
       set("s-foot", "The split applies to " + money.format(S.by.Shared) + "/mo of shared costs, mortgage included. Items set to Split use their own percentage instead (" + money.format(S.by.Luke) + " Luke, " + money.format(S.by.Amber) + " Amber). Each person’s share is the fixed Shared contributions section of their budget, from the tagged version of this, not the working copy.");
       set("k-total", money.format(S.total)); set("k-total-yr", money.format(S.total * 12) + " / yr");
       set("k-mort", money.format(S.mort)); set("k-mort-yr", S.loan ? money.format(S.loan) + " at " + m.rate + "%, " + m.years + " yr" : "No loan");
-      set("k-luke", money.format(S.luke)); set("k-luke-yr", split + "% of shared" + (S.by.Luke ? " + " + money.format(S.by.Luke) + " split" : ""));
-      set("k-amber", money.format(S.amber)); set("k-amber-yr", (100 - split) + "% of shared" + (S.by.Amber ? " + " + money.format(S.by.Amber) + " split" : ""));
+      set("k-luke", money.format(S.luke)); set("k-luke-yr", pctText(split) + "% of shared" + (S.by.Luke ? " + " + money.format(S.by.Luke) + " split" : ""));
+      set("k-amber", money.format(S.amber)); set("k-amber-yr", pctText(100 - split) + "% of shared" + (S.by.Amber ? " + " + money.format(S.by.Amber) + " split" : ""));
       var rows = S.cats.map(function (x) { return { name: x.c.name || "Untitled", t: x.t }; });
       if (S.mort) rows.push({ name: "Mortgage", t: S.mort });
       drawBars(rows);
@@ -1405,7 +1405,7 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     var p = tab, pd = docs[p], fv = followed(pd), fs = fv ? normalizeShared(clone(fv.state)) : null;
     var FS = fs ? sharedSummary(fs) : null, pctx = FS ? FS.ctx : { price: 0, shares: {} };
     var P = personSummary(pd, pctx), tagName = followLabel(pd);
-    var shareNote = FS ? (p === "Luke" ? fs.split : 100 - fs.split) + "% of " + money.format(FS.by.Shared) + " shared costs" + (FS.by[p] ? " plus " + money.format(FS.by[p]) + " from items with their own split" : "") : "No Shared version is tagged yet";
+    var shareNote = FS ? pctText(p === "Luke" ? fs.split : 100 - fs.split) + "% of " + money.format(FS.by.Shared) + " shared costs" + (FS.by[p] ? " plus " + money.format(FS.by[p]) + " from items with their own split" : "") : "No Shared version is tagged yet";
     var ctx = pctx;
     pd.income.forEach(function (it) { set("m-" + it.id, money.format(monthly(it, ctx))); });
     P.cats.forEach(function (x) {
@@ -1424,6 +1424,10 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     var lv = document.getElementById("k-left"); if (lv) lv.className = "val" + (P.income ? (P.left >= 0 ? " pos" : " neg") : "");
     drawBars(P.cats.map(function (x) { return { name: x.c.name || "Untitled", t: x.t }; }));
   }
+  // A typed amount can leave the split between whole percents; show it to one decimal
+  function pctText(n) { return String(Math.round(n * 10) / 10); }
+  function dollars(n) { return Math.round(n).toLocaleString("en-US"); }
+
   function set(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
 
   function setStatus(msg) {
@@ -1454,12 +1458,16 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
     var t = e.target;
     if (t.dataset.p) { planInput(t); return; }
     if (t.id === "split-r") { docs.shared.split = Number(t.value); totals(); persist(); return; }
-    if (t.id === "s-luke-pct" || t.id === "s-amber-pct") {
-      // Typed split: whole percents 0–100; a half-typed or empty box waits rather than saving 0
-      if (t.value.trim() === "" || isNaN(Number(t.value))) return;
-      var pv = Math.min(100, Math.max(0, Math.round(Number(t.value))));
-      docs.shared.split = t.id === "s-luke-pct" ? pv : 100 - pv;
-      document.getElementById("split-r").value = docs.shared.split;
+    if (t.id === "s-luke" || t.id === "s-amber") {
+      // A typed monthly amount sets the split: what's left after the person's own Split items, as a
+      // part of the shared pool. The split isn't rounded, so the amount typed is the amount kept;
+      // an empty box waits rather than saving 0, and an amount outside the pool stops at 0% or 100%.
+      var raw = t.value.replace(/[^0-9.]/g, ""), by = sharedSummary(docs.shared).by;
+      if (raw === "" || isNaN(Number(raw)) || !by.Shared) return;
+      var who = t.id === "s-luke" ? "Luke" : "Amber";
+      var part = Math.min(100, Math.max(0, (Number(raw) - by[who]) / by.Shared * 100));
+      docs.shared.split = who === "Luke" ? part : 100 - part;
+      document.getElementById("split-r").value = Math.round(docs.shared.split);
       totals(); persist(); return;
     }
     if (t.dataset.m) {
@@ -1705,9 +1713,9 @@ details.p-detail summary { cursor: pointer; font: 500 17px var(--display) }
   });
   app.addEventListener("change", function (e) {
     if (e.target.dataset.p) { planChange(e.target); return; }
-    if (e.target.id === "s-luke-pct" || e.target.id === "s-amber-pct") {
-      // On leaving the box, show the split actually kept (e.g. 150 → 100, empty → the current split)
-      var sp = docs.shared.split; e.target.value = e.target.id === "s-luke-pct" ? sp : 100 - sp; return;
+    if (e.target.id === "s-luke" || e.target.id === "s-amber") {
+      // On leaving the box, show the amount actually kept (one past the pool stops at all of it)
+      var sv = sharedSummary(docs.shared); e.target.value = dollars(e.target.id === "s-luke" ? sv.luke : sv.amber); return;
     }
     if (e.target.id === "m-years") { docs.shared.mortgage.years = Number(e.target.value); totals(); persist(); return; }
     if (e.target.id === "ve-follow") { var fh = document.getElementById("ve-follow-hint"); if (fh) fh.textContent = followHint(e.target.value); return; }

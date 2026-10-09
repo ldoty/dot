@@ -47,22 +47,23 @@ test('the split moves one percent at a time', async () => {
   p.close();
 });
 
-test('the split can be typed for either person', async () => {
-  const p = await openBudget('#shared');
-  p.el('#s-luke-pct').focus();
-  p.type('#s-luke-pct', '68'); await saved();
-  assert.equal(doc('shared').split, 68);
+test('typing what one person pays sets the split, and the slider follows', async () => {
+  const p = await openBudget('#shared'); // a $2,000 shared pool, no items with their own split
+  p.el('#s-luke').focus();
+  p.type('#s-luke', '1,350'); await saved();
+  assert.equal(doc('shared').split, 67.5); // not rounded, so $1,350 stays $1,350
+  assert.equal(p.text('s-luke-pct'), 'Luke 67.5%');
+  assert.equal(p.el('#s-amber').value, '650');
   assert.equal(p.el('#split-r').value, '68');
-  assert.equal(p.el('#s-amber-pct').value, '32');
-  p.el('#s-amber-pct').focus();
-  p.type('#s-amber-pct', ''); // cleared to type a new number: nothing saved yet
-  assert.equal(p.el('#split-r').value, '68');
-  p.type('#s-amber-pct', '40'); await saved();
-  assert.equal(doc('shared').split, 60);
-  p.type('#s-amber-pct', '150'); await saved();
-  p.type('#s-amber-pct', '150', 'change');
+  p.el('#s-amber').focus();
+  p.type('#s-amber', ''); // cleared to type a new number: nothing changes yet
+  assert.equal(doc('shared').split, 67.5);
+  p.type('#s-amber', '500'); await saved();
+  assert.equal(doc('shared').split, 75);
+  p.type('#s-amber', '3000'); await saved();
+  p.type('#s-amber', '3000', 'change');
   assert.equal(doc('shared').split, 0);
-  assert.equal(p.el('#s-amber-pct').value, '100');
+  assert.equal(p.el('#s-amber').value, '2,000');
   p.close();
 });
 
