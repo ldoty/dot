@@ -5,8 +5,11 @@
 
 const dateTime = 'Date "YYYY-MM-DD" or local time "YYYY-MM-DDTHH:MM" (the calendar’s time zone unless an offset is given)';
 
-export function makeTools({ calendar, calendarNames = [], budget, discovered = { definitions: [], connected: [], handlers: {} } }) {
+export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = [], budget, discovered = { definitions: [], connected: [], handlers: {} } }) {
   const cal = { type: 'string', enum: calendarNames, description: 'Which calendar' };
+  // Changes are offered only on calendars this person may change (calendar.mjs refuses the rest too)
+  const writable = calendarNames.filter((c) => !readOnlyCalendars.includes(c));
+  const writableCal = { type: 'string', enum: writable, description: 'Which calendar (only ones you can change)' };
   const calendarTools = [
     {
       name: 'list_calendars',
@@ -35,7 +38,7 @@ export function makeTools({ calendar, calendarNames = [], budget, discovered = {
       input_schema: {
         type: 'object',
         properties: {
-          calendar: cal,
+          calendar: writableCal,
           title: { type: 'string' },
           start: { type: 'string', description: dateTime },
           end: { type: 'string', description: `${dateTime}. Defaults to start.` },
@@ -53,7 +56,7 @@ export function makeTools({ calendar, calendarNames = [], budget, discovered = {
       input_schema: {
         type: 'object',
         properties: {
-          calendar: cal,
+          calendar: writableCal,
           event_id: { type: 'string' },
           title: { type: 'string' },
           start: { type: 'string', description: dateTime },
@@ -71,7 +74,7 @@ export function makeTools({ calendar, calendarNames = [], budget, discovered = {
       description: 'Delete an event.',
       input_schema: {
         type: 'object',
-        properties: { calendar: cal, event_id: { type: 'string' } },
+        properties: { calendar: writableCal, event_id: { type: 'string' } },
         required: ['calendar', 'event_id'],
         additionalProperties: false,
       },
@@ -98,7 +101,9 @@ export function makeTools({ calendar, calendarNames = [], budget, discovered = {
       additionalProperties: false,
     },
   }] : [];
-  const definitions = [...(calendarNames.length ? calendarTools : []), ...budgetTools, ...discovered.definitions];
+  const writeTools = ['create_event', 'update_event', 'delete_event'];
+  const offered = calendarTools.filter((t) => writable.length || !writeTools.includes(t.name));
+  const definitions = [...(calendarNames.length ? offered : []), ...budgetTools, ...discovered.definitions];
 
   const handlers = {
     read_budget: (i) => budget.read(i),

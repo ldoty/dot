@@ -89,3 +89,17 @@ test('the shared budget comes with the plans, steps named by the version their t
   assert.equal((await budget.read({ doc: 'Luke' })).plans, undefined);
   assert.equal((await budget.read({ version: 'default' })).plans, undefined);
 });
+
+test('tools: change tools offer only calendars you can change, and vanish when there are none', async () => {
+  const runs = [];
+  const calendar = new Proxy({}, { get: (_, name) => async (i) => { runs.push(name); return {}; } });
+  const tools = makeTools({ calendar, calendarNames: ['amber', 'luke'], readOnlyCalendars: ['luke'] });
+  const schema = (n) => tools.definitions.find((d) => d.name === n).input_schema.properties.calendar.enum;
+  assert.deepEqual(schema('list_events'), ['amber', 'luke']);
+  for (const n of ['create_event', 'update_event', 'delete_event']) assert.deepEqual(schema(n), ['amber'], n);
+  const refused = await tools.run({ id: 't1', name: 'delete_event', input: { calendar: 'luke', event_id: 'e1' } });
+  assert.equal(refused.is_error, true);
+  assert.deepEqual(runs, [], 'refused by the schema before the calendar is called');
+  const readOnly = makeTools({ calendar, calendarNames: ['luke'], readOnlyCalendars: ['luke'] });
+  assert.deepEqual(readOnly.definitions.map((d) => d.name), ['list_calendars', 'list_events']);
+});

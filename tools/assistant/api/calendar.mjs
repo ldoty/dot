@@ -1,5 +1,7 @@
 // Google Calendar access for the assistant, limited to the calendars named in config
 // ({ alias: calendarId }). Times without an offset are read as wall-clock time in `timeZone`.
+// Calendars in `readOnly` can be read but never changed, whatever Google would allow: Dot's
+// service account can write to a calendar for its owner, and someone it's shared with must not.
 // Events the assistant creates carry a private tag so it can tell them from hand-made ones.
 
 const API = 'https://www.googleapis.com/calendar/v3';
@@ -32,10 +34,14 @@ const addDays = (date, n) => {
   return d.toISOString().slice(0, 10);
 };
 
-export function makeCalendar({ accessToken, calendars, timeZone, fetch = globalThis.fetch }) {
+export function makeCalendar({ accessToken, calendars, readOnly = [], timeZone, fetch = globalThis.fetch }) {
   const idFor = (alias) => {
     if (!Object.hasOwn(calendars, alias)) throw new Error(`Unknown calendar "${alias}". Use one of: ${Object.keys(calendars).join(', ')}`);
     return encodeURIComponent(calendars[alias]);
+  };
+  const writableIdFor = (alias) => {
+    if (readOnly.includes(alias)) throw new Error(`The "${alias}" calendar is read-only for you: you can see it but not change it.`);
+    return idFor(alias);
   };
   async function call(method, path, body, query) {
     const url = `${API}${path}${query ? `?${new URLSearchParams(query)}` : ''}`;
@@ -70,7 +76,7 @@ export function makeCalendar({ accessToken, calendars, timeZone, fetch = globalT
       const out = [];
       for (const [alias, id] of Object.entries(calendars)) {
         const c = await call('GET', `/calendars/${encodeURIComponent(id)}`);
-        out.push({ calendar: alias, name: c.summary, time_zone: c.timeZone });
+        out.push({ calendar: alias, name: c.summary, time_zone: c.timeZone, ...(readOnly.includes(alias) ? { read_only: true } : {}) });
       }
       return out;
     },
@@ -86,7 +92,7 @@ export function makeCalendar({ accessToken, calendars, timeZone, fetch = globalT
     },
 
     async createEvent({ calendar, title, location, description, ...time }) {
-      const e = await call('POST', `/calendars/${idFor(calendar)}/events`, {
+      const e = await call('POST', `/calendars/${writableIdFor(calendar)}/events`, {
         summary: title, ...(location ? { location } : {}), ...(description ? { description } : {}),
         ...when(time), extendedProperties: { private: TAG },
       });
@@ -100,11 +106,11 @@ export function makeCalendar({ accessToken, calendars, timeZone, fetch = globalT
         ...(description !== undefined ? { description } : {}),
         ...(start !== undefined ? when({ start, end, all_day: allDay }) : {}),
       };
-      return view(await call('PATCH', `/calendars/${idFor(calendar)}/events/${encodeURIComponent(eventId)}`, patch));
+      return view(await call('PATCH', `/calendars/${writableIdFor(calendar)}/events/${encodeURIComponent(eventId)}`, patch));
     },
 
     async deleteEvent({ calendar, event_id: eventId }) {
-      await call('DELETE', `/calendars/${idFor(calendar)}/events/${encodeURIComponent(eventId)}`);
+      await call('DELETE', `/calendars/${writableIdFor(calendar)}/events/${encodeURIComponent(eventId)}`);
       return { deleted: eventId };
     },
   };

@@ -110,3 +110,20 @@ test('Google sign-in: a rotated key is reloaded from SSM once, then works', asyn
   await assert.rejects(stuck(), /invalid_grant/);
   assert.equal(loads, 2);
 });
+
+// Amber can read Luke's calendar; Dot's service account could change it, so the module must refuse
+test('a read-only calendar can be read but never changed, before Google is asked', async () => {
+  const g = fakeGoogle({ 'GET /calendar/v3/calendars/luke.doty%40gmail.com': { body: { summary: 'Luke Doty', timeZone: 'America/New_York' } } });
+  const c = makeCalendar({ accessToken: async () => 'tok', calendars: CALS, readOnly: ['luke'], timeZone: 'America/New_York', fetch: g.fetch });
+  await c.listEvents({ calendar: 'luke', start: '2026-10-05', end: '2026-10-06' });
+  assert.equal(g.requests.length, 1, 'reading works');
+  await assert.rejects(c.createEvent({ calendar: 'luke', title: 'X', start: '2026-10-05T14:00' }), /read-only for you/);
+  await assert.rejects(c.updateEvent({ calendar: 'luke', event_id: 'e1', title: 'Y' }), /read-only for you/);
+  await assert.rejects(c.deleteEvent({ calendar: 'luke', event_id: 'e1' }), /read-only for you/);
+  assert.equal(g.requests.length, 1, 'no write ever reached Google');
+  await c.createEvent({ calendar: 'shared', title: 'X', start: '2026-10-05T14:00' });
+  assert.equal(g.requests.at(-1).method, 'POST', 'other calendars still change');
+  const listed = await c.listCalendars();
+  assert.equal(listed.find((l) => l.calendar === 'luke').read_only, true);
+  assert.equal(listed.find((l) => l.calendar === 'shared').read_only, undefined);
+});

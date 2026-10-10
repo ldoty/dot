@@ -36,7 +36,7 @@ export function errorMessage(e) {
 
 /** Builds the real dependencies from the Lambda environment */
 export function liveDeps(env = process.env) {
-  // { "<cognito sub>": { name, calendars: { alias: googleCalendarId } } }
+  // { "<cognito sub>": { name, calendars: { alias: googleCalendarId }, read_only: [alias] } }
   const people = JSON.parse(env.PEOPLE || '{}');
   const budgetApp = env.BUDGET ? JSON.parse(env.BUDGET) : null;
   const ssm = new SSMClient({});
@@ -86,8 +86,9 @@ export function liveDeps(env = process.env) {
       return {
         person: { name: me.name },
         tools: makeTools({
-          calendar: makeCalendar({ accessToken, calendars, timeZone: env.TIME_ZONE }),
+          calendar: makeCalendar({ accessToken, calendars, readOnly: me.read_only || [], timeZone: env.TIME_ZONE }),
           calendarNames: Object.keys(calendars),
+          readOnlyCalendars: me.read_only || [],
           budget: budgetApp && makeBudget({
             tokenFor, apiUrl: budgetApp.api_url, clientId: budgetApp.client_id,
             user: { sub: claims.sub, username: claims.username }, channel, audit,

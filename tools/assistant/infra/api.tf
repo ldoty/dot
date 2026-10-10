@@ -19,7 +19,8 @@ variable "fallback_model" {
 variable "people" {
   type = map(object({
     name      = string
-    calendars = optional(map(string), {}) # alias => Google calendar id (shared with Dot's service account)
+    calendars = optional(map(string), {})  # alias => Google calendar id (shared with Dot's service account)
+    read_only = optional(list(string), []) # aliases they can see but not change (enforced in api/calendar.mjs)
   }))
   description = "Who Dot is talking with, by Cognito sub (the user's id in the pool): their name and their calendars"
   default = {
@@ -32,9 +33,17 @@ variable "people" {
       }
     }
     "74c8b418-e0b1-7075-7ae5-ca791980dd07" = {
-      name      = "Amber"
-      calendars = { amber = "amber.n.brackett@gmail.com" }
+      name = "Amber"
+      calendars = {
+        amber = "amber.n.brackett@gmail.com"
+        luke  = "luke.doty@gmail.com"
+      }
+      read_only = ["luke"] # Dot can write to Luke's calendar for him, never for her
     }
+  }
+  validation {
+    condition     = alltrue([for p in var.people : alltrue([for c in p.read_only : contains(keys(p.calendars), c)])])
+    error_message = "Every read_only entry must be one of that person's calendar aliases."
   }
 }
 

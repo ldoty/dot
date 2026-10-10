@@ -10,7 +10,9 @@ read the household budget, for whoever is asking.
 Dot acts as the person signed in, with **their** access and nothing more:
 
 - **Calendars and name** come from `var.people` in `infra/api.tf`, keyed by the person's Cognito
-  sub. No calendars means no calendar tools.
+  sub. No calendars means no calendar tools. A calendar listed in their `read_only` can be read
+  but not changed (e.g. Amber reads Luke's): Dot's service account may be able to write to it for its
+  owner, so `api/calendar.mjs` refuses changes itself and the change tools don't offer it.
 - **Other tools** (today: Budget) are read with a short-lived, read-only token borrowed for that
   person from the tool's delegated client (`platform/api/delegation.mjs`). Dot signs the request
   with a KMS key only its role may use. Cognito still requires the tool's group, and the tool
