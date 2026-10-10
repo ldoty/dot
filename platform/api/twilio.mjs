@@ -1,7 +1,9 @@
 // Twilio for the Dot-y texting program: checking that a webhook really came from Twilio, and
-// sending a text. The credentials are an SSM SecureString (/family/sms/twilio) that Luke sets by
-// hand, never in OpenTofu state:
-//   { "accountSid": "AC…", "authToken": "…", "messagingServiceSid": "MG…" }
+// sending a text. Two SSM SecureStrings that Luke sets by hand, never in OpenTofu state:
+//   /family/sms/twilio          { "accountSid": "AC…", "apiKeySid": "SK…", "apiKeySecret": "…", "messagingServiceSid": "MG…" }
+//     for sending: a revocable API key, read by the opt-in Lambda and Dot's SMS worker
+//   /family/sms/twilio-webhook  { "accountSid": "AC…", "authToken": "…" }
+//     for checking signatures (Twilio signs with the Auth Token; an API key can't), read by the webhook only
 // Texts go out through the Messaging Service: it carries the A2P 10DLC campaign and its
 // Advanced Opt-Out (STOP, HELP, START replies), and Twilio refuses to text anyone who said STOP.
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -19,15 +21,19 @@ export function validTwilioSignature(authToken, url, params, signature) {
   return want.length === got.length && timingSafeEqual(want, got);
 }
 
-/** Loads the credentials once per container; `load()` returns the SecureString's JSON */
-export function twilioConfig(load) {
+const FORMATS = {
+  send: { accountSid: /^AC\w{32}$/, apiKeySid: /^SK\w{32}$/, apiKeySecret: /^\S+$/, messagingServiceSid: /^MG\w{32}$/ },
+  webhook: { accountSid: /^AC\w{32}$/, authToken: /^\S+$/ },
+};
+
+/** Loads one set of credentials ('send' or 'webhook') once per container; `load()` returns the SecureString's JSON */
+export function twilioConfig(load, kind = 'send') {
   let cached;
   return async () => {
     cached ??= load().then((raw) => {
       const c = JSON.parse(raw);
-      if (!/^AC\w{32}$/.test(c.accountSid || '') || !c.authToken || !/^MG\w{32}$/.test(c.messagingServiceSid || '')) {
-        throw new Error('Twilio settings need accountSid, authToken and messagingServiceSid');
-      }
+      const bad = Object.keys(FORMATS[kind]).filter((k) => !FORMATS[kind][k].test(c[k] || ''));
+      if (bad.length) throw new Error(`Twilio ${kind} settings are missing or malformed: ${bad.join(', ')}`);
       return c;
     }).catch((e) => { cached = undefined; throw e; });
     return cached;
@@ -35,11 +41,11 @@ export function twilioConfig(load) {
 }
 
 /** Sends one text through the Messaging Service; resolves to the message SID */
-export async function sendText({ accountSid, authToken, messagingServiceSid }, to, body, fetchFn = fetch) {
+export async function sendText({ accountSid, apiKeySid, apiKeySecret, messagingServiceSid }, to, body, fetchFn = fetch) {
   const r = await fetchFn(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
     method: 'POST',
     headers: {
-      authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}`,
+      authorization: `Basic ${Buffer.from(`${apiKeySid}:${apiKeySecret}`).toString('base64')}`,
       'content-type': 'application/x-www-form-urlencoded',
     },
     body: new URLSearchParams({ To: to, MessagingServiceSid: messagingServiceSid, Body: body }).toString(),

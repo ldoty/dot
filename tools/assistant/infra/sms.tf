@@ -1,10 +1,10 @@
 # Dot by text: the worker that runs one turn for a texted question and sends the reply through
 # Twilio (api/sms.mjs). Only the SMS webhook (tools/sms) invokes it, after checking Twilio's
 # signature, the number's opt-in and the person's family_assistant membership. It runs as Dot's
-# own role, so it reaches exactly what the web page does, plus the Twilio credentials.
+# own role, so it reaches exactly what the web page does, plus Twilio's API key for sending.
 
 locals {
-  twilio_param = "/family/sms/twilio"                 # SecureString set by hand (platform/api/twilio.mjs)
+  twilio_param = "/family/sms/twilio"                 # SecureString set by hand: the API key for sending (platform/api/twilio.mjs)
   sms_bundle   = "${path.module}/../api/dist/sms.mjs" # npm run build
 }
 

@@ -4,7 +4,8 @@ import { maskPhone, sendText, twilioConfig, twilioSignature, validTwilioSignatur
 
 const URL_ = 'https://abc123.execute-api.us-east-1.amazonaws.com/twilio';
 const PARAMS = { From: '+18645550123', Body: 'Hi Dot', AccountSid: 'AC' + '0'.repeat(32), MessageSid: 'SM1' };
-const CONFIG = { accountSid: 'AC' + 'a'.repeat(32), authToken: 'secret', messagingServiceSid: 'MG' + 'b'.repeat(32) };
+const CONFIG = { accountSid: 'AC' + 'a'.repeat(32), apiKeySid: 'SK' + 'c'.repeat(32), apiKeySecret: 'secret', messagingServiceSid: 'MG' + 'b'.repeat(32) };
+const WEBHOOK = { accountSid: 'AC' + 'a'.repeat(32), authToken: 'token' };
 
 test('the signature is Twilio’s: HMAC-SHA1 over the URL and the sorted params', () => {
   // Computed independently (Python hmac) from Twilio's description of the scheme
@@ -23,12 +24,12 @@ test('a signature checks out only for the same token, URL and params', () => {
   assert.equal(validTwilioSignature('', URL_, PARAMS, twilioSignature('', URL_, PARAMS)), false, 'no token, no trust');
 });
 
-test('a text goes through the Messaging Service with basic auth', async () => {
+test('a text goes through the Messaging Service, signed with the API key (not the Auth Token)', async () => {
   const calls = [];
   const fetchFn = async (url, init) => { calls.push({ url, init }); return { ok: true, json: async () => ({ sid: 'SM123' }) }; };
   assert.equal(await sendText(CONFIG, '+18645550123', 'Hello & bye', fetchFn), 'SM123');
   assert.equal(calls[0].url, `https://api.twilio.com/2010-04-01/Accounts/${CONFIG.accountSid}/Messages.json`);
-  assert.equal(calls[0].init.headers.authorization, `Basic ${Buffer.from(`${CONFIG.accountSid}:secret`).toString('base64')}`);
+  assert.equal(calls[0].init.headers.authorization, `Basic ${Buffer.from(`${CONFIG.apiKeySid}:secret`).toString('base64')}`);
   assert.deepEqual(Object.fromEntries(new URLSearchParams(calls[0].init.body)), { To: '+18645550123', MessagingServiceSid: CONFIG.messagingServiceSid, Body: 'Hello & bye' });
 });
 
@@ -44,6 +45,11 @@ test('settings load once, must be complete, and a failed load is retried', async
   await ok();
   assert.equal(loads, 1);
   await assert.rejects(twilioConfig(async () => JSON.stringify({ ...CONFIG, messagingServiceSid: undefined }))(), /messagingServiceSid/);
+  await assert.rejects(twilioConfig(async () => JSON.stringify({ ...CONFIG, apiKeySid: 'AC' + 'c'.repeat(32) }))(), /apiKeySid/);
+  await assert.rejects(twilioConfig(async () => JSON.stringify({ ...CONFIG, apiKeySecret: '' }))(), /apiKeySecret/);
+  await assert.rejects(twilioConfig(async () => JSON.stringify(WEBHOOK))(), /apiKeySid/, 'the Auth Token is no good for sending');
+  assert.deepEqual(await twilioConfig(async () => JSON.stringify(WEBHOOK), 'webhook')(), WEBHOOK);
+  await assert.rejects(twilioConfig(async () => JSON.stringify(CONFIG), 'webhook')(), /authToken/, 'nor is the API key for signatures');
   let fail = true;
   const flaky = twilioConfig(async () => { if (fail) throw new Error('throttled'); return JSON.stringify(CONFIG); });
   await assert.rejects(flaky(), /throttled/);

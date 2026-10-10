@@ -58,7 +58,7 @@ export async function optedIn(phone) {
 }
 
 /**
- * deps: twilio() -> { accountSid, authToken }, findMember(phone) -> { sub, username } | null,
+ * deps: twilio() -> { accountSid, authToken } (signature checks only), findMember(phone) -> { sub, username } | null,
  *       startTurn({ userId, username, phone, text, messageSid }), now()
  */
 export function createWebhook({ twilio, findMember, startTurn, now = () => new Date() }) {
@@ -131,7 +131,7 @@ function liveWebhook(env = process.env) {
   const ssm = new SSMClient({});
   const lambda = new LambdaClient({});
   return createWebhook({
-    twilio: twilioConfig(async () => (await ssm.send(new GetParameterCommand({ Name: env.TWILIO_PARAM, WithDecryption: true }))).Parameter.Value),
+    twilio: twilioConfig(async () => (await ssm.send(new GetParameterCommand({ Name: env.TWILIO_WEBHOOK_PARAM, WithDecryption: true }))).Parameter.Value, 'webhook'),
     findMember: makeFindMember({ cognito: new CognitoIdentityProviderClient({}), poolId: env.USER_POOL_ID, group: env.GROUP }),
     startTurn: (payload) => lambda.send(new InvokeCommand({
       FunctionName: env.WORKER, InvocationType: 'Event', Payload: Buffer.from(JSON.stringify(payload)),

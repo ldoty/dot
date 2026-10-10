@@ -137,7 +137,8 @@ npm run test:live
 | `/family/<tool>/simplefin` | SecureString: a finances tool's SimpleFIN setup token or access URL |
 | `/family/calendar/google-key` | SecureString: Dot's Google service-account key |
 | `/family/sms/optin-url` | The SMS opt-in endpoint, for the public page |
-| `/family/sms/twilio` | SecureString, set by hand: `{accountSid, authToken, messagingServiceSid}` |
+| `/family/sms/twilio` | SecureString, set by hand: Twilio API key for sending `{accountSid, apiKeySid, apiKeySecret, messagingServiceSid}` |
+| `/family/sms/twilio-webhook` | SecureString, set by hand: `{accountSid, authToken}`, only for the webhook's signature checks |
 | `/family/assistant/sms-worker` | Dot’s SMS worker Lambda, which only the SMS webhook may invoke |
 
 ## Tool notes

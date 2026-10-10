@@ -43,8 +43,11 @@ that isn't a member's gets a short note; anything else gets no answer.
 
 **Twilio setup** (console, Messaging Service that carries the campaign):
 
-- Credentials in SSM, by hand (never in OpenTofu state):
-  `aws ssm put-parameter --profile ldoty --type SecureString --name /family/sms/twilio --value '{"accountSid":"AC…","authToken":"…","messagingServiceSid":"MG…"}'`
+- Credentials in SSM, set by hand (never in OpenTofu state), split so nothing that sends texts holds the Auth Token:
+  - `/family/sms/twilio`: `{"accountSid":"AC…","apiKeySid":"SK…","apiKeySecret":"…","messagingServiceSid":"MG…"}`:
+    a Standard API key (Account → API keys), used to send by the opt-in Lambda and Dot's worker. Revoke it and make a new one at will.
+  - `/family/sms/twilio-webhook`: `{"accountSid":"AC…","authToken":"…"}`: the webhook checks Twilio's signatures with it
+    (Twilio signs with the Auth Token; an API key can't verify them). Rotating the Auth Token means updating this one.
 - Integration → incoming messages: send a webhook to `tofu output twilio_webhook_url` (HTTP POST).
 - Opt-out management (Advanced Opt-Out) sends the registered replies. Twilio sends them, the webhook only records:
   - HELP: “Dot-y: reminder and assistant texts. For help, email contact@dot-y.co. Msg & data rates may apply. Reply STOP to opt out.”

@@ -2,8 +2,9 @@
 # Messaging Service's incoming-message URL (output twilio_webhook_url). Twilio signs every request;
 # the Lambda checks the signature itself, so the route has no authorizer.
 #
-# Its role can read and add consent records (opt-in state; STOP and START), look a number up in the
-# user pool (only a verified phone_number in family_assistant counts), and start Dot's SMS worker.
+# Its role can read the Auth Token (to check signatures; it never sends), read and add consent
+# records (opt-in state; STOP and START), look a number up in the user pool (only a verified
+# phone_number in family_assistant counts), and start Dot's SMS worker.
 
 data "aws_ssm_parameter" "user_pool_id" {
   name = "/family/core/user-pool-id"
@@ -50,7 +51,7 @@ resource "aws_iam_role_policy" "webhook" {
     Version = "2012-10-17"
     Statement = [
       { Effect = "Allow", Action = ["dynamodb:Query", "dynamodb:PutItem"], Resource = aws_dynamodb_table.consent.arn },
-      { Effect = "Allow", Action = "ssm:GetParameter", Resource = local.twilio_arn },
+      { Effect = "Allow", Action = "ssm:GetParameter", Resource = local.twilio_webhook_arn },
       {
         Effect   = "Allow"
         Action   = ["cognito-idp:ListUsers", "cognito-idp:AdminListGroupsForUser"]
@@ -72,11 +73,11 @@ resource "aws_lambda_function" "webhook" {
   memory_size      = 256
   environment {
     variables = {
-      TABLE        = aws_dynamodb_table.consent.name
-      TWILIO_PARAM = local.twilio_param
-      USER_POOL_ID = data.aws_ssm_parameter.user_pool_id.value
-      GROUP        = "family_assistant"
-      WORKER       = data.aws_ssm_parameter.sms_worker.value
+      TABLE                = aws_dynamodb_table.consent.name
+      TWILIO_WEBHOOK_PARAM = local.twilio_webhook_param
+      USER_POOL_ID         = data.aws_ssm_parameter.user_pool_id.value
+      GROUP                = "family_assistant"
+      WORKER               = data.aws_ssm_parameter.sms_worker.value
     }
   }
 }

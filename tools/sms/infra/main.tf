@@ -27,10 +27,13 @@ variable "site_origin" {
   default = "https://dot-y.co"
 }
 
+# SecureStrings set by hand (platform/api/twilio.mjs): an API key for sending, read by the opt-in
+# Lambda (and Dot's worker); the Auth Token, for checking Twilio's signatures, read by the webhook only
 locals {
-  # SecureString set by hand: { accountSid, authToken, messagingServiceSid } (platform/api/twilio.mjs)
-  twilio_param = "/family/sms/twilio"
-  twilio_arn   = "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter${local.twilio_param}"
+  twilio_param         = "/family/sms/twilio"
+  twilio_arn           = "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter${local.twilio_param}"
+  twilio_webhook_param = "/family/sms/twilio-webhook"
+  twilio_webhook_arn   = "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter${local.twilio_webhook_param}"
 }
 
 data "aws_caller_identity" "current" {}
