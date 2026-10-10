@@ -4,6 +4,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { table } from './helpers/house-hunt-api.mjs';
 import { makeIngest, senderAllowed, links } from '../api/ingest.mjs';
+import { isGreer } from '../api/listing.mjs';
 
 const ALLOWED = ['luke.doty@gmail.com', 'zillow.com'];
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }));
@@ -47,10 +48,12 @@ beforeEach(() => {
   table.put({ pk: 'TOOL', sk: 'LISTING#old1', hoodId: 'sugar-creek', address: '4 Autumn Rd', status: 'active', rank: 1, rev: 1 });
 });
 
-test('files each home from an alert under its neighborhood, at the bottom of that list', async () => {
-  reply = answer([home(), home({ address: '9 Elsewhere Rd', city: 'Taylors', price: 389900, beds: 3, baths: 0, sqft: 0, url: '', hoodId: '', matchReason: '' })]);
+test('files each Greer home from an alert under its neighborhood, at the bottom of that list; others are dropped', async () => {
+  const unmatched = { city: 'Greer', price: 389900, beds: 3, baths: 0, sqft: 0, url: '', hoodId: '', matchReason: '' };
+  reply = answer([home(), home({ address: '9 Elsewhere Rd', ...unmatched }), home({ address: '5 Taylors Rd', city: 'Taylors', hoodId: '' }),
+    home({ address: '7 Pine St', city: '', hoodId: '' })]);
   const r = await ingest()(record());
-  assert.deepEqual(r, { outcome: 'ok', found: 2, added: 2, updated: 0 });
+  assert.deepEqual(r, { outcome: 'ok', found: 4, added: 2, updated: 0, notGreer: 2 });
   const added = listings().filter((l) => l.source === 'email');
   const sc = added.find((l) => l.address === '12 Sugar Lake Court');
   assert.deepEqual([sc.hoodId, sc.rank, sc.price, sc.beds, sc.baths, sc.status, sc.reviewed], ['sugar-creek', 2, 615000, 4, 3, 'active', false]);
@@ -58,7 +61,8 @@ test('files each home from an alert under its neighborhood, at the bottom of tha
   assert.deepEqual(sc.history, [{ at: '2026-10-05T12:00:00.000Z', kind: 'new', price: 615000 }]);
   const other = added.find((l) => l.address === '9 Elsewhere Rd');
   assert.deepEqual([other.hoodId, other.rank, other.baths, other.url], [null, 1, null, ''], 'unmatched goes to unsorted; 0 means unknown');
-  assert.deepEqual(mails().map((m) => [m.subject, m.outcome, m.added]), [['2 new listings match your search', 'ok', 2]]);
+  assert.deepEqual(added.map((l) => l.address).sort(), ['12 Sugar Lake Court', '9 Elsewhere Rd']);
+  assert.deepEqual(mails().map((m) => [m.subject, m.outcome, m.added, m.notGreer]), [['2 new listings match your search', 'ok', 2, 2]]);
 });
 
 test('Claude gets our neighborhoods, the email as data with its links, and a schema limited to our ids', async () => {
@@ -152,6 +156,15 @@ test('a Redfin tour link is filed as the home’s page, and Redfin tracking is d
   assert.equal(byAddress['1317 Algeddis Dr'], 'https://www.redfin.com/SC/Greer/1317-Algeddis-Dr/home/194507028');
   assert.equal(byAddress['321 Upwey Pl'], 'https://www.redfin.com/SC/Greer/321-Upwey-Pl-29651/home/205994015');
   assert.match(requests[0].system, /tour link only when it is the only link/);
+});
+
+test('a Greer address: the city, or a Greer zip or city in the address', () => {
+  for (const [city, address] of [['Greer', '1 A St'], [' greer ', '1 A St'], ['', '1 A St, Greer, SC'], ['', '1 A St, SC 29651'], ['', '1 A St 29650']]) {
+    assert.ok(isGreer(city, address), `${city} ${address}`);
+  }
+  for (const [city, address] of [['Taylors', '1 A St'], ['', '1 A St'], ['', '1 Greer Rd'], ['Greenville', '1 A St, Greenville, SC 29615'], ['', '1 A St, SC 296500']]) {
+    assert.ok(!isGreer(city, address), `${city} ${address}`);
+  }
 });
 
 test('sender rules: exact addresses, domains with subdomains, nothing look-alike', () => {

@@ -38,6 +38,12 @@ export function addressKey(address) {
     .split(/\s+/).filter(Boolean).map((w) => ABBREV[w] || w).join(' ');
 }
 
+// We're only looking in Greer: a home counts when its city is Greer or its address carries a Greer
+// zip (29650–29652). Alerts also bring Taylors, Greenville, Spartanburg…; those aren't filed.
+export function isGreer(city, address) {
+  return str(city, 60).toLowerCase() === 'greer' || /,\s*greer\b|\b2965[012]\b/i.test(str(address, 200));
+}
+
 /** Validates a listing from the page or ingest. Returns { listing } or { error }. */
 export function cleanListing(body, id) {
   const address = str(body.address, 160);

@@ -23,7 +23,9 @@ Listing alerts sent or forwarded to **househunt@dot-y.co** are filed automatical
 `api/ingest.mjs`). SES stores each message in this tool's mail bucket (kept 90 days) and invokes the ingest
 Lambda, which takes mail only from `allowed_senders` (your Gmail addresses and the big listing sites) and
 only when it passes DMARC. Claude on Bedrock (`var.model`) reads the email as untrusted data and returns
-the homes in a fixed schema, each matched to one of our neighborhood ids or none. A home we already have
+the homes in a fixed schema, each matched to one of our neighborhood ids or none. Only Greer homes are
+filed (city Greer, or a 29650–29652 zip; `isGreer` in `api/listing.mjs`); the rest are counted as `notGreer` on the
+message’s `MAIL#` row and dropped. A home we already have
 (same street address) gets its price, status and history updated; our notes, rank and neighborhood stay.
 New homes go to the bottom of their neighborhood's list, or the inbox. A listing you reject is hidden but kept (`rejected`), so a later
 alert about that house updates it quietly instead of adding it back; the inbox can show rejected ones to undo. The ingest is bundled with
