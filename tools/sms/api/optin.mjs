@@ -3,12 +3,19 @@
 // Texts are optional: carriers reject a form where agreeing to texts (or giving a phone number)
 // is required to use the service. Every sign-up stores pk = SIGNUP#<email>, sk = AT#<ISO time>;
 // only a checked box also stores pk = PHONE#<E.164>, sk = CONSENT#<ISO time> with the exact
-// consent text shown.
+// consent text shown. A number's first opt-in also gets the registered confirmation text, once
+// ever (pk = PHONE#<E.164>, sk = WELCOME, put only if missing): the form is public, so it must
+// not become a way to text a stranger again and again.
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { CONSENT_TEXT, CONSENT_VERSION } from './program.mjs';
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
+import { CONSENT_TEXT, CONSENT_VERSION, OPT_IN_MESSAGE } from './program.mjs';
+import { maskPhone, sendText, twilioConfig } from './twilio.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const ssm = new SSMClient({});
+const twilio = twilioConfig(async () => (await ssm.send(new GetParameterCommand({ Name: process.env.TWILIO_PARAM, WithDecryption: true }))).Parameter.Value);
+const liveText = async (to, body) => sendText(await twilio(), to, body);
 const json = (statusCode, body) => ({ statusCode, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 /** US numbers only: "(864) 555-0123", "864.555.0123", "+1 864 555 0123" -> "+18645550123" */
@@ -20,7 +27,8 @@ export function toE164(input) {
 
 const clean = (s) => String(s).replace(/\s+/g, ' ').trim();
 
-export const handler = async (event, { now = () => new Date() } = {}) => {
+// The second argument is the Lambda context in production; tests pass `now` and `text` in it
+export const handler = async (event, { now = () => new Date(), text = liveText } = {}) => {
   if (event.routeKey !== 'POST /optin') return json(404, { error: 'no route' });
   let b;
   try {
@@ -62,7 +70,27 @@ export const handler = async (event, { now = () => new Date() } = {}) => {
         name, email, phone, consentedAt: at, consentText: CONSENT_TEXT, consentVersion: CONSENT_VERSION, ...from,
       },
     }));
-    console.log('opt-in recorded', phone.slice(0, -4) + '****');
+    console.log('opt-in recorded', maskPhone(phone));
+    await welcome(phone, at, text);
   }
   return json(200, { ok: true, name, texts });
 };
+
+/** The registered opt-in confirmation, the first time a number opts in. Never fails the sign-up. */
+async function welcome(phone, at, text) {
+  try {
+    await db.send(new PutCommand({
+      TableName: process.env.TABLE,
+      Item: { pk: `PHONE#${phone}`, sk: 'WELCOME', phone, sentAt: at, message: OPT_IN_MESSAGE },
+      ConditionExpression: 'attribute_not_exists(pk)',
+    }));
+  } catch (e) {
+    if (e.name === 'ConditionalCheckFailedException') return; // welcomed before
+    throw e;
+  }
+  try {
+    await text(phone, OPT_IN_MESSAGE);
+  } catch (e) {
+    console.error('opt-in confirmation not sent', maskPhone(phone), e.message);
+  }
+}

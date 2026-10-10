@@ -24,7 +24,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/tempi` | tempi.dot-y.co | `family_tempi` | An OT course, served to members only |
 | `tools/boards` | boards.dot-y.co | `lukes_boards` | Field guide + flashcards for two nonprofit boards; the guide lives in gitignored `private/` |
 | `tools/house-hunt` | house-hunt.dot-y.co | `family_house_hunt` | Neighborhoods on a map, ranked listings; listing emails to househunt@dot-y.co are filed by Claude |
-| `tools/sms` | (API only) | | SMS opt-in consent records for the Dot-y texting program |
+| `tools/sms` | (API only) | | Dot-y texting program: opt-in consent records, and Twilio’s webhook that hands members’ texts to Dot |
 | `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail |
 | `platform/billing` | | | Account-wide $75/mo budget + cost anomaly alerts |
 
@@ -64,7 +64,9 @@ Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`)
 Dot (`tools/assistant`; internals in `tools/assistant/AGENTS.md`) acts as whoever is signed in. Apart
 from its built-ins (calendar, `read_budget`), **every tool is discovered** (`api/discovery.mjs`): Dot lists `/family/delegation/*`, borrows a token for the
 asker, reads each tool's `GET /dot` manifest (`platform/api/dot-manifest.mjs`) and offers its
-operations as `<name>_<operation>` tools, GET only. To make a tool usable by Dot: `delegated = true`,
+operations as `<name>_<operation>` tools, GET only. Members can also **text** Dot: the SMS webhook maps a
+verified Cognito `phone_number` in `family_assistant` to the person, and Dot's SMS worker runs the same turn
+(`tools/sms/README.md`, `tools/assistant/README.md`). To make a tool usable by Dot: `delegated = true`,
 publish `/family/delegation/<group>`, serve `GET /dot` (validate it with `validateManifest`), accept the
 delegated client id in its token check, refuse non-GET from it. No Dot code change.
 
@@ -135,6 +137,8 @@ npm run test:live
 | `/family/<tool>/simplefin` | SecureString: a finances tool's SimpleFIN setup token or access URL |
 | `/family/calendar/google-key` | SecureString: Dot's Google service-account key |
 | `/family/sms/optin-url` | The SMS opt-in endpoint, for the public page |
+| `/family/sms/twilio` | SecureString, set by hand: `{accountSid, authToken, messagingServiceSid}` |
+| `/family/assistant/sms-worker` | Dot’s SMS worker Lambda, which only the SMS webhook may invoke |
 
 ## Tool notes
 
@@ -151,7 +155,8 @@ Read them first when a change crosses into one of those tools (e.g. Dot or Finan
 - **Links**: sections + http(s)-only links. **Tempi**: the course HTML is in the Lambda, served only to
   members. **Biomap**: `collection/` is gitignored; `scripts/publish.sh` builds the deck and syncs photos
   to a private bucket. **SMS**: consent text in `api/program.mjs` must match `portal/sms.html` (tested);
-  the Lambda can only write the consent table. **Email**: SES inbound, forwarded with Reply-To.
+  the opt-in Lambda can only write the consent table. Dot’s texts never carry links (the campaign
+  is registered without them); Twilio’s Advanced Opt-Out sends the STOP/HELP/START replies, the webhook records them. **Email**: SES inbound, forwarded with Reply-To.
 
 ## Working here: things that bite
 

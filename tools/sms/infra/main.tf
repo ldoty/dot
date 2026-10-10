@@ -1,5 +1,5 @@
-# Dot-y texting program: the public opt-in endpoint behind dot-y.co/sms, and the table of
-# consent records. (A Twilio inbound-text webhook will live here too.)
+# Dot-y texting program: the public opt-in endpoint behind dot-y.co/sms, the table of consent
+# records, and Twilio's inbound-text webhook (webhook.tf) that hands texts to Dot.
 
 terraform {
   required_version = ">= 1.10"
@@ -26,6 +26,14 @@ variable "site_origin" {
   type    = string
   default = "https://dot-y.co"
 }
+
+locals {
+  # SecureString set by hand: { accountSid, authToken, messagingServiceSid } (platform/api/twilio.mjs)
+  twilio_param = "/family/sms/twilio"
+  twilio_arn   = "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter${local.twilio_param}"
+}
+
+data "aws_caller_identity" "current" {}
 
 # Consent records are proof of opt-in: protected from deletion and backed up continuously.
 resource "aws_dynamodb_table" "consent" {
@@ -59,6 +67,10 @@ data "archive_file" "optin" {
     content  = file("${path.module}/../api/program.mjs")
     filename = "program.mjs"
   }
+  source {
+    content  = file("${path.module}/../../../platform/api/twilio.mjs")
+    filename = "twilio.mjs"
+  }
 }
 
 resource "aws_iam_role" "optin" {
@@ -74,12 +86,16 @@ resource "aws_iam_role_policy_attachment" "optin_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# Write-only: the public endpoint can add consent records but never read them back
+# Write-only: the public endpoint can add consent records but never read them back. It sends
+# a number's one opt-in confirmation (a conditional put decides, so no read is needed).
 resource "aws_iam_role_policy" "optin" {
   role = aws_iam_role.optin.id
   policy = jsonencode({
-    Version   = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = "dynamodb:PutItem", Resource = aws_dynamodb_table.consent.arn }]
+    Version = "2012-10-17"
+    Statement = [
+      { Effect = "Allow", Action = "dynamodb:PutItem", Resource = aws_dynamodb_table.consent.arn },
+      { Effect = "Allow", Action = "ssm:GetParameter", Resource = local.twilio_arn },
+    ]
   })
 }
 
@@ -93,7 +109,7 @@ resource "aws_lambda_function" "optin" {
   timeout          = 10
   memory_size      = 256
   environment {
-    variables = { TABLE = aws_dynamodb_table.consent.name }
+    variables = { TABLE = aws_dynamodb_table.consent.name, TWILIO_PARAM = local.twilio_param }
   }
 }
 

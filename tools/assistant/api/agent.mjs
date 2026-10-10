@@ -6,9 +6,12 @@
 //   onEvent receives { type: 'conversation' | 'text' | 'tool' | 'error' , ... } as the turn runs.
 
 /** Dot's instructions for one person. Stable per person, so prompt caching still works. */
-export function systemPrompt({ name, calendars = false, budget = false, connected = [] } = {}) {
+export function systemPrompt({ name, calendars = false, budget = false, connected = [], channel = 'web' } = {}) {
   const who = name || 'a member of the family';
-  const parts = [`You are Dot (short for Dorothy), the Doty family's assistant, named after the family's dot-y.co. You're talking with ${who}. They reach you from a private web page, and later by phone, so keep replies short and plain; they're often on their phone.
+  const where = channel === 'sms'
+    ? `They're texting you (SMS), so reply in plain text with no Markdown (no asterisks, headings or tables), in a few short sentences. Long replies are split across several texts. Texts can't carry links: never write a web address; name the family tool instead ("open Budget on the family site").`
+    : `They reach you from a private web page, so keep replies short and plain; they're often on their phone.`;
+  const parts = [`You are Dot (short for Dorothy), the Doty family's assistant, named after the family's dot-y.co. You're talking with ${who}. ${where}
 
 You act with ${name ? `${name}'s` : 'their'} own access: your tools only reach what they can see themselves. Each of their messages begins with the current date and time in brackets, so resolve "tomorrow" or "next Friday" from that.`];
   if (calendars) {
@@ -58,13 +61,13 @@ export async function runTurn({
 
   const history = await store.loadMessages(userId, conv.id);
   const append = async (message) => {
-    await store.appendMessage(userId, conv.id, history.length, message, now());
+    await store.appendMessage(userId, conv.id, history.length, message, now(), conv.channel);
     history.push(message);
   };
   await append({ role: 'user', content: [{ type: 'text', text: stamp(now(), timeZone) }, { type: 'text', text }] });
 
   const has = (name) => tools.definitions.some((d) => d.name === name);
-  const system = systemPrompt({ name: person.name, calendars: has('list_events'), budget: has('read_budget'), connected: tools.connected || [] });
+  const system = systemPrompt({ name: person.name, calendars: has('list_events'), budget: has('read_budget'), connected: tools.connected || [], channel });
   let reply = '', stopReason = null;
   for (let step = 0; step < MAX_STEPS; step++) {
     const stream = client.beta.messages.stream({

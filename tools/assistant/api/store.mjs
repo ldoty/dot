@@ -5,10 +5,15 @@
 //     what Dot did on someone's behalf with their access (admins see everyone's, others their own)
 // History is append-only (a message is never edited): prompt caching depends on an unchanged
 // prefix, and the API rejects edited history that carries thinking blocks.
+// Texted conversations expire (DynamoDB TTL on expiresAt, epoch seconds) KEEP_DAYS after their
+// last message: the Dot-y privacy policy (dot-y.co/privacy) keeps message content up to 12 months.
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+
+export const KEEP_DAYS = { sms: 365 };
 
 export function makeStore({ db, table }) {
   const pk = (userId) => `USER#${userId}`;
+  const expiry = (channel, now) => (KEEP_DAYS[channel] ? { expiresAt: Math.floor(now.getTime() / 1000) + KEEP_DAYS[channel] * 86400 } : {});
   const msgKey = (id, seq) => `MSG#${id}#${String(seq).padStart(6, '0')}`;
 
   async function query(userId, prefix) {
@@ -33,7 +38,7 @@ export function makeStore({ db, table }) {
       const conv = { id, title, channel, createdAt: at, updatedAt: at };
       await db.send(new PutCommand({
         TableName: table,
-        Item: { pk: pk(userId), sk: `CONV#${id}`, ...conv },
+        Item: { pk: pk(userId), sk: `CONV#${id}`, ...conv, ...expiry(channel, now) },
         ConditionExpression: 'attribute_not_exists(pk)',
       }));
       return conv;
@@ -42,13 +47,13 @@ export function makeStore({ db, table }) {
     async getConversation(userId, id) {
       const r = await db.send(new GetCommand({ TableName: table, Key: { pk: pk(userId), sk: `CONV#${id}` } }));
       if (!r.Item) return null;
-      const { pk: _p, sk: _s, ...conv } = r.Item;
+      const { pk: _p, sk: _s, expiresAt: _e, ...conv } = r.Item;
       return conv;
     },
 
     async listConversations(userId) {
       return (await query(userId, 'CONV#'))
-        .map(({ pk: _p, sk: _s, ...conv }) => conv)
+        .map(({ pk: _p, sk: _s, expiresAt: _e, ...conv }) => conv)
         .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
     },
 
@@ -57,17 +62,19 @@ export function makeStore({ db, table }) {
     },
 
     /** Appends message number `seq`; refuses to overwrite one that exists */
-    async appendMessage(userId, id, seq, message, now = new Date()) {
+    async appendMessage(userId, id, seq, message, now = new Date(), channel = 'web') {
+      const keep = expiry(channel, now);
       await db.send(new PutCommand({
         TableName: table,
-        Item: { pk: pk(userId), sk: msgKey(id, seq), role: message.role, content: JSON.stringify(message.content) },
+        Item: { pk: pk(userId), sk: msgKey(id, seq), role: message.role, content: JSON.stringify(message.content), ...keep },
         ConditionExpression: 'attribute_not_exists(pk)',
       }));
+      // The conversation row outlives its last message, never the other way round
       await db.send(new UpdateCommand({
         TableName: table,
         Key: { pk: pk(userId), sk: `CONV#${id}` },
-        UpdateExpression: 'SET updatedAt = :t',
-        ExpressionAttributeValues: { ':t': now.toISOString() },
+        UpdateExpression: keep.expiresAt ? 'SET updatedAt = :t, expiresAt = :e' : 'SET updatedAt = :t',
+        ExpressionAttributeValues: { ':t': now.toISOString(), ...(keep.expiresAt && { ':e': keep.expiresAt }) },
       }));
     },
 

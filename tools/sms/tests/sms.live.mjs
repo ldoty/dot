@@ -37,3 +37,12 @@ test('the opt-in endpoint is wired up, validates, and only accepts the dot-y.co 
   assert.equal((await pre(SITE)).headers.get('access-control-allow-origin'), SITE);
   assert.equal((await pre('https://evil.example')).headers.get('access-control-allow-origin'), null);
 });
+
+test('the Twilio webhook refuses anything Twilio didn’t sign', async () => {
+  const { optinUrl } = await (await fetch(`${SITE}/sms-config.json`)).json();
+  const r = await fetch(optinUrl.replace(/\/optin$/, '/twilio'), {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-twilio-signature': 'forged' },
+    body: new URLSearchParams({ From: '+18645550100', Body: 'Live check' }).toString(),
+  });
+  assert.equal(r.status, 403);
+});

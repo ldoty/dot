@@ -25,6 +25,7 @@ To let someone use Dot: add them to `family_assistant`, and add them to `var.peo
 | `web/` | The chat page. Streams replies; shows which tools ran |
 | `api/agent.mjs` | One conversation turn: load history, call Claude, run tools, append results. Knows nothing about HTTP |
 | `api/handler.mjs` | Web entry point (Lambda Function URL, response streaming) |
+| `api/sms.mjs` | Texting entry point: one turn for a text, reply sent through Twilio (below) |
 | `api/store.mjs` | Conversations in DynamoDB, append-only |
 | `api/tools.mjs`, `api/calendar.mjs`, `api/google.mjs` | Calendar tools; the Google service-account key is in SSM at `/family/calendar/google-key` |
 | `api/budget.mjs`, `api/delegation.mjs` | Budget reads with the asker's own access (delegation module is shared from `platform/api`) |
@@ -37,7 +38,7 @@ The Lambda needs npm packages, so it's bundled first:
 
 ```sh
 npm run build
-cd tools/assistant/infra && tofu apply
+cd tools/assistant/infra && tofu apply   # before tools/sms, which reads the SMS worker's ARN
 npm run test:live
 AWS_PROFILE=ldoty node tools/assistant/scripts/e2e-check.mjs [--as amber] "question"   # real Claude, in-memory store
 ```
@@ -59,14 +60,26 @@ AWS_PROFILE=ldoty node tools/assistant/scripts/e2e-check.mjs [--as amber] "quest
 - **Streaming:** Function URL with `RESPONSE_STREAM`, not API Gateway (no streaming, 30s cap). The
   Lambda verifies the Cognito token itself (`authorization_type = NONE` on the URL).
 
-## Adding a phone channel later
+## Texting Dot
 
-`runTurn()` in `api/agent.mjs` is the whole conversation engine. A phone/SMS handler (an SNS-triggered
-Lambda for inbound texts, or a Chime SDK SIP media application for calls) would:
+Family members can text Dot at (864) 568-4810 (the Dot-y program; Twilio, A2P 10DLC). The
+SMS tool's webhook (`tools/sms/api/webhook.mjs`) checks Twilio's signature, that the number is
+opted in, and that it is the **verified `phone_number` of a `family_assistant` member** in Cognito.
+It then invokes `lukes-assistant-sms` (`api/sms.mjs`) asynchronously, because a turn can outlast
+Twilio's 15-second timeout. The worker runs `runTurn()` as that person with `channel: 'sms'`
+(same tools, same access, audits say `sms`) and texts the reply through the Messaging Service.
 
-1. map the caller's number to Luke's user id and a conversation (e.g. one ongoing conversation per number,
-   stored with `channel: 'sms'`),
-2. call `runTurn({ ..., channel: 'sms', text })` without streaming,
-3. send back the returned `text`.
+- One texting conversation carries on until it has been quiet for 6 hours; the next text starts a new one.
+  They show up on the web page like any other conversation.
+- Replies are plain text, split into at most three texts, and never carry links (the campaign is
+  registered without embedded links): web addresses are replaced before sending.
+- The worker runs one turn at a time (reserved concurrency 1; other texts wait in line), never
+  retries a turn, and drops a text that has waited more than 15 minutes.
 
-Streaming and the Function URL only matter for the web page; the phone path doesn't use them.
+To let someone text Dot: they opt in at dot-y.co/sms with their number, and you set that number,
+verified, on their Cognito user:
+
+```sh
+aws cognito-idp admin-update-user-attributes --profile ldoty --user-pool-id <pool> --username <sub> \
+  --user-attributes Name=phone_number,Value=+1XXXXXXXXXX Name=phone_number_verified,Value=true
+```

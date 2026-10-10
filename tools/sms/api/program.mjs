@@ -11,3 +11,8 @@ export const PROGRAM = {
 // Change it only together with the page, and bump CONSENT_VERSION.
 export const CONSENT_TEXT = `I agree to receive recurring personal reminder and assistant text messages from ${PROGRAM.name} (${PROGRAM.operator}) at the number provided. Message frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out. Consent is not a condition of any purchase. See our Privacy Policy and Terms.`;
 export const CONSENT_VERSION = '2026-10-03';
+
+// The confirmation sent once to a number that opts in on /sms, exactly as registered with the
+// campaign. (The registered HELP, STOP and START replies are sent by Twilio's Advanced Opt-Out;
+// the README lists them.)
+export const OPT_IN_MESSAGE = `${PROGRAM.name}: You're signed up for reminder and assistant texts from ${PROGRAM.name} (${PROGRAM.operator}). Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out.`;
