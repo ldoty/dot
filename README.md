@@ -25,6 +25,7 @@ tools/
   links/                  links.dot-y.co: family bookmarks by section
   house-hunt/             house-hunt.dot-y.co: Greer neighborhoods we're weighing, with prices and shared notes
   assistant/              assistant.dot-y.co: Luke's chat with Claude (Bedrock) + calendar tools
+  chamber/                chamber.dot-y.co: mushroom chamber Arduino firmware, build notes, telemetry
   sms/                    Dot-y texting program: opt-in API behind dot-y.co/sms (+ /privacy, /terms)
 private/                  local only, gitignored (e.g. project_pax)
 ```

@@ -11,3 +11,6 @@ node_modules/
 
 # Biomap collection: photos (with GPS metadata) and notes; published to private S3, never committed
 tools/biomap/collection/
+
+# Chamber firmware: WiFi password and device key; arduino_secrets.example.h is the committed template
+tools/chamber/firmware/**/arduino_secrets.h

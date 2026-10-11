@@ -1,0 +1,1 @@
+../../../platform/api/verify-token.mjs
