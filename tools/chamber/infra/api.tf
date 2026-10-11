@@ -1,5 +1,5 @@
 locals {
-  routes = ["GET /items", "PUT /items/{id}", "DELETE /items/{id}"]
+  routes = ["GET /readings", "GET /readings.csv", "GET /settings", "PUT /settings"]
 }
 
 # The tool's handler plus the platform's shared token check
@@ -9,6 +9,10 @@ data "archive_file" "api" {
   source {
     content  = file("${path.module}/../api/api.mjs")
     filename = "api.mjs"
+  }
+  source {
+    content  = file("${path.module}/../api/settings.mjs")
+    filename = "settings.mjs"
   }
   source {
     content  = file("${path.module}/../../../platform/api/verify-token.mjs")
@@ -39,7 +43,7 @@ resource "aws_iam_role_policy" "api_table" {
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Query"]
+      Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query"]
       Resource = aws_dynamodb_table.main.arn
     }]
   })
@@ -53,7 +57,7 @@ resource "aws_lambda_function" "api" {
   filename         = data.archive_file.api.output_path
   source_code_hash = data.archive_file.api.output_base64sha256
   timeout          = 10
-  memory_size      = 256
+  memory_size      = 512 # three days of readings is ~26k rows to read and reshape
 
   environment {
     variables = {
@@ -75,7 +79,7 @@ resource "aws_apigatewayv2_api" "api" {
   protocol_type = "HTTP"
   cors_configuration {
     allow_origins = [trimsuffix(local.app_url, "/"), trimsuffix(local.dev_url, "/")]
-    allow_methods = ["GET", "PUT", "DELETE"]
+    allow_methods = ["GET", "PUT"]
     allow_headers = ["authorization", "content-type"]
     max_age       = 600
   }
@@ -115,6 +119,13 @@ resource "aws_apigatewayv2_stage" "default" {
   default_route_settings {
     throttling_burst_limit = 20
     throttling_rate_limit  = 10
+  }
+  # The board posts every ~10 s. The route is open to the internet (the key is checked in the
+  # Lambda), so cap what anyone hammering it can cost.
+  route_settings {
+    route_key              = aws_apigatewayv2_route.ingest.route_key
+    throttling_burst_limit = 5
+    throttling_rate_limit  = 1
   }
 }
 

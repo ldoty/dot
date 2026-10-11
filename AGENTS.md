@@ -24,7 +24,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/tempi` | tempi.dot-y.co | `family_tempi` | An OT course, served to members only |
 | `tools/boards` | boards.dot-y.co | `lukes_boards` | Field guide + flashcards for two nonprofit boards; the guide lives in gitignored `private/` |
 | `tools/house-hunt` | house-hunt.dot-y.co | `family_house_hunt` | Neighborhoods on a map, ranked listings; listing emails to househunt@dot-y.co are filed by Claude |
-| `tools/chamber` | chamber.dot-y.co | `lukes_chamber` | Mushroom chamber: Arduino firmware + build notes; telemetry and settings (cloud side in progress) |
+| `tools/chamber` | chamber.dot-y.co | `lukes_chamber` | Mushroom chamber: Arduino firmware + build notes; the board posts telemetry to `POST /ingest` (device key), the page shows it and sets the board’s settings |
 | `tools/sms` | (API only) | | Dot-y texting program: opt-in consent records, and Twilio’s webhook that hands members’ texts to Dot |
 | `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail |
 | `platform/billing` | | | Account-wide $75/mo budget + cost anomaly alerts |
@@ -137,6 +137,7 @@ npm run test:live
 | `/family/delegation/<group>` | `{api_url, client_id}` of a tool that can be read as a person |
 | `/family/<tool>/simplefin` | SecureString: a finances tool's SimpleFIN setup token or access URL |
 | `/family/calendar/google-key` | SecureString: Dot's Google service-account key |
+| `/family/chamber/device-key` | SecureString, set by hand: the chamber board's key for `POST /ingest` (also in its gitignored `arduino_secrets.h`) |
 | `/family/sms/optin-url` | The SMS opt-in endpoint, for the public page |
 | `/family/sms/twilio` | SecureString, set by hand: Twilio API key for sending `{accountSid, apiKeySid, apiKeySecret, messagingServiceSid}` |
 | `/family/sms/twilio-webhook` | SecureString, set by hand: `{accountSid, authToken}`, only for the webhook's signature checks |
@@ -154,6 +155,10 @@ Read them first when a change crosses into one of those tools (e.g. Dot or Finan
 ### Others
 - **House Hunt**: `rev`-checked writes; SES → bucket → ingest Lambda (`api/ingest.mjs`, bundled by `npm run build`) that accepts
   allowed senders with DMARC passing and has Claude extract listings as untrusted data into a fixed schema.
+- **Chamber**: the board can't sign in, so `POST /ingest` has no authorizer; `api/ingest.mjs` checks the
+  `x-chamber-key` header against the SecureString `/family/chamber/device-key` (set by hand) and its role can only
+  write readings. Control runs on the Arduino; nothing in the cloud may become part of its loop. Firmware notes in
+  `tools/chamber/AGENTS.md`.
 - **Links**: sections + http(s)-only links. **Tempi**: the course HTML is in the Lambda, served only to
   members. **Biomap**: `collection/` is gitignored; `scripts/publish.sh` builds the deck and syncs photos
   to a private bucket. **SMS**: consent text in `api/program.mjs` must match `portal/sms.html` (tested);

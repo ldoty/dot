@@ -6,20 +6,70 @@
 <title>Chamber</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="family.css">
+<!--
+  The mushroom chamber's telemetry and settings. The board (firmware/chamber_telemetry) posts a
+  reading every ~10 s to the ingest Lambda; this page polls GET /readings for what's new and draws
+  stacked charts on one shared time axis, so cause (mist and vent spans) and effect (RH, temp)
+  line up vertically. One measure per chart, never two y-scales on one plot.
+-->
 <style>
-/* Layout: one narrow column. Header with a link home, then the tool. */
-.wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 24px }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 16px }
 .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
 .top a { color: var(--muted); text-decoration: none; font-size: 14px }
 h1 { font-size: clamp(32px, 6vw, 48px) }
-.add { display: flex; gap: 8px }
-.add input { flex: 1; min-width: 0; background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 9px 12px; color: var(--ink) }
-.add input:focus { border-color: var(--pool); outline: none }
-ul { list-style: none; margin: 0; padding: 0 }
-li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line) }
-li button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 18px }
-li button:hover { color: var(--ember) }
-.status { color: var(--muted); font-size: 14px; min-height: 1.4em }
+.status { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; min-height: 1.4em }
+.status.stale { color: var(--ember); font-weight: 600 }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 14px }
+.tile .k { color: var(--muted); font-size: 13px }
+.tile .v { font: 600 22px var(--display); font-variant-numeric: tabular-nums }
+.tile .v small { font: 400 13px var(--body); color: var(--muted) }
+
+.controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-pill); overflow: hidden; background: var(--surface) }
+.seg button { color: var(--muted); background: none; border: 0; padding: 6px 14px; cursor: pointer; font-size: 14px }
+.seg button + button { border-left: 1px solid var(--line) }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface) }
+.key { display: flex; gap: 16px; color: var(--muted); flex-wrap: wrap; font-size: 14px }
+.key span { display: inline-flex; align-items: center; gap: 6px }
+.sw { width: 14px; height: 10px; border-radius: 2px; display: inline-block }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 12px 4px; margin-bottom: 8px }
+.panel h3 { font-size: 14px; color: var(--muted); margin: 0 0 2px 4px }
+svg { display: block; width: 100%; overflow: visible }
+svg text { fill: var(--muted); font: 11px var(--body); font-variant-numeric: tabular-nums }
+.empty { color: var(--muted); padding: 40px 0; text-align: center }
+
+.tip { position: fixed; pointer-events: none; z-index: 10; display: none; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 8px 10px; box-shadow: 0 4px 16px rgb(0 0 0 / .12); font-size: 14px; font-variant-numeric: tabular-nums; min-width: 180px }
+.tip b { display: block; margin-bottom: 4px }
+.tip div { display: flex; justify-content: space-between; gap: 16px; color: var(--muted) }
+.tip div span:last-child { color: var(--ink) }
+
+details.card { padding: 12px 20px }
+details.card summary { cursor: pointer; font: 600 17px var(--display); display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline }
+.badge { font: 500 14px var(--body); color: var(--muted) }
+.badge.ok { color: var(--leaf) } .badge.bad { color: var(--ember) } .badge.wait { color: var(--wood) }
+.cfg-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin: 12px 0 }
+.cfg-groups fieldset { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 12px 10px; margin: 0; min-width: 0 }
+.cfg-groups legend { font-size: 14px; font-weight: 600; color: var(--muted); padding: 0 4px }
+.cfg-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; padding: 4px 0 }
+.cfg-row label { font-size: 14px }
+.cfg-row .ctl { display: flex; align-items: center; gap: 6px; justify-content: flex-end }
+.cfg-row input[type=number] { width: 84px; font-variant-numeric: tabular-nums; padding: 3px 6px; background: var(--raised);
+  color: var(--ink); border: 1.5px solid transparent; border-radius: var(--r-sm); text-align: right }
+.cfg-row input.changed { border-color: var(--pool) }
+.cfg-row .unit { font-size: 13px; color: var(--muted); min-width: 34px }
+.cfg-row .hint { grid-column: 1 / -1; font-size: 12px; color: var(--muted); text-align: right }
+.cfg-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center }
+.btn:disabled { opacity: .45; cursor: default }
+#cfgMsg { font-size: 14px; color: var(--muted) }
+#cfgMsg.bad { color: var(--ember) }
+
+table { border-collapse: collapse; font-variant-numeric: tabular-nums; margin-top: 8px; font-size: 14px }
+th, td { padding: 2px 14px 2px 0; text-align: right }
+th { color: var(--muted); font-weight: 500 }
 </style>
 </head>
 <body>
@@ -28,14 +78,43 @@ li button:hover { color: var(--ember) }
   <h1>Chamber</h1>
   <div id="main"><p class="status">Loading…</p></div>
 </div>
+<div class="tip" id="tip"></div>
 <script src="family-auth.js"></script>
 <script>
 (function () {
-  var cfg, items = [];
+  var STATE = { 0: "idle", 1: "venting", 2: "vent settle", 3: "misting", 4: "mist settle" };
+  var BLOCK = { 0: "—", 1: "budget spent", 2: "duty ceiling", 3: "dry run?", 4: "sensor wet",
+                5: "no sensor", 6: "colonization", 7: "force cap", 8: "cooling down" };
+  var FIELDS = ["rh_pct", "temp_c", "dewpoint_c", "fan_duty_pct", "fan_rpm", "light_duty_pct", "mist_state",
+                "mist_block", "atomizer_on", "mist_ml", "mist_on_s", "mist_bursts", "uptime_s"];
+  var MAX_MIN = 3 * 24 * 60;    // the API serves at most three days
+  var GAP_MS = 70000;           // longer than this between readings: the board was off or offline
+  var PUBLISH_S = 10;
+
+  // One chart per measure. `band` shades the target range.
+  var CHARTS = [
+    // Controller state as swimlanes: a bar wherever the state machine sat in that state
+    { key: "mist_state", title: "Controller state", lanes: [
+      { v: 3, label: "misting", color: "var(--leaf)", op: 0.85 },
+      { v: 4, label: "mist settle", color: "var(--leaf)", op: 0.35 },
+      { v: 0, label: "idle", color: "var(--muted)", op: 0.3 },
+      { v: 1, label: "venting", color: "var(--ember)", op: 0.85 },
+      { v: 2, label: "vent settle", color: "var(--ember)", op: 0.35 }
+    ] },
+    { key: "rh_pct", title: "Relative humidity (%)", h: 220, fmt: function (v) { return v.toFixed(1) + "%"; }, band: [85, 95], pad: 2 },
+    { key: "temp_c", title: "Temperature (°C)", h: 130, pad: 0.3 },
+    { key: "fan_rpm", title: "Fan (rpm)", h: 110, min0: true },
+    // On or off in practice, so a filled step: the light holds until the next reading
+    { key: "light_duty_pct", title: "Light (duty %)", h: 90, min0: true, step: true, fill: true, pad: 0 },
+    { key: "dewpoint_c", title: "Dewpoint (°C): absolute water content", h: 130, pad: 0.3 }
+  ];
+
+  var cfg, rows = [], loadedFrom = null, rangeMin = 120, hoverT = null;
+  var settings = null, edits = {};
   var main = document.getElementById("main");
+  function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
-  function uid() { return "x" + Math.random().toString(36).slice(2, 9); }
-  function status(msg) { var s = document.getElementById("status"); if (s) s.textContent = msg || ""; }
+  try { var saved = localStorage.getItem("chamber-range"); if (saved !== null && +saved > 0) rangeMin = Math.min(+saved, MAX_MIN); } catch (e) {}
 
   function api(method, path, body) {
     return FamilyAuth.accessToken().then(function (tok) {
@@ -43,38 +122,410 @@ li button:hover { color: var(--ember) }
       return fetch(cfg.apiUrl + path, {
         method: method,
         headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
-        body: body ? JSON.stringify(body) : undefined,
+        body: body ? JSON.stringify(body) : undefined
       });
     });
   }
 
-  function render() {
-    main.innerHTML = '<form class="add" id="add"><input id="name" placeholder="Add something" aria-label="New item" maxlength="200"><button class="btn primary">Add</button></form>' +
-      '<p class="status" id="status"></p><ul>' + items.map(function (it) {
-        return '<li><span>' + esc(it.name) + '</span><button data-del="' + esc(it.id) + '" aria-label="Remove ' + esc(it.name) + '">&times;</button></li>';
-      }).join("") + "</ul>";
+  function layout() {
+    main.innerHTML =
+      '<p class="status" id="status">Loading…</p>' +
+      '<div class="tiles" id="tiles"></div>' +
+      '<details class="card" id="settingsBox"><summary>Controller settings <span class="badge" id="cfgBadge">Loading…</span></summary>' +
+      '<form id="cfgForm" autocomplete="off"><div class="cfg-groups" id="cfgGroups"></div>' +
+      '<div class="cfg-actions"><button type="submit" class="btn primary" id="cfgSave" disabled>Apply to chamber</button>' +
+      '<button type="button" class="btn ghost" id="cfgRevert" disabled>Revert edits</button><span id="cfgMsg"></span></div></form></details>' +
+      '<div class="controls"><div class="seg" id="range" role="group" aria-label="Time range">' +
+      [[30, "30 min"], [120, "2 h"], [720, "12 h"], [1440, "1 day"], [MAX_MIN, "3 days"]].map(function (r) {
+        return '<button type="button" data-min="' + r[0] + '" aria-pressed="' + (r[0] === rangeMin) + '">' + r[1] + "</button>";
+      }).join("") + "</div>" +
+      '<div class="key"><span><i class="sw" style="background:var(--leaf);opacity:.35"></i>Misting</span>' +
+      '<span><i class="sw" style="background:var(--ember);opacity:.35"></i>Venting</span>' +
+      '<span><i class="sw" style="background:var(--pool);opacity:.14;outline:1px dashed var(--pool)"></i>RH target 85–95%</span></div>' +
+      '<button type="button" class="btn ghost" id="csv">Download CSV (last day)</button></div>' +
+      '<div id="charts"></div>' +
+      '<details><summary>Recent readings</summary><div id="table"></div></details>';
+    try { $("settingsBox").open = localStorage.getItem("chamber-cfg-open") === "1"; } catch (e) {}
+    $("settingsBox").addEventListener("toggle", function () {
+      try { localStorage.setItem("chamber-cfg-open", $("settingsBox").open ? "1" : "0"); } catch (e) {}
+    });
+    $("range").addEventListener("click", function (e) {
+      var b = e.target.closest("[data-min]"); if (!b) return;
+      rangeMin = +b.dataset.min;
+      try { localStorage.setItem("chamber-range", rangeMin); } catch (e2) {}
+      Array.prototype.forEach.call($("range").children, function (o) { o.setAttribute("aria-pressed", o === b); });
+      if (loadedFrom === null || Date.now() - rangeMin * 60000 < loadedFrom) { rows = []; loadedFrom = null; refresh(); }
+      else render();
+    });
+    $("csv").onclick = downloadCsv;
+    $("cfgGroups").addEventListener("input", onEdit);
+    $("cfgRevert").onclick = function () { edits = {}; renderCfg(); };
+    $("cfgForm").addEventListener("submit", saveCfg);
+    addEventListener("resize", render);
   }
 
-  main.addEventListener("submit", function (e) {
+  // ---- Readings ------------------------------------------------------------
+  // First load fetches the whole range; after that, only what's newer than the last row.
+  function refresh() {
+    var since = rows.length ? rows[rows.length - 1].t : Date.now() - rangeMin * 60000;
+    return api("GET", "/readings?since=" + since + "&fields=" + FIELDS.join(",")).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      return res.json();
+    }).then(function (data) {
+      if (loadedFrom === null) loadedFrom = since;
+      data.rows.forEach(function (r) {
+        if (rows.length && r[0] <= rows[rows.length - 1].t) return; // a poll that overlapped a reload
+        var o = { t: r[0] };
+        data.fields.forEach(function (f, i) { o[f] = r[i + 1]; });
+        rows.push(o);
+      });
+      var oldest = Date.now() - MAX_MIN * 60000;
+      while (rows.length && rows[0].t < oldest) rows.shift();
+      renderTiles(); render();
+    }).catch(function () { var s = $("status"); if (s) s.textContent = "Couldn’t load readings. Retrying…"; });
+  }
+
+  function downloadCsv() {
+    api("GET", "/readings.csv?since=" + (Date.now() - 24 * 3600e3)).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      return res.blob();
+    }).then(function (blob) {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "chamber-" + new Date().toISOString().slice(0, 10) + ".csv";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    }).catch(function () { $("status").textContent = "Couldn’t download the CSV. Try again."; });
+  }
+
+  // Contiguous runs where pred(row) holds, as [t0, t1]: a row holds until the next one arrives
+  function spans(data, pred) {
+    var out = [], start = null;
+    data.forEach(function (r) {
+      if (pred(r) && start === null) start = r.t;
+      if (!pred(r) && start !== null) { out.push([start, r.t]); start = null; }
+    });
+    if (start !== null) out.push([start, data[data.length - 1].t]);
+    return out;
+  }
+
+  // The board sends nothing while the atomizer runs (so a network stall can't stretch a burst),
+  // so no reading ever says "misting". Rebuild each burst from the next reading: mist_on_s grew
+  // by the burst's length, and it ended within one publish interval before that reading.
+  // The rebuilt rows carry state only, so the line charts never draw invented readings.
+  function withBursts(data) {
+    var out = [];
+    for (var i = 0; i < data.length; i++) {
+      var r = data[i], p = data[i - 1];
+      if (p && r.mist_on_s > p.mist_on_s && r.uptime_s > p.uptime_s && p.mist_state !== 3 && r.mist_state !== 3) {
+        var dur = (r.mist_on_s - p.mist_on_s) * 1000;
+        var end = Math.max(p.t, r.t - PUBLISH_S * 500);
+        out.push({ t: Math.max(p.t, end - dur), mist_state: 3, atomizer_on: 1, synthetic: true });
+        out.push({ t: end, mist_state: 4, atomizer_on: 0, synthetic: true });
+      }
+      out.push(r);
+    }
+    return out;
+  }
+
+  function niceTicks(lo, hi, n) {
+    var step0 = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+    var step = [1, 2, 2.5, 5, 10].map(function (m) { return m * mag; }).filter(function (s) { return s >= step0; })[0];
+    var out = [];
+    for (var v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6));
+    return out;
+  }
+
+  function timeTicks(t0, t1, width) {
+    var n = Math.max(2, Math.floor(width / 110));
+    var choices = [1, 2, 5, 10, 15, 30, 60, 120, 240, 360, 720, 1440].map(function (m) { return m * 60000; });
+    var step = choices.filter(function (s) { return (t1 - t0) / s <= n; })[0] || choices[choices.length - 1];
+    var out = [];
+    for (var t = Math.ceil(t0 / step) * step; t <= t1; t += step) out.push(t);
+    return out;
+  }
+
+  function hhmm(t) { return new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
+  function tickLabel(t, spanMs) {
+    var d = new Date(t);
+    return spanMs > 26 * 3600e3 && d.getHours() === 0 && d.getMinutes() === 0
+      ? d.toLocaleDateString([], { weekday: "short" }) : hhmm(t);
+  }
+
+  function panel(c, svg, H, W, chart) {
+    var p = document.createElement("div");
+    p.className = "panel";
+    p.innerHTML = "<h3>" + esc(c.title) + '</h3><svg viewBox="0 0 ' + W + " " + H + '" height="' + H + '">' + svg + "</svg>";
+    p._chart = chart;
+    return p;
+  }
+
+  function laneChart(c, data, x, t0, t1, W, L, R) {
+    var laneH = 18, gap = 4, T = 4, B = 20;
+    var H = c.h = T + c.lanes.length * (laneH + gap) + B;
+    var s = "";
+    c.lanes.forEach(function (ln, i) {
+      var y = T + i * (laneH + gap);
+      s += '<rect x="' + L + '" y="' + y + '" width="' + (W - L - R) + '" height="' + laneH + '" fill="var(--raised)" rx="3"/>';
+      s += '<text x="' + (L - 6) + '" y="' + (y + laneH / 2 + 4) + '" text-anchor="end">' + ln.label + "</text>";
+      // Merge consecutive readings into one bar; a gap ends it rather than inventing state
+      var runStart = null, runEnd = null;
+      function flush() {
+        if (runStart === null) return;
+        s += '<rect x="' + x(runStart) + '" y="' + y + '" width="' + Math.max(1.5, x(Math.min(runEnd, t1)) - x(runStart)) +
+          '" height="' + laneH + '" fill="' + ln.color + '" opacity="' + ln.op + '"/>';
+        runStart = null;
+      }
+      for (var j = 0; j < data.length; j++) {
+        var r = data[j], next = data[j + 1];
+        if (r[c.key] !== ln.v) { flush(); continue; }
+        var contiguous = next && next.t - r.t <= GAP_MS;
+        if (runStart === null) runStart = r.t;
+        runEnd = contiguous ? next.t : r.t + 20000;
+        if (!contiguous) flush();
+      }
+      flush();
+    });
+    timeTicks(t0, t1, W).forEach(function (t) {
+      s += '<text x="' + x(t) + '" y="' + (H - 4) + '" text-anchor="middle">' + tickLabel(t, t1 - t0) + "</text>";
+    });
+    s += '<g class="hover"></g>';
+    return panel(c, s, H, W, { c: c, x: x, y: function () { return 0; } });
+  }
+
+  function lineChart(c, data, mist, vent, x, t0, t1, W, L, R) {
+    var vals = data.map(function (r) { return r[c.key]; }).filter(function (v) { return typeof v === "number"; });
+    if (!vals.length) return null;
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if (c.band) { lo = Math.min(lo, c.band[0]); hi = Math.max(hi, c.band[1]); }
+    if (c.min0) lo = 0;
+    var pad = c.pad !== undefined ? c.pad : ((hi - lo) * 0.08 || 1);
+    lo -= c.min0 ? 0 : pad; hi += pad;
+    if (hi === lo) hi = lo + 1;
+    var T = 6, B = 20, H = c.h;
+    function y(v) { return T + (1 - (v - lo) / (hi - lo)) * (H - T - B); }
+
+    var s = "";
+    mist.forEach(function (a) { s += '<rect x="' + x(a[0]) + '" y="' + T + '" width="' + Math.max(2, x(a[1]) - x(a[0])) + '" height="' + (H - T - B) + '" fill="var(--leaf)" opacity=".25"/>'; });
+    vent.forEach(function (a) { s += '<rect x="' + x(a[0]) + '" y="' + T + '" width="' + Math.max(2, x(a[1]) - x(a[0])) + '" height="' + (H - T - B) + '" fill="var(--ember)" opacity=".25"/>'; });
+    if (c.band) {
+      s += '<rect x="' + L + '" y="' + y(c.band[1]) + '" width="' + (W - L - R) + '" height="' + (y(c.band[0]) - y(c.band[1])) + '" fill="var(--pool)" opacity=".10"/>';
+      c.band.forEach(function (v) { s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--pool)" stroke-dasharray="4 4" opacity=".6"/>'; });
+    }
+    niceTicks(lo, hi, Math.max(2, Math.round(H / 45))).forEach(function (v) {
+      s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)"/>';
+      s += '<text x="' + (L - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + v + "</text>";
+    });
+    timeTicks(t0, t1, W).forEach(function (t) {
+      s += '<text x="' + x(t) + '" y="' + (H - 4) + '" text-anchor="middle">' + tickLabel(t, t1 - t0) + "</text>";
+    });
+    s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + (H - B) + '" y2="' + (H - B) + '" stroke="var(--line)"/>';
+
+    // Break the line across gaps (board off, telemetry dropped): never draw readings we didn't get
+    var d = "", prev = null, runs = [];
+    data.forEach(function (r) {
+      if (typeof r[c.key] !== "number") { prev = null; return; }
+      var px = x(r.t).toFixed(1), py = y(r[c.key]).toFixed(1);
+      if (!prev || r.t - prev.t > GAP_MS) { d += "M" + px + "," + py; runs.push([px, px]); }
+      else d += c.step ? "H" + px + "V" + py : "L" + px + "," + py;
+      runs[runs.length - 1][1] = px;
+      prev = r;
+    });
+    if (c.fill) {
+      d.split("M").filter(Boolean).forEach(function (seg, i) {
+        s += '<path d="M' + seg + "V" + y(lo) + "H" + runs[i][0] + 'Z" fill="var(--pool)" opacity=".16"/>';
+      });
+    }
+    s += '<path d="' + d + '" fill="none" stroke="var(--pool)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+    s += '<g class="hover"></g>';
+    return panel(c, s, H, W, { c: c, x: x, y: y });
+  }
+
+  function render() {
+    var charts = $("charts");
+    if (!charts) return;
+    var tEnd = rows.length ? rows[rows.length - 1].t : 0;
+    var data = rows.filter(function (r) { return r.t >= tEnd - rangeMin * 60000; });
+    if (!data.length) { charts.innerHTML = '<p class="empty">Waiting for the first reading…</p>'; return; }
+    var t0 = data[0].t, t1 = Math.max(tEnd, t0 + 60000);
+    var stateData = withBursts(data);
+    var mist = spans(stateData, function (r) { return r.atomizer_on === 1; });
+    var vent = spans(stateData, function (r) { return r.mist_state === 1; });
+    var W = Math.max(320, charts.clientWidth - 24), L = 78, R = 8;
+    function x(t) { return L + (t - t0) / (t1 - t0) * (W - L - R); }
+
+    charts.innerHTML = "";
+    CHARTS.forEach(function (c) {
+      var p = c.lanes ? laneChart(c, stateData, x, t0, t1, W, L, R) : lineChart(c, data, mist, vent, x, t0, t1, W, L, R);
+      if (p) charts.appendChild(p);
+    });
+
+    // Shared crosshair: hovering any chart marks the same instant on all of them
+    charts.onmousemove = function (e) {
+      var svg = e.target.closest("svg"); if (!svg) return;
+      var box = svg.getBoundingClientRect();
+      var t = t0 + ((e.clientX - box.left) / box.width * W - L) / (W - L - R) * (t1 - t0);
+      var best = data[0];
+      data.forEach(function (r) { if (Math.abs(r.t - t) < Math.abs(best.t - t)) best = r; });
+      drawHover(best, e);
+    };
+    charts.onmouseleave = function () {
+      hoverT = null; $("tip").style.display = "none";
+      Array.prototype.forEach.call(charts.querySelectorAll(".hover"), function (g) { g.innerHTML = ""; });
+    };
+    if (hoverT !== null) {
+      var held = data.filter(function (r) { return r.t === hoverT; })[0];
+      if (held) drawHover(held, null);
+    }
+  }
+
+  function fix(v, n, unit) { return typeof v === "number" ? v.toFixed(n) + unit : "—"; }
+  function line(k, v) { return "<div><span>" + k + "</span><span>" + v + "</span></div>"; }
+
+  function drawHover(r, e) {
+    hoverT = r.t;
+    Array.prototype.forEach.call($("charts").children, function (p) {
+      var ch = p._chart, v = ch.c.lanes ? NaN : r[ch.c.key];
+      p.querySelector(".hover").innerHTML =
+        '<line x1="' + ch.x(r.t) + '" x2="' + ch.x(r.t) + '" y1="6" y2="' + (ch.c.h - 20) + '" stroke="var(--muted)" stroke-width="1"/>' +
+        (typeof v === "number" ? '<circle cx="' + ch.x(r.t) + '" cy="' + ch.y(v) + '" r="4.5" fill="var(--pool)" stroke="var(--surface)" stroke-width="2"/>' : "");
+    });
+    if (!e) return;
+    var tip = $("tip");
+    tip.innerHTML = "<b>" + new Date(r.t).toLocaleTimeString() + "</b>" +
+      line("RH", fix(r.rh_pct, 2, "%")) + line("Temp", fix(r.temp_c, 2, "°C")) + line("Dewpoint", fix(r.dewpoint_c, 2, "°C")) +
+      line("State", STATE[r.mist_state] || r.mist_state) + line("Fan", r.fan_duty_pct + "% · " + r.fan_rpm + " rpm") +
+      line("Light", r.light_duty_pct + "%") + line("Mist block", BLOCK[r.mist_block] || r.mist_block) +
+      line("Mist total", fix(r.mist_ml, 1, " mL"));
+    tip.style.display = "block";
+    var tw = tip.offsetWidth, th = tip.offsetHeight, left = e.clientX + 16;
+    if (left + tw > innerWidth - 8) left = e.clientX - tw - 16;
+    tip.style.left = Math.max(8, left) + "px";
+    tip.style.top = Math.min(innerHeight - th - 8, e.clientY + 12) + "px";
+  }
+
+  function renderTiles() {
+    var st = $("status");
+    var r = rows[rows.length - 1];
+    if (!r) { st.textContent = "No readings in this range yet. Is the chamber on?"; $("tiles").innerHTML = ""; return; }
+    var age = (Date.now() - r.t) / 1000;
+    var ago = age < 90 ? Math.round(age) + " s" : age < 5400 ? Math.round(age / 60) + " min" : Math.round(age / 3600) + " h";
+    st.textContent = (age > 70 ? "Stale: " : "") + "last reading " + ago + " ago · up " + Math.floor((r.uptime_s || 0) / 60) + " min";
+    st.className = "status" + (age > 70 ? " stale" : "");
+    var band = r.rh_pct >= 85 && r.rh_pct <= 95 ? "in band" : r.rh_pct < 85 ? "below band" : "above band";
+    $("tiles").innerHTML = [
+      ["RH", fix(r.rh_pct, 1, "") + "<small>% " + band + "</small>"],
+      ["Temp", fix(r.temp_c, 1, "") + "<small>°C</small>"],
+      ["State", STATE[r.mist_state] || r.mist_state],
+      ["Mist block", BLOCK[r.mist_block] || r.mist_block],
+      ["Mist bursts", r.mist_bursts + "<small> · " + fix(r.mist_ml, 0, "") + " mL est.</small>"],
+      ["Light", r.light_duty_pct + "<small>%</small>"]
+    ].map(function (kv) { return '<div class="tile"><div class="k">' + kv[0] + '</div><div class="v">' + kv[1] + "</div></div>"; }).join("");
+
+    $("table").innerHTML = "<table><tr><th>Time</th><th>RH %</th><th>Temp °C</th><th>State</th><th>Fan rpm</th><th>Block</th></tr>" +
+      rows.slice(-15).reverse().map(function (x) {
+        return "<tr><td>" + new Date(x.t).toLocaleTimeString() + "</td><td>" + fix(x.rh_pct, 2, "") + "</td><td>" + fix(x.temp_c, 2, "") +
+          "</td><td>" + (STATE[x.mist_state] || "") + "</td><td>" + x.fan_rpm + "</td><td>" + (BLOCK[x.mist_block] || "") + "</td></tr>";
+      }).join("") + "</table>";
+  }
+
+  // ---- Settings ------------------------------------------------------------
+  // The API stores the DESIRED settings; the board applies them on its next report and says
+  // what it RUNS. The badge shows which of those is true.
+  function fmtDur(s) { return s >= 120 ? "= " + +(s / 60).toFixed(1) + " min" : ""; }
+  function baseValue(key) {
+    if (settings.desired && key in settings.desired.values) return settings.desired.values[key];
+    return settings.active ? settings.active[key] : "";
+  }
+  function cfgValue(key) { return key in edits ? edits[key] : baseValue(key); }
+
+  function cfgBadge() {
+    var b = $("cfgBadge"), d = settings.desired, a = settings.active, text, cls = "";
+    if (!a) { text = "Waiting for the board to report its settings"; cls = "wait"; }
+    else if (d && a.rejected === d.version) { text = "The board refused v" + d.version + ", still running v" + a.version; cls = "bad"; }
+    else if (d && a.version !== d.version) { text = "v" + d.version + " pending: applies on the board’s next report"; cls = "wait"; }
+    else if (a.version > 0) { text = "Running v" + a.version; cls = "ok"; }
+    else text = "Running firmware defaults";
+    b.textContent = text;
+    b.className = "badge " + cls;
+  }
+
+  function renderCfg() {
+    var groups = {}, order = [];
+    settings.spec.forEach(function (s) { if (!groups[s.group]) { groups[s.group] = []; order.push(s.group); } groups[s.group].push(s); });
+    $("cfgGroups").innerHTML = order.map(function (g) {
+      return "<fieldset><legend>" + esc(g) + "</legend>" + groups[g].map(function (s) {
+        var v = cfgValue(s.key), id = "cfg_" + s.key;
+        var running = settings.active && s.key in settings.active ? settings.active[s.key] : null;
+        var ctl = s.kind === "bool"
+          ? '<input type="checkbox" id="' + id + '" data-key="' + s.key + '"' + (+v ? " checked" : "") + ">"
+          : '<input type="number" id="' + id + '" data-key="' + s.key + '" value="' + esc(v) + '" min="' + s.min + '" max="' + s.max + '" step="' + s.step + '">';
+        var differs = running !== null && +running !== +v ? " · board runs " + running : "";
+        return '<div class="cfg-row"><label for="' + id + '">' + esc(s.label) + '</label><span class="ctl">' + ctl +
+          '<span class="unit">' + esc(s.unit) + '</span></span><span class="hint">' + (s.unit === "s" ? fmtDur(+v) : "") + differs + "</span></div>";
+      }).join("") + "</fieldset>";
+    }).join("");
+    Object.keys(edits).forEach(function (k) { var el = $("cfg_" + k); if (el) el.classList.add("changed"); });
+    syncButtons();
+  }
+
+  function syncButtons() {
+    var n = Object.keys(edits).length;
+    $("cfgSave").disabled = n === 0;
+    $("cfgRevert").disabled = n === 0;
+    $("cfgSave").textContent = n ? "Apply " + n + " change" + (n > 1 ? "s" : "") + " to chamber" : "Apply to chamber";
+  }
+
+  function onEdit(e) {
+    var el = e.target, key = el.dataset.key;
+    if (!key) return;
+    var v = el.type === "checkbox" ? (el.checked ? 1 : 0) : el.value;
+    if (String(+v) === String(+baseValue(key))) delete edits[key]; else edits[key] = v;
+    el.classList.toggle("changed", key in edits);
+    var spec = settings.spec.filter(function (s) { return s.key === key; })[0];
+    if (spec.unit === "s") el.closest(".cfg-row").querySelector(".hint").textContent = fmtDur(+v);
+    $("cfgMsg").textContent = ""; $("cfgMsg").className = "";
+    syncButtons();
+  }
+
+  function saveCfg(e) {
     e.preventDefault();
-    var inp = document.getElementById("name"), name = inp.value.trim(); if (!name) return;
-    var it = { id: uid(), name: name };
-    api("PUT", "/items/" + it.id, { name: name }).then(function (res) {
+    var msg = $("cfgMsg");
+    msg.textContent = "Saving…"; msg.className = "";
+    api("PUT", "/settings", { values: edits }).then(function (res) {
+      return res.json().then(function (body) {
+        if (body.spec) settings = body;
+        if (!res.ok) { msg.textContent = body.error || "Couldn’t save. Try again."; msg.className = "bad"; cfgBadge(); return; }
+        edits = {};
+        msg.textContent = "Saved as v" + settings.desired.version + ". Waiting for the board to pick it up…";
+        renderCfg(); cfgBadge();
+      });
+    }).catch(function () { msg.textContent = "Couldn’t save. Try again."; msg.className = "bad"; });
+  }
+
+  function loadCfg() {
+    return api("GET", "/settings").then(function (res) {
       if (!res.ok) throw new Error(res.status);
-      items.push(it); render(); document.getElementById("name").focus();
-    }).catch(function () { status("Couldn’t save. Try again."); });
-  });
-  main.addEventListener("click", function (e) {
-    var b = e.target.closest("[data-del]"); if (!b) return;
-    api("DELETE", "/items/" + b.dataset.del).then(function (res) {
-      if (!res.ok) throw new Error(res.status);
-      items = items.filter(function (x) { return x.id !== b.dataset.del; }); render();
-    }).catch(function () { status("Couldn’t remove that. Try again."); });
-  });
+      return res.json();
+    }).then(function (body) {
+      var was = settings && JSON.stringify([settings.desired, settings.active]);
+      settings = body;
+      // Re-render only when something changed, so typing is never clobbered
+      if (was !== JSON.stringify([settings.desired, settings.active])) renderCfg();
+      cfgBadge();
+      var d = settings.desired, a = settings.active;
+      if (d && a && a.version === d.version && $("cfgMsg").textContent.indexOf("Saved") === 0) {
+        $("cfgMsg").textContent = "The board is running v" + d.version + ".";
+      }
+    }).catch(function () {});
+  }
+
+  // Poll only while the page is visible: each poll is a Lambda call
+  function every(ms, fn) { setInterval(function () { if (!document.hidden) fn(); }, ms); }
 
   function gate(msg) {
     main.innerHTML = '<p class="status">' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button>';
-    document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
+    $("signin").onclick = function () { FamilyAuth.login(); };
   }
 
   fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
@@ -82,12 +533,17 @@ li button:hover { color: var(--ember) }
     return FamilyAuth.init(c);
   }).then(function (user) {
     if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
-    document.getElementById("signout").hidden = false;
-    document.getElementById("signout").onclick = function () { FamilyAuth.logout(); };
-    return api("GET", "/items").then(function (res) {
-      if (res.status === 403) return gate("Your account doesn’t have access to Chamber yet.");
+    $("signout").hidden = false;
+    $("signout").onclick = function () { FamilyAuth.logout(); };
+    return api("GET", "/settings").then(function (res) {
+      if (res.status === 403) return gate("Your account doesn’t have access to Chamber.");
       if (!res.ok) throw new Error("Couldn’t load (" + res.status + "). Reload to try again.");
-      return res.json().then(function (list) { items = list; render(); });
+      return res.json().then(function (body) {
+        settings = body;
+        layout(); renderCfg(); cfgBadge();
+        every(10000, refresh); every(5000, loadCfg); every(5000, renderTiles);
+        return refresh();
+      });
     });
   }).catch(function (e) { gate(e.message); });
 })();

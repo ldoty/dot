@@ -9,7 +9,9 @@ import {
 const err = (name, message) => Object.assign(new Error(message), { name });
 const clone = (o) => (o === undefined ? undefined : structuredClone(o));
 
-export function fakeTable() {
+// pageSize: return Query results in pages of this many items (LastEvaluatedKey /
+// ExclusiveStartKey), the way DynamoDB stops at 1 MB, so code that must follow pages is tested.
+export function fakeTable({ pageSize = Infinity } = {}) {
   const rows = new Map(); // `${pk}|${sk}` -> item
   const key = ({ pk, sk }) => {
     if (!pk || !sk) throw err('ValidationException', 'The AttributeValue for a key attribute cannot contain an empty string value.');
@@ -47,7 +49,7 @@ export function fakeTable() {
     rows.set(k, item);
     return {};
   });
-  mock.on(QueryCommand).callsFake(({ KeyConditionExpression: expr, ExpressionAttributeValues: v }) => {
+  mock.on(QueryCommand).callsFake(({ KeyConditionExpression: expr, ExpressionAttributeValues: v, ExclusiveStartKey: start }) => {
     let prefix = null;
     if (expr === 'pk = :pk AND begins_with(sk, :p)') {
       prefix = v[':p'];
@@ -55,10 +57,15 @@ export function fakeTable() {
     } else if (expr !== 'pk = :pk') {
       throw new Error(`fake table: unsupported key condition ${expr}`);
     }
-    const Items = [...rows.values()]
+    const all = [...rows.values()]
       .filter((i) => i.pk === v[':pk'] && (prefix === null || i.sk.startsWith(prefix)))
-      .sort((a, b) => (a.sk < b.sk ? -1 : 1))
-      .map(clone);
+      .filter((i) => !start || i.sk > start.sk)
+      .sort((a, b) => (a.sk < b.sk ? -1 : 1));
+    const Items = all.slice(0, pageSize).map(clone);
+    if (all.length > Items.length) {
+      const last = Items[Items.length - 1];
+      return { Items, LastEvaluatedKey: { pk: last.pk, sk: last.sk } };
+    }
     return { Items };
   });
 

@@ -39,8 +39,8 @@ module "app" {
   callback_urls = [local.app_url, local.dev_url]
   tile = {
     title       = "Chamber"
-    description = "TODO: one line about Chamber."
+    description = "The mushroom chamber: humidity, air and light, and its settings."
     url         = local.app_url
-    icon        = "leaf" # see the icon list in platform/core/portal/index.html
+    icon        = "mushroom" # see the icon list in platform/core/portal/index.html
   }
 }

@@ -1,4 +1,4 @@
-# Single table: pk = TOOL, sk = ITEM#<id>. Add item types as sk prefixes.
+# Single table; the rows are listed in api/ingest.mjs. Readings carry `expires` (a year out).
 resource "aws_dynamodb_table" "main" {
   name                        = "family-chamber"
   billing_mode                = "PAY_PER_REQUEST"
@@ -13,6 +13,11 @@ resource "aws_dynamodb_table" "main" {
   attribute {
     name = "sk"
     type = "S"
+  }
+
+  ttl {
+    attribute_name = "expires"
+    enabled        = true
   }
 
   point_in_time_recovery {
