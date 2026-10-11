@@ -74,7 +74,9 @@ test('a failed sensor reading (nan) is a missing value, not a rejected reading',
 });
 
 test('the firmware sends what this endpoint expects', async () => {
-  // Keep the firmware's request and this parser in step: same header, same path
+  // Keep the firmware's request and this endpoint in step: path, key header, HTTPS
   const ino = await readFile(new URL('../firmware/chamber_telemetry/chamber_telemetry.ino', import.meta.url), 'utf8');
   assert.match(ino, /POST \/ingest HTTP\/1\.1/);
+  assert.match(ino, /x-chamber-key: /);
+  assert.match(ino, /WiFiSSLClient client;/, 'API Gateway only speaks HTTPS');
 });

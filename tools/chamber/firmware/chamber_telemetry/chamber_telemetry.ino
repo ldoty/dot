@@ -32,7 +32,7 @@ Adafruit_SHT4x sht4 = Adafruit_SHT4x();
 
 // Bump on every flash. Published as fw_build so each CSV row says which
 // firmware produced it -- 2026-09-27 saw six flashes in one afternoon.
-const int FW_BUILD = 13;
+const int FW_BUILD = 14;
 
 // The fan is wired but has no control logic yet. It still has to be driven:
 // a 4-wire fan with an UNDRIVEN PWM line runs at 100%, not off. Leaving D3
@@ -149,8 +149,11 @@ float RH_MIST_OFF_PCT = 92.0;
 // long drafts dry pins. Re-tune once the exhaust flap valve is fitted.
 // Period is measured from the END of one vent, so vents start every ~18-21
 // min in practice.
-unsigned long FAE_PERIOD_MS = 15UL * 60UL * 1000UL;
-unsigned long FAE_BURST_MS = 180UL * 1000UL;
+// Build 14 (2026-10-11): defaults = settings v19, tuned live on the 24V atomizer
+// with FAE routed through the reservoir bin. The cloud starts with no saved
+// settings, so these are what the board runs until the page saves some.
+unsigned long FAE_PERIOD_MS = 10UL * 60UL * 1000UL;
+unsigned long FAE_BURST_MS = 200UL * 1000UL;
 float FAE_FAN_DUTY_PCT = 70.0;
 
 // EXPERIMENT (2026-09-27): fan held at a low speed in every fruiting state
@@ -164,7 +167,9 @@ float FAE_FAN_DUTY_PCT = 70.0;
 // ~320-420 RPM in the chamber and appeared to cap RH near 84%; 7.5% also
 // stalls (0 RPM). So the working floor is 10%. Tune live from the settings
 // panel; 0 = fan off between vents.
-float FAN_REST_DUTY_PCT = 10.0;
+// 20% from build 14 (settings v19): with FAE through the reservoir bin the
+// rest fan carries fog into the chamber as assist air.
+float FAN_REST_DUTY_PCT = 20.0;
 
 // Whether the rest speed also applies during MIST. A running fan pushes
 // chamber air out the exhaust, fog included. Set false to stop the fan for
@@ -183,12 +188,16 @@ unsigned long VENT_SETTLE_MS = 60UL * 1000UL;
 // 20s from build 11 (2026-10-11): new 24V 1A (24W) atomizer, likely several
 // times the old 5V module's output. Start short so one burst cannot blow
 // through the band and wet the sensor; lengthen from the settings panel.
-unsigned long MIST_BURST_MAX_MS = 20UL * 1000UL;
+// 60s from build 14 (settings v19): run live on the 24V unit with no overshoot
+// past the band and no condensation. 60s is also the firmware's hard cap.
+unsigned long MIST_BURST_MAX_MS = 60UL * 1000UL;
 // 150s, not 90: the atomizer is wick-fed, and back-to-back 30/90 cycles (25%
 // duty) looked like they outran the wick's refill (2026-09-27). A longer
 // settle gives the wick time to re-wet and gives the dry-run check a longer
 // window to catch the peak. Duty is now 30/180 = 17%.
-unsigned long MIST_SETTLE_MS = 150UL * 1000UL;
+// 100s from build 14 (settings v19): the 24V atomizer is float-fed, not
+// wick-fed, so there is no wick to re-wet.
+unsigned long MIST_SETTLE_MS = 100UL * 1000UL;
 
 // ---- Guards (BUILD.md "No float switch -- software interlock instead") ----
 
@@ -348,11 +357,15 @@ const unsigned long SENSOR_RETRY_MS     = 5000;   // between re-init tries
 
 // Bounds how long a single POST can stall the loop. Fire-and-forget means
 // we would rather drop a sample than hold up control logic.
-const int HTTP_TIMEOUT_MS = 2000;
+// 3s from build 14: the connect now includes a TLS handshake to AWS.
+const int HTTP_TIMEOUT_MS = 3000;
 
 // How long we will wait for the collector's reply to read the time out of it.
 // Deliberately short -- the reply is a bonus, not something control depends on.
-const unsigned long HTTP_READ_TIMEOUT_MS = 300;
+// 1.5s from build 14 (was 300ms on the LAN): API Gateway + Lambda, which is
+// slower again on a cold start. A late reply only costs that cycle's time and
+// settings sync; sends never happen during a mist burst, so it cannot stretch one.
+const unsigned long HTTP_READ_TIMEOUT_MS = 1500;
 
 // Bounded so the board still runs headless on a USB brick with no Mac
 // attached. An unbounded `while (!Serial)` would hang the whole chamber.
@@ -1082,17 +1095,22 @@ void publish() {
     return;
   }
 
-  WiFiClient client;
+  // HTTPS to the chamber tool on dot-y.co (build 14). The TLS itself runs on
+  // the R4's ESP32-S3 modem, which carries the root certificates.
+  WiFiSSLClient client;
   client.setConnectionTimeout(HTTP_TIMEOUT_MS);
 
   if (!client.connect(COLLECTOR_HOST, COLLECTOR_PORT)) {
     publishFailures++;
-    Serial.println("# post: connect failed (is collector.py running?)");
+    Serial.println("# post: connect failed");
     return;
   }
 
   client.print("POST /ingest HTTP/1.1\r\nHost: ");
   client.print(COLLECTOR_HOST);
+  // The device key: the ingest Lambda refuses anything without it
+  client.print("\r\nx-chamber-key: ");
+  client.print(DEVICE_KEY);
   // Piggyback the active settings as a second record when they changed (or
   // after boot), so the collector learns what the board is really running.
   static char cfgLine[480];  // static: see readTimeSync()

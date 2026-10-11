@@ -29,6 +29,8 @@ arduino-cli upload  -b arduino:renesas_uno:unor4wifi -p /dev/cu.usbmodem… firm
 Each of these cost a failed attempt or a false diagnosis:
 
 - The port suffix changes between plug-ins: re-check with `arduino-cli board list`.
+- **`upload` doesn't compile**: it flashes whatever was last compiled from that sketch folder.
+  Always `compile` right before `upload`, especially after compiling with the example secrets.
 - The `arduino:renesas_uno` core ships an x86_64-only compiler: Apple Silicon needs Rosetta 2
   ("bad CPU type in executable" otherwise).
 - The library is **"Adafruit SHT4x Library"**; "Adafruit SHT4x" is "not found".
@@ -54,4 +56,4 @@ During hands-on work he can't watch a screen. Arm a background watch on the tele
 emits **one line per state transition** (burst ran + RH rise and pass/fail, vent start/end,
 safety block changes, reboots, stale telemetry) and relay each in a sentence or two. Detect
 reboots by uptime going backwards (he power-cycles freely), set the stale threshold above the
-burst gap (~90 s), and don't repeat a question he hasn't answered.
+burst gap (a 60 s burst sends nothing: use ~2 min), and don't repeat a question he hasn't answered.

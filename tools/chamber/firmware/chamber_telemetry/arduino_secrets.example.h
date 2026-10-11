@@ -1,4 +1,4 @@
-// WiFi credentials and collector address.
+// WiFi credentials, where telemetry goes, and the device key.
 //
 // Copy to arduino_secrets.h (gitignored) and fill in before flashing.
 // Never commit the real file.
@@ -6,8 +6,9 @@
 #define SECRET_SSID "YOUR_WIFI_SSID"
 #define SECRET_PASS "YOUR_WIFI_PASSWORD"
 
-// Where telemetry goes. Today: the Mac running env_control's collector.py
-// (a DHCP address -- if telemetry silently stops, check this first).
-// Moving to the chamber tool's /ingest on dot-y.co in build 14.
-#define COLLECTOR_HOST "192.168.0.x"
-#define COLLECTOR_PORT 8080
+// The chamber tool's API (tofu output api_url, without https://). HTTPS only.
+#define COLLECTOR_HOST "xxxxxxxxxx.execute-api.us-east-1.amazonaws.com"
+#define COLLECTOR_PORT 443
+
+// Must match the SecureString /family/chamber/device-key (see infra/ingest.tf)
+#define DEVICE_KEY "YOUR_DEVICE_KEY"

@@ -88,7 +88,9 @@ th { color: var(--muted); font-weight: 500 }
   var FIELDS = ["rh_pct", "temp_c", "dewpoint_c", "fan_duty_pct", "fan_rpm", "light_duty_pct", "mist_state",
                 "mist_block", "atomizer_on", "mist_ml", "mist_on_s", "mist_bursts", "uptime_s"];
   var MAX_MIN = 3 * 24 * 60;    // the API serves at most three days
-  var GAP_MS = 70000;           // longer than this between readings: the board was off or offline
+  // Longer than this between readings: the board was off or offline. Above a full mist burst
+  // (up to 60 s, with no sends) plus a publish interval, so a burst is never mistaken for an outage.
+  var GAP_MS = 120000;
   var PUBLISH_S = 10;
 
   // One chart per measure. `band` shades the target range.
@@ -410,8 +412,8 @@ th { color: var(--muted); font-weight: 500 }
     if (!r) { st.textContent = "No readings in this range yet. Is the chamber on?"; $("tiles").innerHTML = ""; return; }
     var age = (Date.now() - r.t) / 1000;
     var ago = age < 90 ? Math.round(age) + " s" : age < 5400 ? Math.round(age / 60) + " min" : Math.round(age / 3600) + " h";
-    st.textContent = (age > 70 ? "Stale: " : "") + "last reading " + ago + " ago · up " + Math.floor((r.uptime_s || 0) / 60) + " min";
-    st.className = "status" + (age > 70 ? " stale" : "");
+    st.textContent = (age > GAP_MS / 1000 ? "Stale: " : "") + "last reading " + ago + " ago · up " + Math.floor((r.uptime_s || 0) / 60) + " min";
+    st.className = "status" + (age > GAP_MS / 1000 ? " stale" : "");
     var band = r.rh_pct >= 85 && r.rh_pct <= 95 ? "in band" : r.rh_pct < 85 ? "below band" : "above band";
     $("tiles").innerHTML = [
       ["RH", fix(r.rh_pct, 1, "") + "<small>% " + band + "</small>"],
