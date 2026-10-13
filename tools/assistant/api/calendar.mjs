@@ -9,6 +9,15 @@ const TAG = { source: 'home_host', by: 'assistant' };
 // Ask for every event type by name, so none is left out by Google's default: flights and
 // reservations Gmail adds are "fromGmail", not "default".
 const EVENT_TYPES = ['default', 'fromGmail', 'outOfOffice', 'focusTime', 'workingLocation', 'birthday'];
+// Google's event colors by the names its app shows; an event without a colorId takes its calendar's color
+export const COLORS = { lavender: '1', sage: '2', grape: '3', flamingo: '4', banana: '5', tangerine: '6', peacock: '7', graphite: '8', blueberry: '9', basil: '10', tomato: '11' };
+const colorName = (id) => Object.keys(COLORS).find((k) => COLORS[k] === id);
+// "default" clears the event's own color (null clears a field in a PATCH)
+const colorId = (name) => {
+  if (name === 'default') return null;
+  if (!Object.hasOwn(COLORS, name)) throw new Error(`Unknown color "${name}". Use one of: ${Object.keys(COLORS).join(', ')}, default`);
+  return COLORS[name];
+};
 
 /** "2026-10-05T14:00" (wall time in tz) -> "2026-10-05T14:00:00-04:00"; values with an offset pass through */
 export function toRfc3339(value, timeZone) {
@@ -68,6 +77,7 @@ export function makeCalendar({ accessToken, calendars, readOnly = [], timeZone, 
     ...(e.location ? { location: e.location } : {}),
     ...(e.description ? { description: e.description.slice(0, 500) } : {}),
     ...(e.eventType && e.eventType !== 'default' ? { type: e.eventType } : {}),
+    ...(colorName(e.colorId) ? { color: colorName(e.colorId) } : {}),
     created_by_assistant: e.extendedProperties?.private?.by === 'assistant',
   });
 
@@ -91,19 +101,21 @@ export function makeCalendar({ accessToken, calendars, readOnly = [], timeZone, 
       return (r.items || []).filter((e) => e.status !== 'cancelled').map(view);
     },
 
-    async createEvent({ calendar, title, location, description, ...time }) {
+    async createEvent({ calendar, title, location, description, color, ...time }) {
       const e = await call('POST', `/calendars/${writableIdFor(calendar)}/events`, {
         summary: title, ...(location ? { location } : {}), ...(description ? { description } : {}),
+        ...(color && color !== 'default' ? { colorId: colorId(color) } : {}),
         ...when(time), extendedProperties: { private: TAG },
       });
       return view(e);
     },
 
-    async updateEvent({ calendar, event_id: eventId, title, location, description, start, end, all_day: allDay }) {
+    async updateEvent({ calendar, event_id: eventId, title, location, description, color, start, end, all_day: allDay }) {
       const patch = {
         ...(title !== undefined ? { summary: title } : {}),
         ...(location !== undefined ? { location } : {}),
         ...(description !== undefined ? { description } : {}),
+        ...(color !== undefined ? { colorId: colorId(color) } : {}),
         ...(start !== undefined ? when({ start, end, all_day: allDay }) : {}),
       };
       return view(await call('PATCH', `/calendars/${writableIdFor(calendar)}/events/${encodeURIComponent(eventId)}`, patch));

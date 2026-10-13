@@ -103,3 +103,15 @@ test('tools: change tools offer only calendars you can change, and vanish when t
   const readOnly = makeTools({ calendar, calendarNames: ['luke'], readOnlyCalendars: ['luke'] });
   assert.deepEqual(readOnly.definitions.map((d) => d.name), ['list_calendars', 'list_events']);
 });
+
+test('tools: create and update take a color by name; anything else is refused before the calendar is called', async () => {
+  const runs = [];
+  const calendar = new Proxy({}, { get: (_, name) => async (i) => { runs.push([name, i.color]); return {}; } });
+  const tools = makeTools({ calendar, calendarNames: ['amber'] });
+  for (const n of ['create_event', 'update_event']) assert.ok(tools.definitions.find((d) => d.name === n).input_schema.properties.color.enum.includes('tomato'), n);
+  const ok = await tools.run({ id: 't1', name: 'update_event', input: { calendar: 'amber', event_id: 'e1', color: 'default' } });
+  const bad = await tools.run({ id: 't2', name: 'update_event', input: { calendar: 'amber', event_id: 'e1', color: 'red' } });
+  assert.equal(ok.is_error, undefined);
+  assert.equal(bad.is_error, true);
+  assert.deepEqual(runs, [['updateEvent', 'default']]);
+});

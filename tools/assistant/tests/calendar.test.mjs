@@ -127,3 +127,18 @@ test('a read-only calendar can be read but never changed, before Google is asked
   assert.equal(listed.find((l) => l.calendar === 'luke').read_only, true);
   assert.equal(listed.find((l) => l.calendar === 'shared').read_only, undefined);
 });
+
+test('colors: set by name on create and update, cleared with "default", shown by name', async () => {
+  const g = fakeGoogle({ 'PATCH /calendar/v3/calendars/luke.doty%40gmail.com/events/e1': { body: { id: 'e1', summary: 'Dentist', colorId: '11', start: { date: '2026-10-05' }, end: { date: '2026-10-06' } } } });
+  await cal(g).createEvent({ calendar: 'shared', title: 'Dentist', start: '2026-10-05T14:00', color: 'basil' });
+  await cal(g).createEvent({ calendar: 'shared', title: 'Plain', start: '2026-10-05T14:00', color: 'default' });
+  const shown = await cal(g).updateEvent({ calendar: 'luke', event_id: 'e1', color: 'tomato' });
+  await cal(g).updateEvent({ calendar: 'luke', event_id: 'e1', color: 'default' });
+  assert.equal(g.requests[0].body.colorId, '10');
+  assert.equal('colorId' in g.requests[1].body, false, 'a new event in the default color sends none');
+  assert.deepEqual(g.requests[2].body, { colorId: '11' });
+  assert.deepEqual(g.requests[3].body, { colorId: null }, 'null clears the event’s color in a PATCH');
+  assert.equal(shown.color, 'tomato');
+  await assert.rejects(cal(g).updateEvent({ calendar: 'luke', event_id: 'e1', color: 'toString' }), /Unknown color/);
+  assert.equal(g.requests.length, 4);
+});

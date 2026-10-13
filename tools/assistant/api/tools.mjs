@@ -3,7 +3,14 @@
 // tools discovery found for them (discovery.mjs: { definitions, connected, handlers }). Each tool's input
 // is checked here before anything runs, and a failure comes back to Claude as an error result.
 
+import { COLORS } from './calendar.mjs';
+
 const dateTime = 'Date "YYYY-MM-DD" or local time "YYYY-MM-DDTHH:MM" (the calendar’s time zone unless an offset is given)';
+
+const color = {
+  type: 'string', enum: [...Object.keys(COLORS), 'default'],
+  description: 'Event color, by the names Google Calendar shows; "default" uses the calendar’s own color',
+};
 
 export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = [], budget, discovered = { definitions: [], connected: [], handlers: {} } }) {
   const cal = { type: 'string', enum: calendarNames, description: 'Which calendar' };
@@ -45,6 +52,7 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
           all_day: { type: 'boolean' },
           location: { type: 'string' },
           description: { type: 'string' },
+          color,
         },
         required: ['calendar', 'title', 'start'],
         additionalProperties: false,
@@ -52,7 +60,7 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
     },
     {
       name: 'update_event',
-      description: 'Change an existing event: only the fields given are changed. When changing the time, give start and end (and all_day for all-day events).',
+      description: 'Change an existing event (including its color): only the fields given are changed. When changing the time, give start and end (and all_day for all-day events).',
       input_schema: {
         type: 'object',
         properties: {
@@ -64,6 +72,7 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
           all_day: { type: 'boolean' },
           location: { type: 'string' },
           description: { type: 'string' },
+          color,
         },
         required: ['calendar', 'event_id'],
         additionalProperties: false,
