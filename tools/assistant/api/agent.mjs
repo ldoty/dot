@@ -1,7 +1,7 @@
 // One conversation turn, independent of how it was delivered: the web page streams it,
 // and a phone channel can run the same turn and send back the final text.
 //
-//   runTurn({ ...deps, userId, conversationId?, text, channel?, onEvent? })
+//   runTurn({ ...deps, userId, conversationId?, text, images?, channel?, onEvent? })
 //     -> { conversationId, text, stopReason }
 //   onEvent receives { type: 'conversation' | 'text' | 'tool' | 'error' , ... } as the turn runs.
 
@@ -9,7 +9,7 @@
 export function systemPrompt({ name, calendars = false, budget = false, connected = [], channel = 'web' } = {}) {
   const who = name || 'a member of the family';
   const where = channel === 'sms'
-    ? `They're texting you (SMS), so reply in plain text with no Markdown (no asterisks, headings or tables), in a few short sentences. Long replies are split across several texts. Texts can't carry links: never write a web address; name the family tool instead ("open Budget on the family site").`
+    ? `They're texting you (SMS), so reply in plain text with no Markdown (no asterisks, headings or tables), in a few short sentences. Long replies are split across several texts. Texts can't carry links: never write a web address; name the family tool instead ("open Budget on the family site"). They can text you photos (an appointment card, a flyer, a receipt). You see a photo only with the message it came in, so put what matters from it in your reply.`
     : `They reach you from a private web page, so keep replies short and plain; they're often on their phone.`;
   const parts = [`You are Dot (short for Dorothy), the Doty family's assistant, named after the family's dot-y.co. You're talking with ${who}. ${where}
 
@@ -52,19 +52,27 @@ function withCacheBreakpoint(messages) {
 
 export async function runTurn({
   client, store, tools, model, fallbackState, timeZone, now = () => new Date(), log = () => {}, person = {},
-  userId, conversationId, text, channel = 'web', onEvent = () => {}, effort = 'low',
+  userId, conversationId, text, images = [], channel = 'web', onEvent = () => {}, effort = 'low',
 }) {
+  const said = text.trim();
   let conv = conversationId ? await store.getConversation(userId, conversationId) : null;
   if (conversationId && !conv) throw Object.assign(new Error('No such conversation'), { status: 404 });
-  if (!conv) conv = await store.createConversation(userId, { id: uid(), title: text.trim().slice(0, 60), channel, now: now() });
+  if (!conv) conv = await store.createConversation(userId, { id: uid(), title: (said || (images.length > 1 ? 'Photos' : 'Photo')).slice(0, 60), channel, now: now() });
   onEvent({ type: 'conversation', id: conv.id, title: conv.title });
 
   const history = await store.loadMessages(userId, conv.id);
-  const append = async (message) => {
-    await store.appendMessage(userId, conv.id, history.length, message, now(), conv.channel);
+  // `stored` is what's kept when it differs from what Claude sees: photos aren't kept (a stored
+  // message is one DynamoDB item, 400 KB at most), so later turns see a note where they were
+  const append = async (message, stored = message) => {
+    await store.appendMessage(userId, conv.id, history.length, stored, now(), conv.channel);
     history.push(message);
   };
-  await append({ role: 'user', content: [{ type: 'text', text: stamp(now(), timeZone) }, { type: 'text', text }] });
+  const at = { type: 'text', text: stamp(now(), timeZone) };
+  const words = said ? [{ type: 'text', text }] : [];
+  await append(
+    { role: 'user', content: [at, ...images.map((i) => ({ type: 'image', source: { type: 'base64', media_type: i.media_type, data: i.data } })), ...words] },
+    { role: 'user', content: [at, ...(images.length ? [{ type: 'text', text: `[${images.length > 1 ? `${images.length} photos` : 'Photo'}, not kept]` }] : []), ...words] },
+  );
 
   const has = (name) => tools.definitions.some((d) => d.name === name);
   const system = systemPrompt({ name: person.name, calendars: has('list_events'), budget: has('read_budget'), connected: tools.connected || [], channel });

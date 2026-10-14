@@ -8,6 +8,8 @@
 //      newer than its latest OPTOUT#) and belongs to a family member: a Cognito user with that
 //      verified phone_number in the family_assistant group (the same gate as the web page).
 //      Unknown numbers get no answer at all.
+//      Pictures (MMS) go along as Twilio media links, never the bytes: the worker downloads them,
+//      shows them to Claude for that one turn and deletes them from Twilio.
 //   4. Dot's turn can outlast Twilio's 15-second webhook timeout, so it runs in Dot's own SMS
 //      worker (tools/assistant/api/sms.mjs), invoked asynchronously; the worker texts the reply.
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -16,7 +18,7 @@ import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { CognitoIdentityProviderClient, ListUsersCommand, AdminListGroupsForUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { PROGRAM } from './program.mjs';
-import { maskPhone, twilioConfig, validTwilioSignature } from './twilio.mjs';
+import { maskPhone, mediaUrlPattern, twilioConfig, validTwilioSignature } from './twilio.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -35,7 +37,24 @@ export function keyword(params) {
 }
 
 export const NOT_SET_UP = `${PROGRAM.name}: This number isn't set up to text Dot yet. For help, email ${PROGRAM.contact}.`;
-export const TEXT_ONLY = `${PROGRAM.name}: Dot can only read text messages for now.`;
+export const TEXT_ONLY = `${PROGRAM.name}: Dot can read texts and photos, but not other attachments yet.`;
+
+// What Claude can look at; MMS photos from phones are JPEG (iPhones convert HEIC when sending)
+export const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+export const MAX_IMAGES = 4;
+
+/** The pictures in a message, as { url, type }, and how many attachments were left out */
+export function mediaIn(params, accountSid) {
+  const media = [];
+  let skipped = 0;
+  const count = Math.min(Number.parseInt(params.NumMedia, 10) || 0, 10); // Twilio allows 10 per message
+  for (let i = 0; i < count; i++) {
+    const url = params[`MediaUrl${i}`], type = String(params[`MediaContentType${i}`] || '').toLowerCase();
+    if (IMAGE_TYPES.includes(type) && mediaUrlPattern(accountSid).test(url || '') && media.length < MAX_IMAGES) media.push({ url, type });
+    else skipped++;
+  }
+  return { media, skipped };
+}
 
 const xml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const twiml = (message) => ({
@@ -59,7 +78,7 @@ export async function optedIn(phone) {
 
 /**
  * deps: twilio() -> { accountSid, authToken } (signature checks only), findMember(phone) -> { sub, username } | null,
- *       startTurn({ userId, username, phone, text, messageSid }), now()
+ *       startTurn({ userId, username, phone, text, media, skipped, messageSid }), now()
  */
 export function createWebhook({ twilio, findMember, startTurn, now = () => new Date() }) {
   return async (event) => {
@@ -104,8 +123,9 @@ export function createWebhook({ twilio, findMember, startTurn, now = () => new D
       return twiml(NOT_SET_UP);
     }
     const text = String(params.Body || '').trim();
-    if (!text) return twiml(TEXT_ONLY);
-    await startTurn({ userId: member.sub, username: member.username, phone, text: text.slice(0, 2000), messageSid: params.MessageSid });
+    const { media, skipped } = mediaIn(params, accountSid);
+    if (!text && !media.length) return twiml(TEXT_ONLY);
+    await startTurn({ userId: member.sub, username: member.username, phone, text: text.slice(0, 2000), media, skipped, messageSid: params.MessageSid });
     console.log('to Dot', maskPhone(phone), params.MessageSid);
     return twiml();
   };

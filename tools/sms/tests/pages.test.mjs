@@ -67,6 +67,11 @@ test('/privacy has the required sharing sentence verbatim and covers collection,
   for (const topic of [/name and email address/i, /mobile number/i, /message content/i, /How long we keep it/, /deleted/i]) assert.match(t, topic);
 });
 
+// Dot's SMS worker deletes texted photos from Twilio and stores only a note (tools/assistant/api/sms.mjs)
+test('/privacy says texted photos are used for that message only and not kept', () => {
+  assert.match(text(pages.privacy), /Photos you text in: used only to answer the message they came with, then deleted, including from Twilio\. We don’t keep a copy\./);
+});
+
 test('/terms has the required items', () => {
   const t = text(pages.terms);
   for (const s of ['Message frequency varies', 'Msg & data rates may apply', 'Reply STOP to cancel', 'Reply HELP for help', 'Carriers are not liable for delayed or undelivered messages', PROGRAM.contact]) {

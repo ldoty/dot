@@ -75,6 +75,8 @@ Twilio's 15-second timeout. The worker runs `runTurn()` as that person with `cha
   They show up on the web page like any other conversation.
 - Replies are plain text, split into at most three texts, and never carry links (the campaign is
   registered without embedded links): web addresses are replaced before sending.
+- Photos (up to four) are downloaded from Twilio, deleted there, and shown to Claude for that turn only;
+  the conversation stores “[Photo, not kept]” in their place, so Dot is told to put what matters in its reply.
 - The worker runs one turn at a time (reserved concurrency 1; other texts wait in line), never
   retries a turn, and drops a text that has waited more than 15 minutes.
 

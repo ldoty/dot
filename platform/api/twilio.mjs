@@ -45,7 +45,7 @@ export async function sendText({ accountSid, apiKeySid, apiKeySecret, messagingS
   const r = await fetchFn(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
     method: 'POST',
     headers: {
-      authorization: `Basic ${Buffer.from(`${apiKeySid}:${apiKeySecret}`).toString('base64')}`,
+      authorization: basic({ apiKeySid, apiKeySecret }),
       'content-type': 'application/x-www-form-urlencoded',
     },
     body: new URLSearchParams({ To: to, MessagingServiceSid: messagingServiceSid, Body: body }).toString(),
@@ -54,6 +54,30 @@ export async function sendText({ accountSid, apiKeySid, apiKeySecret, messagingS
   // 21610: the number replied STOP. Twilio won't deliver, which is what we want.
   if (!r.ok) throw Object.assign(new Error(`Twilio ${r.status}: ${out.message || 'send failed'}`), { status: r.status, code: out.code });
   return out.sid;
+}
+
+// A picture texted in (MMS) is a media resource on the message, at an address like this. The worker
+// signs in to it with the API key, so it must never fetch any other address: only this account's media.
+export const mediaUrlPattern = (accountSid) => new RegExp(`^https://api\\.twilio\\.com/2010-04-01/Accounts/${accountSid}/Messages/MM\\w{32}/Media/ME\\w{32}$`);
+
+const basic = ({ apiKeySid, apiKeySecret }) => `Basic ${Buffer.from(`${apiKeySid}:${apiKeySecret}`).toString('base64')}`;
+
+/** Downloads one picture (Twilio redirects to its storage; fetch drops the credentials on the way) */
+export async function fetchMedia(config, url, { maxBytes, fetchFn = fetch }) {
+  if (!mediaUrlPattern(config.accountSid).test(url)) throw new Error('not this account’s Twilio media');
+  const r = await fetchFn(url, { headers: { authorization: basic(config) } });
+  if (!r.ok) throw new Error(`Twilio media ${r.status}`);
+  if (Number(r.headers.get('content-length')) > maxBytes) throw new Error('too large');
+  const bytes = Buffer.from(await r.arrayBuffer());
+  if (bytes.length > maxBytes) throw new Error('too large');
+  return { type: (r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase(), bytes };
+}
+
+/** Deletes a picture from Twilio, which otherwise keeps it for as long as the account exists */
+export async function deleteMedia(config, url, fetchFn = fetch) {
+  if (!mediaUrlPattern(config.accountSid).test(url)) throw new Error('not this account’s Twilio media');
+  const r = await fetchFn(`${url}.json`, { method: 'DELETE', headers: { authorization: basic(config) } });
+  if (!r.ok && r.status !== 404) throw new Error(`Twilio media delete ${r.status}`);
 }
 
 /** "+18645550123" -> "+1864555****", for logs */

@@ -41,6 +41,12 @@ reaches Dot only if the number is opted in **and** is the verified `phone_number
 Cognito user in `family_assistant` (only an admin can mark a number verified). An opted-in number
 that isn't a member's gets a short note; anything else gets no answer.
 
+**Photos (MMS):** the webhook passes up to four images (JPEG, PNG, GIF, WebP) as Twilio media links,
+only ones under this account's `api.twilio.com/…/Media/ME…` (the worker signs in to them with the API
+key), and counts other attachments. Dot's worker downloads each (3.75 MB at most, Bedrock's limit), deletes it
+from Twilio, and shows it to Claude for that turn only; the stored conversation keeps a “[Photo, not kept]”
+note instead (dot-y.co/privacy says photos aren't kept). Attachments that didn't come through are noted to Dot.
+
 **Twilio setup** (console, Messaging Service that carries the campaign):
 
 - Credentials in SSM, set by hand (never in OpenTofu state), split so nothing that sends texts holds the Auth Token:

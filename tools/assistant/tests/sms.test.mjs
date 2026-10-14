@@ -2,6 +2,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import Anthropic from '@anthropic-ai/sdk';
 import { createSmsWorker, toTexts, QUIET_HOURS } from '../api/sms.mjs';
+import { fetchMedia, deleteMedia } from '../api/twilio.mjs';
 import { systemPrompt } from '../api/agent.mjs';
 import { deps, NOW, store, table } from './helpers/deps.mjs';
 import { text, toolUse } from './helpers/fake-claude.mjs';
@@ -84,6 +85,7 @@ test('malformed events never run a turn or send a text', async () => {
   const { run, sent, claude } = worker([]);
   await run('Hi', { phone: '+447700900123' });
   await run('   ');
+  await run('   ', { media: [] });
   await run('Hi', { userId: undefined });
   assert.deepEqual([sent.length, claude.calls.length], [0, 0]);
 });
@@ -121,4 +123,104 @@ test('texted conversations expire a year after their last message; web ones neve
   const { runTurn } = await import('../api/agent.mjs');
   await runTurn({ ...web.deps, userId: USER, text: 'Hello' });
   assert.ok(table.dump().every(([, item]) => item.expiresAt === undefined));
+});
+
+// Photos (MMS): fake Twilio media, served from a map of url -> { type, bytes } (or a status)
+const SID = 'AC' + '1'.repeat(32);
+const mediaUrl = (n) => `https://api.twilio.com/2010-04-01/Accounts/${SID}/Messages/MM${'9'.repeat(32)}/Media/ME${String(n).repeat(32)}`;
+function twilioMedia(files) {
+  const fetched = [], deleted = [];
+  return {
+    fetched, deleted,
+    fetchMedia: async (url, maxBytes) => {
+      fetched.push(url);
+      const f = files[url];
+      if (!f || f.status) throw new Error(`Twilio media ${f?.status ?? 404}`);
+      if (f.bytes.length > maxBytes) throw new Error('too large');
+      return f;
+    },
+    deleteMedia: async (url) => { deleted.push(url); },
+  };
+}
+const JPEG = Buffer.from('fake jpeg bytes');
+const userBlocks = (call) => call.params.messages[0].content;
+
+test('a photo is shown to Claude for that turn, deleted from Twilio, and not kept', async () => {
+  const m = twilioMedia({ [mediaUrl(1)]: { type: 'image/jpeg', bytes: JPEG } });
+  const { run, sent, claude } = worker([text('That’s a dentist card for Oct 20 at 3 PM.'), text('Added.')], m);
+  await run('', { media: [{ url: mediaUrl(1), type: 'image/jpeg' }] });
+  const blocks = userBlocks(claude.calls[0]);
+  assert.deepEqual(blocks.map((b) => b.type), ['text', 'image'], 'the time, then the photo; no empty text block');
+  assert.deepEqual(blocks[1].source, { type: 'base64', media_type: 'image/jpeg', data: JPEG.toString('base64') });
+  assert.deepEqual(m.deleted, [mediaUrl(1)]);
+  assert.deepEqual(sent.map((s) => s.body), ['That’s a dentist card for Oct 20 at 3 PM.']);
+
+  const [conv] = await smsConversations();
+  assert.equal(conv.title, 'Photo');
+  const stored = table.dump().map(([, item]) => item.content).filter(Boolean).join('');
+  assert.ok(!stored.includes(JPEG.toString('base64')), 'the photo isn’t stored');
+  assert.match(stored, /\[Photo, not kept\]/);
+
+  await run('Add it to my calendar');
+  assert.deepEqual(claude.calls[1].params.messages[0].content.map((b) => b.type), ['text', 'text'], 'a later turn sees the note, not the photo');
+});
+
+test('a photo with words: Claude gets both; tool steps in that turn still see the photo', async () => {
+  const m = twilioMedia({ [mediaUrl(1)]: { type: 'image/png', bytes: JPEG } });
+  const { run, claude } = worker([
+    toolUse('create_event', { calendar: 'shared', title: 'Soccer', start: '2026-10-10T09:00' }),
+    text('Added Soccer.'),
+  ], m);
+  await run('Add this', { media: [{ url: mediaUrl(1), type: 'image/png' }] });
+  assert.deepEqual(userBlocks(claude.calls[0]).slice(1).map((b) => b.text ?? b.type), ['image', 'Add this']);
+  assert.equal(userBlocks(claude.calls[1])[1].type, 'image');
+});
+
+test('photos that can’t be opened are deleted anyway, and Dot is told what didn’t come through', async () => {
+  const m = twilioMedia({
+    [mediaUrl(1)]: { status: 500 },
+    [mediaUrl(2)]: { type: 'image/jpeg', bytes: Buffer.alloc(3_750_001) },
+    [mediaUrl(3)]: { type: 'text/html', bytes: JPEG },
+  });
+  const { run, claude, sent } = worker([text('I couldn’t open those.')], m);
+  await run('What’s this?', { media: [1, 2, 3].map((n) => ({ url: mediaUrl(n), type: 'image/jpeg' })), skipped: 1 });
+  assert.deepEqual(m.deleted, [1, 2, 3].map(mediaUrl));
+  assert.deepEqual(userBlocks(claude.calls[0]).slice(1).map((b) => b.text), ['What’s this?\n\n[4 attachments couldn’t be opened]']);
+  assert.equal(sent.length, 1);
+});
+
+test('only a photo, and it can’t be opened: a short reply, no turn', async () => {
+  const m = twilioMedia({});
+  const { run, claude, sent } = worker([], m);
+  await run('', { media: [{ url: mediaUrl(1), type: 'image/jpeg' }] });
+  assert.equal(claude.calls.length, 0);
+  assert.deepEqual(sent.map((s) => s.body), ['Dot couldn’t open that photo. Try sending it again.']);
+  assert.deepEqual(m.deleted, [mediaUrl(1)]);
+});
+
+test('a failed delete is logged, not fatal', async () => {
+  const m = { ...twilioMedia({ [mediaUrl(1)]: { type: 'image/jpeg', bytes: JPEG } }), deleteMedia: async () => { throw new Error('Twilio 503'); } };
+  const { run, sent } = worker([text('Got it.')], m);
+  await run('', { media: [{ url: mediaUrl(1), type: 'image/jpeg' }] });
+  assert.deepEqual(sent.map((s) => s.body), ['Got it.']);
+});
+
+test('Twilio media: signs in only to this account’s media, and refuses oversized downloads', async () => {
+  const cfg = { accountSid: SID, apiKeySid: 'SK' + '2'.repeat(32), apiKeySecret: 'secret' };
+  const calls = [];
+  const fetchFn = async (url, o = {}) => {
+    calls.push({ url, method: o.method || 'GET', auth: o.headers?.authorization });
+    const size = url.includes('ME3') ? 10 : 4;
+    return { ok: true, status: 200, headers: new Headers({ 'content-type': 'image/jpeg; charset=binary', 'content-length': String(size) }), arrayBuffer: async () => new ArrayBuffer(size) };
+  };
+  const got = await fetchMedia(cfg, mediaUrl(1), { maxBytes: 5, fetchFn });
+  assert.deepEqual([got.type, got.bytes.length], ['image/jpeg', 4]);
+  assert.equal(calls[0].auth, `Basic ${Buffer.from(`${cfg.apiKeySid}:secret`).toString('base64')}`);
+  await assert.rejects(fetchMedia(cfg, mediaUrl(3), { maxBytes: 5, fetchFn }), /too large/);
+  for (const bad of ['https://evil.example.com/x', mediaUrl(1).replace(SID, 'AC' + '3'.repeat(32)), `${mediaUrl(1)}/../../x`]) {
+    await assert.rejects(fetchMedia(cfg, bad, { maxBytes: 5, fetchFn }), /not this account/);
+    await assert.rejects(deleteMedia(cfg, bad, fetchFn), /not this account/);
+  }
+  await deleteMedia(cfg, mediaUrl(1), fetchFn);
+  assert.deepEqual(calls.map((c) => [c.method, c.url]), [['GET', mediaUrl(1)], ['GET', mediaUrl(3)], ['DELETE', `${mediaUrl(1)}.json`]]);
 });

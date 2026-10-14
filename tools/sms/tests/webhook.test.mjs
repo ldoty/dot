@@ -49,7 +49,7 @@ test('an opted-in family member’s text goes to Dot, and Twilio gets an empty r
   assert.equal(r.statusCode, 200);
   assert.equal(r.headers['content-type'], 'text/xml');
   assert.equal(r.body, '<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
-  assert.deepEqual(turns, [{ userId: 'luke-sub', username: 'luke-sub', phone: PHONE, text: 'What’s on Saturday?', messageSid: 'SM' + '9'.repeat(32) }]);
+  assert.deepEqual(turns, [{ userId: 'luke-sub', username: 'luke-sub', phone: PHONE, text: 'What’s on Saturday?', media: [], skipped: 0, messageSid: 'SM' + '9'.repeat(32) }]);
 });
 
 test('base64 bodies (as API Gateway may send them) are read the same way', async () => {
@@ -155,9 +155,48 @@ test('an opted-in number that isn’t a family member’s is told so, and Dot ne
   assert.equal(turns.length, 0);
 });
 
-test('a picture with no words gets a short note', async () => {
+const mediaUrl = (n, sid = SID) => `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages/MM${'9'.repeat(32)}/Media/ME${String(n).repeat(32)}`;
+
+test('photos go to Dot as Twilio media links, with or without words', async () => {
   consent();
   const { handle, turns } = webhook();
+  assert.equal(message(await handle(inbound({ Body: '', NumMedia: '1', MediaUrl0: mediaUrl(1), MediaContentType0: 'image/jpeg' }))), null);
+  await handle(inbound({ Body: 'Add this', NumMedia: '2', MediaUrl0: mediaUrl(1), MediaContentType0: 'image/png', MediaUrl1: mediaUrl(2), MediaContentType1: 'IMAGE/JPEG' }));
+  assert.deepEqual(turns.map((t) => [t.text, t.media, t.skipped]), [
+    ['', [{ url: mediaUrl(1), type: 'image/jpeg' }], 0],
+    ['Add this', [{ url: mediaUrl(1), type: 'image/png' }, { url: mediaUrl(2), type: 'image/jpeg' }], 0],
+  ]);
+});
+
+// The worker signs in to these links with the API key, so only this account's media may pass
+test('other attachments, and links that aren’t this account’s Twilio media, are left out and counted', async () => {
+  consent();
+  const { handle, turns } = webhook();
+  await handle(inbound({
+    Body: 'Look', NumMedia: '5',
+    MediaUrl0: mediaUrl(1), MediaContentType0: 'video/mp4',
+    MediaUrl1: 'https://evil.example.com/x.jpg', MediaContentType1: 'image/jpeg',
+    MediaUrl2: mediaUrl(2, 'AC' + '2'.repeat(32)), MediaContentType2: 'image/jpeg',
+    MediaUrl3: `${mediaUrl(3)}?x=1`, MediaContentType3: 'image/jpeg',
+    MediaUrl4: mediaUrl(4), MediaContentType4: 'image/jpeg',
+  }));
+  assert.deepEqual(turns[0].media, [{ url: mediaUrl(4), type: 'image/jpeg' }]);
+  assert.equal(turns[0].skipped, 4);
+});
+
+test('at most four photos go to Dot', async () => {
+  consent();
+  const { handle, turns } = webhook();
+  const fields = { Body: '', NumMedia: '6' };
+  for (let i = 0; i < 6; i++) Object.assign(fields, { [`MediaUrl${i}`]: mediaUrl(i), [`MediaContentType${i}`]: 'image/jpeg' });
+  await handle(inbound(fields));
+  assert.deepEqual([turns[0].media.length, turns[0].skipped], [4, 2]);
+});
+
+test('an attachment Dot can’t read, with no words, gets a short note', async () => {
+  consent();
+  const { handle, turns } = webhook();
+  assert.equal(message(await handle(inbound({ Body: '', NumMedia: '1', MediaUrl0: mediaUrl(1), MediaContentType0: 'text/vcard' }))), TEXT_ONLY);
   assert.equal(message(await handle(inbound({ Body: '', NumMedia: '1' }))), TEXT_ONLY);
   assert.equal(turns.length, 0);
 });
