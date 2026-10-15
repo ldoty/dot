@@ -2,6 +2,7 @@
 # Google Workspace), stored in a private bucket for 90 days, and forwarded to Gmail by a Lambda
 # with Reply-To set to the original sender. dot-y.co is a verified SES sending domain (DKIM,
 # SPF via a MAIL FROM subdomain, DMARC) so forwarded mail isn't treated as spoofed.
+# dot@dot-y.co (email Dot) is in dot.tf; househunt@ adds its own rule from tools/house-hunt.
 
 terraform {
   required_version = ">= 1.10"
@@ -120,19 +121,39 @@ resource "aws_s3_bucket_lifecycle_configuration" "mail" {
       days = 90
     }
   }
+  # Mail to Dot (dot.tf) can carry photos, which Dot keeps a week; the conversation keeps the words
+  rule {
+    id     = "dot-expire-after-8-days"
+    status = "Enabled"
+    filter {
+      prefix = "dot/"
+    }
+    expiration {
+      days = 8
+    }
+  }
 }
 
 resource "aws_s3_bucket_policy" "mail" {
   bucket = aws_s3_bucket.mail.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "ses.amazonaws.com" }
-      Action    = "s3:PutObject"
-      Resource  = "${aws_s3_bucket.mail.arn}/inbound/*"
-      Condition = { StringEquals = { "AWS:SourceAccount" = data.aws_caller_identity.current.account_id } }
-    }]
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Service = "ses.amazonaws.com" }
+        Action    = "s3:PutObject"
+        Resource  = ["${aws_s3_bucket.mail.arn}/inbound/*", "${aws_s3_bucket.mail.arn}/dot/*"]
+        Condition = { StringEquals = { "AWS:SourceAccount" = data.aws_caller_identity.current.account_id } }
+      },
+      {
+        # Dot's email worker (tools/assistant) reads the messages the gate hands it, and nothing else here
+        Effect    = "Allow"
+        Principal = { AWS = data.aws_lambda_function.dot_email_worker.role }
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.mail.arn}/dot/*"
+      },
+    ]
   })
 }
 

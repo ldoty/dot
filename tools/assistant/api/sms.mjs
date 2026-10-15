@@ -3,7 +3,7 @@
 // invokes this function asynchronously (only its role may) with
 //   { userId, username, phone, text, media: [{ url, type }], skipped, messageSid }
 // Here Dot runs one turn as that person, exactly as on the web, and texts the reply back.
-// Photos are downloaded from Twilio, deleted there, and shown to Claude for this turn only: no copy is kept.
+// Photos are downloaded from Twilio and deleted there; Dot's photo bucket keeps them for a week (store.mjs).
 // A texting conversation carries on while it's active and starts over after a quiet spell, so a
 // question tomorrow doesn't drag today's thread (and its cost) along.
 import { BetaFallbackState } from '@anthropic-ai/sdk';

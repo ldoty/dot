@@ -13,6 +13,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { SSMClient, GetParameterCommand, GetParametersByPathCommand } from '@aws-sdk/client-ssm';
 import { KMSClient, SignCommand } from '@aws-sdk/client-kms';
+import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import Anthropic, { BetaFallbackState, betaRefusalFallbackMiddleware } from '@anthropic-ai/sdk';
 import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
 import { verifyAccessToken } from './verify-token.mjs';
@@ -34,6 +35,23 @@ export function errorMessage(e) {
   return 'Something went wrong. Try again.';
 }
 
+/** Photos texted or emailed in, kept in a private bucket that deletes them after a week (infra/photos.tf) */
+export function s3Photos(bucket, s3 = new S3Client({})) {
+  return {
+    put: (key, { media_type: type, data }) => s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: Buffer.from(data, 'base64'), ContentType: type })),
+    async get(key) {
+      try {
+        const r = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+        return { media_type: r.ContentType, data: Buffer.from(await r.Body.transformToByteArray()).toString('base64') };
+      } catch (e) {
+        if (e.name === 'NoSuchKey') return null; // already deleted by the bucket's lifecycle
+        throw e;
+      }
+    },
+    remove: (key) => s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })),
+  };
+}
+
 /** Builds the real dependencies from the Lambda environment */
 export function liveDeps(env = process.env) {
   // { "<cognito sub>": { name, calendars: { alias: googleCalendarId }, read_only: [alias] } }
@@ -50,7 +68,7 @@ export function liveDeps(env = process.env) {
       KeyId: env.DELEGATION_KEY, Message: bytes, MessageType: 'RAW', SigningAlgorithm: 'RSASSA_PKCS1_V1_5_SHA_256',
     }))).Signature),
   });
-  const store = makeStore({ db: DynamoDBDocumentClient.from(new DynamoDBClient({})), table: env.TABLE });
+  const store = makeStore({ db: DynamoDBDocumentClient.from(new DynamoDBClient({})), table: env.TABLE, photos: env.PHOTOS_BUCKET && s3Photos(env.PHOTOS_BUCKET) });
   // Family tools published for Dot: SSM /family/delegation/<app> = { api_url, client_id }
   const discovery = makeDiscovery({
     tokenFor,
@@ -131,7 +149,7 @@ export function createHandler(depsOrFactory) {
     if (convMatch && method === 'GET') {
       const conversation = await deps.store.getConversation(userId, convMatch[1]);
       if (!conversation) return json(404, { error: 'not found' });
-      return json(200, { conversation, transcript: toTranscript(await deps.store.loadMessages(userId, convMatch[1])) });
+      return json(200, { conversation, transcript: toTranscript(await deps.store.loadMessages(userId, convMatch[1], { photos: false })) });
     }
     if (convMatch && method === 'DELETE') {
       await deps.store.deleteConversation(userId, convMatch[1]);

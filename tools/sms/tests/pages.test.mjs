@@ -67,9 +67,10 @@ test('/privacy has the required sharing sentence verbatim and covers collection,
   for (const topic of [/name and email address/i, /mobile number/i, /message content/i, /How long we keep it/, /deleted/i]) assert.match(t, topic);
 });
 
-// Dot's SMS worker deletes texted photos from Twilio and stores only a note (tools/assistant/api/sms.mjs)
-test('/privacy says texted photos are used for that message only and not kept', () => {
-  assert.match(text(pages.privacy), /Photos you text in: used only to answer the message they came with, then deleted, including from Twilio\. We don’t keep a copy\./);
+// Dot's SMS worker deletes texted photos from Twilio; Dot's photo bucket keeps them 7 days (tools/assistant/api/store.mjs PHOTO_DAYS)
+test('/privacy says how long photos are kept', async () => {
+  const { PHOTO_DAYS } = await import('../../assistant/api/store.mjs');
+  assert.match(text(pages.privacy), new RegExp(`Photos you text or email in: kept for ${PHOTO_DAYS} days .*then deleted\\. Texted photos are deleted from Twilio as soon as they arrive\\.`));
 });
 
 test('/terms has the required items', () => {

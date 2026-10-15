@@ -154,6 +154,7 @@ resource "aws_lambda_function" "api" {
       BUDGET           = data.aws_ssm_parameter.budget.value
       DELEGATION_PATH  = "/family/delegation"
       TIME_ZONE        = "America/New_York"
+      PHOTOS_BUCKET    = aws_s3_bucket.photos.id
     }
   }
 }

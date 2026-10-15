@@ -12,6 +12,18 @@ const color = {
   description: 'Event color, by the names Google Calendar shows; "default" uses the calendar’s own color',
 };
 
+const people = {
+  type: 'array',
+  maxItems: 10,
+  items: {
+    type: 'object',
+    properties: { name: { type: 'string' }, email: { type: 'string' } },
+    additionalProperties: false,
+  },
+  description: 'People for this appointment, by name and/or email (the doctor, the office, who’s coming). They’re noted on the event '
+    + 'for reference, not invited: Google won’t send them anything.',
+};
+
 export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = [], budget, discovered = { definitions: [], connected: [], handlers: {} } }) {
   const cal = { type: 'string', enum: calendarNames, description: 'Which calendar' };
   // Changes are offered only on calendars this person may change (calendar.mjs refuses the rest too)
@@ -52,6 +64,7 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
           all_day: { type: 'boolean' },
           location: { type: 'string' },
           description: { type: 'string' },
+          people,
           color,
         },
         required: ['calendar', 'title', 'start'],
@@ -71,7 +84,8 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
           end: { type: 'string', description: dateTime },
           all_day: { type: 'boolean' },
           location: { type: 'string' },
-          description: { type: 'string' },
+          description: { type: 'string', description: 'The event’s own notes (the people list is kept separately)' },
+          people: { ...people, description: `${people.description} Replaces the whole list; [] clears it.` },
           color,
         },
         required: ['calendar', 'event_id'],
@@ -124,18 +138,25 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
     ...discovered.handlers,
   };
 
-  /** Minimal schema check: required fields, known fields, and basic types */
-  function validate(def, input) {
-    const s = def.input_schema;
-    if (!input || typeof input !== 'object' || Array.isArray(input)) return 'input must be an object';
-    for (const r of s.required || []) if (input[r] === undefined || input[r] === '') return `missing "${r}"`;
+  /** Minimal schema check: required fields, known fields, and basic types (lists of objects one level down) */
+  function validate(s, input, at = '') {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return `${at || 'input'} must be an object`;
+    for (const r of s.required || []) if (input[r] === undefined || input[r] === '') return `missing "${at}${r}"`;
     for (const [k, v] of Object.entries(input)) {
-      const p = s.properties[k];
-      if (!p) return `unknown field "${k}"`;
-      if (p.enum && !p.enum.includes(v)) return `"${k}" must be one of ${p.enum.join(', ')}`;
-      if (p.type === 'string' && typeof v !== 'string') return `"${k}" must be a string`;
-      if (p.type === 'boolean' && typeof v !== 'boolean') return `"${k}" must be true or false`;
-      if (p.type === 'integer' && !Number.isInteger(v)) return `"${k}" must be a whole number`;
+      const p = Object.hasOwn(s.properties, k) ? s.properties[k] : null, name = `${at}${k}`;
+      if (!p) return `unknown field "${name}"`;
+      if (p.enum && !p.enum.includes(v)) return `"${name}" must be one of ${p.enum.join(', ')}`;
+      if (p.type === 'string' && typeof v !== 'string') return `"${name}" must be a string`;
+      if (p.type === 'boolean' && typeof v !== 'boolean') return `"${name}" must be true or false`;
+      if (p.type === 'integer' && !Number.isInteger(v)) return `"${name}" must be a whole number`;
+      if (p.type === 'array') {
+        if (!Array.isArray(v)) return `"${name}" must be a list`;
+        if (p.maxItems && v.length > p.maxItems) return `"${name}" can have at most ${p.maxItems}`;
+        for (const [i, item] of v.entries()) {
+          const problem = p.items?.type === 'object' ? validate(p.items, item, `${name}[${i}].`) : null;
+          if (problem) return problem;
+        }
+      }
     }
     return null;
   }
@@ -149,7 +170,7 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
       const def = definitions.find((d) => d.name === block.name);
       const fail = (msg) => ({ type: 'tool_result', tool_use_id: block.id, is_error: true, content: msg });
       if (!def) return fail(`Unknown tool "${block.name}"`);
-      const problem = validate(def, block.input);
+      const problem = validate(def.input_schema, block.input);
       if (problem) return fail(`Invalid input: ${problem}`);
       try {
         const out = await handlers[block.name](block.input);

@@ -7,7 +7,21 @@ import { makeTools } from '../../api/tools.mjs';
 import { fakeClaude } from './fake-claude.mjs';
 
 export const table = fakeTable();
-export const store = makeStore({ db: DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' })), table: 'lukes-assistant' });
+export const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }));
+
+/** An in-memory photo bucket; `gets` counts fetches */
+export function fakePhotos() {
+  const kept = new Map();
+  const photos = {
+    kept, gets: 0,
+    put: async (key, photo) => { kept.set(key, photo); },
+    get: async (key) => { photos.gets++; return kept.get(key) ?? null; },
+    remove: async (key) => { kept.delete(key); },
+  };
+  return photos;
+}
+export const photos = fakePhotos();
+export const store = makeStore({ db, table: 'lukes-assistant', photos });
 export const NOW = new Date('2026-10-02T20:45:00Z'); // Fri Oct 2, 4:45 PM EDT
 
 export function fakeCalendar() {

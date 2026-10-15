@@ -142,3 +142,51 @@ test('colors: set by name on create and update, cleared with "default", shown by
   await assert.rejects(cal(g).updateEvent({ calendar: 'luke', event_id: 'e1', color: 'toString' }), /Unknown color/);
   assert.equal(g.requests.length, 4);
 });
+
+test('people are noted on the event (description + private property), never sent as attendees', async () => {
+  const g = fakeGoogle();
+  await cal(g).createEvent({
+    calendar: 'shared', title: 'Dentist', start: '2026-10-05T14:00', description: 'Bring the insurance card',
+    people: [{ name: ' Dr.  Patel ', email: 'Front.Desk@SmileClinic.example' }, { email: 'amy@example.com' }, { name: 'Amber' }],
+  });
+  const body = g.requests[0].body;
+  assert.equal(body.attendees, undefined, 'a service account can’t invite on Gmail calendars');
+  assert.equal(body.description, 'Bring the insurance card\n\nPeople:\n- Dr. Patel <front.desk@smileclinic.example>\n- amy@example.com\n- Amber');
+  assert.deepEqual(JSON.parse(body.extendedProperties.private.people), [
+    { name: 'Dr. Patel', email: 'front.desk@smileclinic.example' }, { email: 'amy@example.com' }, { name: 'Amber' },
+  ]);
+  assert.equal(body.extendedProperties.private.by, 'assistant');
+  for (const bad of [[{ email: 'not an email' }], [{}], Array(11).fill({ name: 'X' }), [{ email: 'a@b.c>, evil@x.y' }]]) {
+    await assert.rejects(cal(g).createEvent({ calendar: 'shared', title: 'X', start: '2026-10-05T14:00', people: bad }));
+  }
+  assert.equal(g.requests.length, 1, 'bad people never reach Google');
+});
+
+test('events read back their own notes and people separately', async () => {
+  const people = [{ name: 'Dr. Patel', email: 'desk@clinic.example' }];
+  const g = fakeGoogle({ 'GET /calendar/v3/calendars/luke.doty%40gmail.com/events': { body: { items: [
+    { id: 'e1', summary: 'Dentist', start: { date: '2026-10-05' }, end: { date: '2026-10-06' }, description: 'Card\n\nPeople:\n- Dr. Patel <desk@clinic.example>', extendedProperties: { private: { people: JSON.stringify(people) } } },
+    { id: 'e2', summary: 'Edited by hand', start: { date: '2026-10-05' }, end: { date: '2026-10-06' }, description: 'People:\n- Dr. P (call first)', extendedProperties: { private: { people: JSON.stringify(people) } } },
+    { id: 'e3', summary: 'Junk property', start: { date: '2026-10-05' }, end: { date: '2026-10-06' }, extendedProperties: { private: { people: '{nope' } } },
+  ] } } });
+  const [a, b, c] = await cal(g).listEvents({ calendar: 'luke', start: '2026-10-05', end: '2026-10-06' });
+  assert.deepEqual([a.description, a.people], ['Card', people]);
+  assert.equal(b.description, 'People:\n- Dr. P (call first)', 'a hand-edited description is shown as it is');
+  assert.equal(c.people, undefined);
+});
+
+test('update_event: changing people or notes rewrites the description from the event as it is', async () => {
+  const path = '/calendar/v3/calendars/luke.doty%40gmail.com/events/e1';
+  const current = { id: 'e1', summary: 'Dentist', description: 'Card\n\nPeople:\n- Dr. Patel', extendedProperties: { private: { by: 'assistant', people: '[{"name":"Dr. Patel"}]' } } };
+  const g = fakeGoogle({ [`GET ${path}`]: { body: current } });
+  await cal(g).updateEvent({ calendar: 'luke', event_id: 'e1', people: [{ name: 'Dr. Patel' }, { email: 'desk@clinic.example' }] });
+  await cal(g).updateEvent({ calendar: 'luke', event_id: 'e1', description: 'Bring the card' });
+  await cal(g).updateEvent({ calendar: 'luke', event_id: 'e1', people: [] });
+  await cal(g).updateEvent({ calendar: 'luke', event_id: 'e1', title: 'Dentist!' });
+  const patches = g.requests.filter((r) => r.method === 'PATCH').map((r) => r.body);
+  assert.deepEqual(patches[0], { description: 'Card\n\nPeople:\n- Dr. Patel\n- desk@clinic.example', extendedProperties: { private: { people: '[{"name":"Dr. Patel"},{"email":"desk@clinic.example"}]' } } });
+  assert.deepEqual(patches[1], { description: 'Bring the card\n\nPeople:\n- Dr. Patel' }, 'new notes keep the people');
+  assert.deepEqual(patches[2], { description: 'Card', extendedProperties: { private: { people: '[]' } } }, '[] clears them');
+  assert.deepEqual(patches[3], { summary: 'Dentist!' }, 'other changes don’t touch the description');
+  assert.equal(g.requests.filter((r) => r.method === 'GET').length, 3);
+});

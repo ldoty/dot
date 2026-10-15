@@ -81,6 +81,19 @@ test('bad tool input never reaches the calendar; Claude gets an error result', a
   assert.match(result.content, /must be one of luke, shared/);
 });
 
+test('people on an event are checked item by item before the calendar sees them', async () => {
+  const people = [{ name: 'Dr. Patel', email: 'desk@clinic.example' }];
+  for (const [bad, why] of [['Dr. Patel', /"people" must be a list/], [[{ name: 'X', phone: '555' }], /unknown field "people\[0\]\.phone"/], [[{ name: 5 }], /"people\[0\]\.name" must be a string/], [['X'], /people\[0\]\. must be an object/]]) {
+    const { deps: d, calendar } = deps([toolUse('create_event', { calendar: 'shared', title: 'X', start: '2026-10-05', people: bad }, 'tu1'), text('Hm.')]);
+    const r = await run(d, 'Add X');
+    assert.equal(calendar.calls.length, 0);
+    assert.match((await store.loadMessages(USER, r.conversationId))[2].content[0].content, why);
+  }
+  const { deps: d, calendar } = deps([toolUse('create_event', { calendar: 'shared', title: 'X', start: '2026-10-05', people }, 'tu1'), text('Added.')]);
+  await run(d, 'Add X with Dr. Patel');
+  assert.deepEqual(calendar.calls[0].input.people, people);
+});
+
 test('a refusal ends the turn with an error event and keeps history valid', async () => {
   const { deps: d } = deps([{ content: [], stop_reason: 'refusal' }]);
   const r = await run(d, 'something declined');

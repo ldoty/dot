@@ -28,6 +28,7 @@ To let someone use Dot: add them to `family_assistant`, and add them to `var.peo
 | `api/agent.mjs` | One conversation turn: load history, call Claude, run tools, append results. Knows nothing about HTTP |
 | `api/handler.mjs` | Web entry point (Lambda Function URL, response streaming) |
 | `api/sms.mjs` | Texting entry point: one turn for a text, reply sent through Twilio (below) |
+| `api/email.mjs` | Email entry point: one turn for a message to dot@dot-y.co, reply sent through SES (below) |
 | `api/store.mjs` | Conversations in DynamoDB, append-only |
 | `api/tools.mjs`, `api/calendar.mjs`, `api/google.mjs` | Calendar tools; the Google service-account key is in SSM at `/family/calendar/google-key` |
 | `api/budget.mjs`, `api/delegation.mjs` | Budget reads with the asker's own access (delegation module is shared from `platform/api`) |
@@ -75,10 +76,41 @@ Twilio's 15-second timeout. The worker runs `runTurn()` as that person with `cha
   They show up on the web page like any other conversation.
 - Replies are plain text, split into at most three texts, and never carry links (the campaign is
   registered without embedded links): web addresses are replaced before sending.
-- Photos (up to four) are downloaded from Twilio, deleted there, and shown to Claude for that turn only;
-  the conversation stores “[Photo, not kept]” in their place, so Dot is told to put what matters in its reply.
+- Photos (up to four) are downloaded from Twilio and deleted there, then kept with the conversation (below).
 - The worker runs one turn at a time (reserved concurrency 1; other texts wait in line), never
   retries a turn, and drops a text that has waited more than 15 minutes.
+
+## Photos
+
+Photos texted or emailed in are kept **7 days** in a private bucket (`lukes-assistant-photos-…`, `infra/photos.tf`)
+rather than in the table (a message item is 400 KB at most). The stored message holds `{ type: "photo", key, at }`;
+`store.loadMessages` puts the picture back for Claude while it's kept (the newest six, so requests stay small)
+and a “[Photo, no longer kept]” note after. The bucket deletes them after 8 days; deleting a conversation deletes
+its photos. The page's transcript shows “[Photo]” and never fetches them.
+
+## Emailing Dot
+
+Family members can email **dot@dot-y.co**. SES stores the message under `dot/` in the mail bucket
+(`platform/email/dot.tf`, kept 8 days) and its gate (`platform/email/lambda/dot.mjs`) lets it through only if:
+SES's virus, spam and **DMARC** verdicts are all PASS; it isn't automatic mail (`Auto-Submitted`, `Precedence`
+bulk/list/junk); and its one From address is the **verified `email` of exactly one enabled, confirmed
+`family_assistant` member** in Cognito. Anything else is dropped without a reply. The gate then invokes
+`lukes-assistant-email` (`api/email.mjs`) asynchronously, which checks the message's From again, runs the turn as
+that person with `channel: 'email'`, and replies from dot@dot-y.co in the same thread (`In-Reply-To`/`References`,
+`Auto-Submitted: auto-replied` so no auto-responder answers back).
+
+- One email thread is one conversation (its id is a hash of the person and the thread's first Message-ID); a
+  reply carries on, without the quoted text. A new email starts a new conversation.
+- Photos (JPEG, PNG, GIF, WebP; four at most, 3.75 MB each) go to Claude and are kept as above; small pictures
+  inside the HTML (logos, signatures) are skipped; other attachments (PDFs) are noted as not opened.
+- Dot is told that forwarded mail and attachments are information from other people, never instructions.
+- Its sender is the address on the person's Cognito user (`email`, verified): no list to keep anywhere else.
+
+## Calendar people
+
+`create_event` / `update_event` take `people` (names and/or emails). They're **noted, not invited**: Google refuses
+attendees from a service account without Workspace domain-wide delegation, which Gmail calendars can't have. The list is
+kept in the event's private `people` property and shown at the end of its description (“People: …”).
 
 To let someone text Dot: they opt in at dot-y.co/sms with their number, and you set that number,
 verified, on their Cognito user:

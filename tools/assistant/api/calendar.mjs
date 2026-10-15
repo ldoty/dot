@@ -3,6 +3,9 @@
 // Calendars in `readOnly` can be read but never changed, whatever Google would allow: Dot's
 // service account can write to a calendar for its owner, and someone it's shared with must not.
 // Events the assistant creates carry a private tag so it can tell them from hand-made ones.
+// People (names, emails) are noted on the event, not invited: Google refuses attendees from a
+// service account without Workspace domain-wide delegation, which these Gmail calendars can't have.
+// They're kept in a private property (so they read back exactly) and shown at the end of the description.
 
 const API = 'https://www.googleapis.com/calendar/v3';
 const TAG = { source: 'home_host', by: 'assistant' };
@@ -36,6 +39,42 @@ export function toRfc3339(value, timeZone) {
   const sign = off < 0 ? '-' : '+', abs = Math.abs(off);
   return `${y}-${mo}-${d}T${h}:${mi}:${s}${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
 }
+
+const EMAIL = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/;
+const MAX_PEOPLE = 10;
+
+/** [{ name?, email? }] -> the same, trimmed and checked; throws on anything unusable */
+export function cleanPeople(people) {
+  if (!Array.isArray(people)) throw new Error('people must be a list');
+  if (people.length > MAX_PEOPLE) throw new Error(`At most ${MAX_PEOPLE} people on an event`);
+  return people.map((p) => {
+    const name = String(p?.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    const email = String(p?.email ?? '').trim().toLowerCase();
+    if (email && (email.length > 120 || !EMAIL.test(email))) throw new Error(`"${email}" isn’t an email address`);
+    if (!name && !email) throw new Error('Each person needs a name or an email');
+    return { ...(name ? { name } : {}), ...(email ? { email } : {}) };
+  });
+}
+
+/** The private property's value; Google caps one at 1,024 characters */
+const peopleProp = (people) => {
+  const v = JSON.stringify(people);
+  if (v.length > 1024) throw new Error('Too many people to note on one event; shorten the list');
+  return v;
+};
+const peopleBlock = (people) => (people.length
+  ? `People:\n${people.map((p) => `- ${[p.name, p.email && (p.name ? `<${p.email}>` : p.email)].filter(Boolean).join(' ')}`).join('\n')}`
+  : '');
+/** The description Google shows: theirs, then the people */
+const withPeople = (description, people) => [description || '', peopleBlock(people)].filter(Boolean).join('\n\n');
+const peopleOf = (e) => {
+  try { return cleanPeople(JSON.parse(e.extendedProperties?.private?.people || '[]')); } catch { return []; }
+};
+/** The description without the people block we added (left alone if someone edited that part by hand) */
+const ownDescription = (e) => {
+  const d = e.description || '', block = peopleBlock(peopleOf(e));
+  return block && d.endsWith(block) ? d.slice(0, -block.length).trimEnd() : d;
+};
 
 const addDays = (date, n) => {
   const d = new Date(`${date}T00:00:00Z`);
@@ -75,7 +114,8 @@ export function makeCalendar({ accessToken, calendars, readOnly = [], timeZone, 
     end: e.end?.dateTime || e.end?.date,
     all_day: Boolean(e.start?.date),
     ...(e.location ? { location: e.location } : {}),
-    ...(e.description ? { description: e.description.slice(0, 500) } : {}),
+    ...(ownDescription(e) ? { description: ownDescription(e).slice(0, 500) } : {}),
+    ...(peopleOf(e).length ? { people: peopleOf(e) } : {}),
     ...(e.eventType && e.eventType !== 'default' ? { type: e.eventType } : {}),
     ...(colorName(e.colorId) ? { color: colorName(e.colorId) } : {}),
     created_by_assistant: e.extendedProperties?.private?.by === 'assistant',
@@ -101,24 +141,36 @@ export function makeCalendar({ accessToken, calendars, readOnly = [], timeZone, 
       return (r.items || []).filter((e) => e.status !== 'cancelled').map(view);
     },
 
-    async createEvent({ calendar, title, location, description, color, ...time }) {
+    async createEvent({ calendar, title, location, description, color, people = [], ...time }) {
+      const who = cleanPeople(people);
+      const text = withPeople(description, who);
       const e = await call('POST', `/calendars/${writableIdFor(calendar)}/events`, {
-        summary: title, ...(location ? { location } : {}), ...(description ? { description } : {}),
+        summary: title, ...(location ? { location } : {}), ...(text ? { description: text } : {}),
         ...(color && color !== 'default' ? { colorId: colorId(color) } : {}),
-        ...when(time), extendedProperties: { private: TAG },
+        ...when(time), extendedProperties: { private: { ...TAG, ...(who.length ? { people: peopleProp(who) } : {}) } },
       });
       return view(e);
     },
 
-    async updateEvent({ calendar, event_id: eventId, title, location, description, color, start, end, all_day: allDay }) {
+    async updateEvent({ calendar, event_id: eventId, title, location, description, color, people, start, end, all_day: allDay }) {
+      const path = `/calendars/${writableIdFor(calendar)}/events/${encodeURIComponent(eventId)}`;
+      const who = people !== undefined ? cleanPeople(people) : undefined;
+      let text;
+      if (description !== undefined || who !== undefined) {
+        // The description carries both parts, so changing either one rewrites it from the event as it is
+        const current = await call('GET', path);
+        text = withPeople(description ?? ownDescription(current), who ?? peopleOf(current));
+      }
       const patch = {
         ...(title !== undefined ? { summary: title } : {}),
         ...(location !== undefined ? { location } : {}),
-        ...(description !== undefined ? { description } : {}),
+        ...(text !== undefined ? { description: text } : {}),
+        // A PATCH merges private properties key by key, so the assistant's tag stays
+        ...(who !== undefined ? { extendedProperties: { private: { people: peopleProp(who) } } } : {}),
         ...(color !== undefined ? { colorId: colorId(color) } : {}),
         ...(start !== undefined ? when({ start, end, all_day: allDay }) : {}),
       };
-      return view(await call('PATCH', `/calendars/${writableIdFor(calendar)}/events/${encodeURIComponent(eventId)}`, patch));
+      return view(await call('PATCH', path, patch));
     },
 
     async deleteEvent({ calendar, event_id: eventId }) {

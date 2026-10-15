@@ -4,12 +4,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createSmsWorker, toTexts, QUIET_HOURS } from '../api/sms.mjs';
 import { fetchMedia, deleteMedia } from '../api/twilio.mjs';
 import { systemPrompt } from '../api/agent.mjs';
-import { deps, NOW, store, table } from './helpers/deps.mjs';
+import { deps, NOW, photos, store, table } from './helpers/deps.mjs';
 import { text, toolUse } from './helpers/fake-claude.mjs';
 
 const PHONE = '+18645550123';
 const USER = 'luke-sub';
-beforeEach(() => table.clear());
+beforeEach(() => { table.clear(); photos.kept.clear(); });
 
 function worker(script, extra = {}) {
   const d = deps(script);
@@ -145,7 +145,7 @@ function twilioMedia(files) {
 const JPEG = Buffer.from('fake jpeg bytes');
 const userBlocks = (call) => call.params.messages[0].content;
 
-test('a photo is shown to Claude for that turn, deleted from Twilio, and not kept', async () => {
+test('a photo is shown to Claude, deleted from Twilio, and kept for later turns outside the table', async () => {
   const m = twilioMedia({ [mediaUrl(1)]: { type: 'image/jpeg', bytes: JPEG } });
   const { run, sent, claude } = worker([text('That’s a dentist card for Oct 20 at 3 PM.'), text('Added.')], m);
   await run('', { media: [{ url: mediaUrl(1), type: 'image/jpeg' }] });
@@ -158,11 +158,12 @@ test('a photo is shown to Claude for that turn, deleted from Twilio, and not kep
   const [conv] = await smsConversations();
   assert.equal(conv.title, 'Photo');
   const stored = table.dump().map(([, item]) => item.content).filter(Boolean).join('');
-  assert.ok(!stored.includes(JPEG.toString('base64')), 'the photo isn’t stored');
-  assert.match(stored, /\[Photo, not kept\]/);
+  assert.ok(!stored.includes(JPEG.toString('base64')), 'the photo isn’t in the table');
+  assert.equal(photos.kept.size, 1);
 
   await run('Add it to my calendar');
-  assert.deepEqual(claude.calls[1].params.messages[0].content.map((b) => b.type), ['text', 'text'], 'a later turn sees the note, not the photo');
+  const { cache_control: _, ...photo } = blocks[1]; // the first request marked its last block for caching
+  assert.deepEqual(claude.calls[1].params.messages[0].content, [blocks[0], photo], 'a later turn sees the photo again, exactly as before');
 });
 
 test('a photo with words: Claude gets both; tool steps in that turn still see the photo', async () => {

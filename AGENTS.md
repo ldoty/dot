@@ -26,7 +26,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/house-hunt` | house-hunt.dot-y.co | `family_house_hunt` | Neighborhoods on a map, ranked listings; listing emails to househunt@dot-y.co are filed by Claude |
 | `tools/chamber` | chamber.dot-y.co | `lukes_chamber` | Mushroom chamber: Arduino firmware + build notes; the board posts telemetry to `POST /ingest` (device key), the page shows it and sets the board’s settings |
 | `tools/sms` | (API only) | | Dot-y texting program: opt-in consent records, and Twilio’s webhook that hands members’ texts to Dot |
-| `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail |
+| `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail; dot@dot-y.co: the gate that hands members’ mail to Dot |
 | `platform/billing` | | | Account-wide $75/mo budget + cost anomaly alerts |
 
 AWS account `921782276410`, region `us-east-1`, CLI profile **`ldoty`**. State bucket
@@ -67,7 +67,8 @@ from its built-ins (calendar, `read_budget`), **every tool is discovered** (`api
 asker, reads each tool's `GET /dot` manifest (`platform/api/dot-manifest.mjs`) and offers its
 operations as `<name>_<operation>` tools, GET only. Members can also **text** Dot: the SMS webhook maps a
 verified Cognito `phone_number` in `family_assistant` to the person, and Dot's SMS worker runs the same turn
-(`tools/sms/README.md`, `tools/assistant/README.md`). To make a tool usable by Dot: `delegated = true`,
+(`tools/sms/README.md`, `tools/assistant/README.md`). They can **email** dot@dot-y.co the same way: the gate in
+`platform/email/lambda/dot.mjs` requires DMARC and a verified Cognito `email` in `family_assistant`, then Dot's email worker replies. To make a tool usable by Dot: `delegated = true`,
 publish `/family/delegation/<group>`, serve `GET /dot` (validate it with `validateManifest`), accept the
 delegated client id in its token check, refuse non-GET from it. No Dot code change.
 
@@ -142,6 +143,7 @@ npm run test:live
 | `/family/sms/twilio` | SecureString, set by hand: Twilio API key for sending `{accountSid, apiKeySid, apiKeySecret, messagingServiceSid}` |
 | `/family/sms/twilio-webhook` | SecureString, set by hand: `{accountSid, authToken}`, only for the webhook's signature checks |
 | `/family/assistant/sms-worker` | Dot’s SMS worker Lambda, which only the SMS webhook may invoke |
+| `/family/assistant/email-worker` | Dot’s email worker Lambda, which only the dot@ gate in `platform/email` may invoke (apply the assistant first) |
 
 ## Tool notes
 
@@ -162,8 +164,8 @@ Read them first when a change crosses into one of those tools (e.g. Dot or Finan
 - **Links**: sections + http(s)-only links. **Tempi**: the course HTML is in the Lambda, served only to
   members. **Biomap**: `collection/` is gitignored; `scripts/publish.sh` builds the deck and syncs photos
   to a private bucket. **SMS**: consent text in `api/program.mjs` must match `portal/sms.html` (tested);
-  the opt-in Lambda can only write the consent table. Dot’s texts never carry links (the campaign
-  is registered without them); Twilio’s Advanced Opt-Out sends the STOP/HELP/START replies, the webhook records them. **Email**: SES inbound, forwarded with Reply-To.
+  the opt-in Lambda can only write the consent table. Photos texted or emailed to Dot are kept 7 days (privacy page says so; a test ties them). Dot’s texts never carry links (the campaign
+  is registered without them); Twilio’s Advanced Opt-Out sends the STOP/HELP/START replies, the webhook records them. **Email**: SES inbound, forwarded with Reply-To; dot@ goes to Dot (`dot.tf`), not forwarded.
 
 ## Working here: things that bite
 
