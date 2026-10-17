@@ -7,7 +7,7 @@
 //   PUT    /listings/{id}    { address, hoodId, rank, price, beds, baths, sqft, url, status, notes, reviewed, …, rev, byName }
 //   DELETE /listings/{id}
 //   PUT    /notes            { text, rev, byName } -> the saved notes
-//   GET    /geocode?q=       an address -> { ll: [lat, lng], label, precision }, or 404 (geocode.mjs)
+//   GET    /geocode?q=       an address -> { ll: [lat, lng], label, precision, cityLimits }, or 404 (geocode.mjs)
 // Places (parks, the airport, family) are map reference points, loaded by scripts/seed.mjs; read-only here.
 // Listings also arrive by email (ingest.mjs); `mail` is the last few emails it handled, newest first.
 // Every write carries the rev it was edited from (0 = new). If someone else saved in between,
@@ -18,7 +18,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { verifyAccessToken } from './verify-token.mjs';
 import { cleanListing, listingOut } from './listing.mjs';
-import { geocode } from './geocode.mjs';
+import { cityLimits, geocode } from './geocode.mjs';
 
 const { TABLE, GROUP, ISSUER, CLIENT_ID } = process.env;
 const PK = 'TOOL';
@@ -174,7 +174,8 @@ export const handler = async (event) => {
       const q = str(event.queryStringParameters?.q, 200);
       if (q.length < 3) return json(400, { error: 'q required' });
       const found = await geocode(q);
-      return found ? json(200, found) : json(404, { error: 'not found' });
+      if (!found) return json(404, { error: 'not found' });
+      return json(200, { ...found, cityLimits: found.precision === 'address' ? await cityLimits(found.ll) : '' });
     }
     default:
       return json(404, { error: 'no route' });

@@ -14,6 +14,12 @@ API: `GET /all`, `PUT`/`DELETE /hoods/{id}` (deleting one moves its listings to 
 `PUT`/`DELETE /listings/{id}`, `GET /geocode?q=` (an address to a map point: the US Census geocoder, then
 OpenStreetMap, which may only know the street; `api/geocode.mjs`). “Show on map” on a listing, or the address
 box under the map, drops one pin there and names the closest neighborhood pin.
+
+**City limits** (we may run for Greer City Council): each listing is tagged in or outside Greer’s city limits,
+and the map popup says so for any address found to the house. The answer comes from the Census’s incorporated
+places for the point (`cityLimits` in `api/geocode.mjs`), which the Census redraws once a year, so a recent
+annexation can be missing; the city’s GIS office has the final word, and council districts aren’t covered. The
+email ingest looks it up for each new home; `scripts/city-limits.mjs` fills in the rest (hand-added ones too).
 Table rows (`pk = TOOL`): `HOOD#<id>`, `LISTING#<id>`, `PLACE#<id>` (map reference points, read-only in
 the app), `MAIL#<time>#<messageId>` (what the ingest did with each email), `NOTES`.
 

@@ -28,7 +28,7 @@ function record({ from = 'Zillow <instant-updates@mail.zillow.com>', dmarc = 'PA
   } };
 }
 
-let requests, reply;
+let requests, reply, located;
 const claude = { messages: { create: async (req) => { requests.push(req); return reply(req); } } };
 const answer = (listings) => () => ({ model: 'm', stop_reason: 'end_turn', usage: {}, content: [{ type: 'text', text: JSON.stringify({ listings }) }] });
 const home = (o) => ({ address: '12 Sugar Lake Court', city: 'Greer', price: 615000, beds: 4, baths: 3, sqft: 2900,
@@ -36,13 +36,14 @@ const home = (o) => ({ address: '12 Sugar Lake Court', city: 'Greer', price: 615
   hoodId: 'sugar-creek', matchReason: 'Sugar Lake Ct is in Sugar Creek', ...o });
 const ingest = (at = '2026-10-05T12:00:00.000Z') => makeIngest({
   db, table: 'family-house-hunt', getRaw: async () => Buffer.from(EMAIL), claude, model: 'test-model', allowed: ALLOWED,
+  locate: async (address) => { located.push(address); return /Sugar Lake/.test(address) ? 'in' : 'out'; },
   now: () => new Date(at), log: () => {},
 });
 const listings = () => table.dump().filter(([k]) => k.includes('|LISTING#')).map(([, v]) => v);
 const mails = () => table.dump().filter(([k]) => k.includes('|MAIL#')).map(([, v]) => v);
 
 beforeEach(() => {
-  table.clear(); requests = [];
+  table.clear(); requests = []; located = [];
   table.put({ pk: 'TOOL', sk: 'HOOD#sugar-creek', name: 'Sugar Creek', summary: 'Off Sugar Creek Rd', facts: ['3 pools'], rev: 1 });
   table.put({ pk: 'TOOL', sk: 'HOOD#pelham-falls', name: 'Pelham Falls', rev: 1 });
   table.put({ pk: 'TOOL', sk: 'LISTING#old1', hoodId: 'sugar-creek', address: '4 Autumn Rd', status: 'active', rank: 1, rev: 1 });
@@ -156,6 +157,15 @@ test('a Redfin tour link is filed as the home’s page, and Redfin tracking is d
   assert.equal(byAddress['1317 Algeddis Dr'], 'https://www.redfin.com/SC/Greer/1317-Algeddis-Dr/home/194507028');
   assert.equal(byAddress['321 Upwey Pl'], 'https://www.redfin.com/SC/Greer/321-Upwey-Pl-29651/home/205994015');
   assert.match(requests[0].system, /tour link only when it is the only link/);
+});
+
+test('each home is checked once against the city limits: new ones, and ones we have without an answer', async () => {
+  table.put({ pk: 'TOOL', sk: 'LISTING#old2', address: '8 Known Rd', cityLimits: 'in', status: 'active', rev: 1 });
+  reply = answer([home(), home({ address: '4 Autumn Rd' }), home({ address: '8 Known Rd' })]);
+  await ingest()(record());
+  const got = Object.fromEntries(listings().map((l) => [l.address, l.cityLimits]));
+  assert.deepEqual(got, { '12 Sugar Lake Court': 'in', '4 Autumn Rd': 'out', '8 Known Rd': 'in' });
+  assert.deepEqual(located.sort(), ['12 Sugar Lake Court', '4 Autumn Rd']);
 });
 
 test('homes outside 2,700–3,200 sqft or $450k–$700k are dropped, not filed', async () => {

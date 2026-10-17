@@ -5,6 +5,7 @@
 // Free services: Census asks nothing; Nominatim asks for a real User-Agent and at most 1 request/s,
 // which a family clicking buttons never approaches.
 const CENSUS = 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress';
+const PLACES = 'https://geocoding.geo.census.gov/geocoder/geographies/coordinates';
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 const UPSTATE = '-82.7,35.25,-81.6,34.5'; // lon/lat box around Greenville–Spartanburg: a preference, not a limit
 const ADDRESS_TYPES = ['building', 'house', 'place', 'house_number'];
@@ -36,4 +37,26 @@ export async function geocode(q, { fetch = globalThis.fetch, log = console.log }
     }
   } catch (e) { log({ geocoder: 'nominatim', error: e.message }); }
   return null;
+}
+
+// Whether a point is inside Greer's city limits: 'in', 'out', or '' when we can't tell. From the
+// Census's incorporated places, which it redraws once a year from what the city reports, so a
+// recent annexation may be missing; the city's GIS office is the word that counts (we may run for
+// council, and that needs a home inside). Only worth asking for a house-level point.
+export async function cityLimits(ll, { fetch = globalThis.fetch, log = console.log } = {}) {
+  try {
+    const url = `${PLACES}?${new URLSearchParams({ x: String(ll[1]), y: String(ll[0]), benchmark: 'Public_AR_Current', vintage: 'Current_Current', layers: 'Incorporated Places', format: 'json' })}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) throw new Error(`census ${res.status}`);
+    const geo = (await res.json())?.result?.geographies;
+    if (!geo || typeof geo !== 'object') return '';
+    // Outside every town, the layer is left out entirely rather than listed empty
+    return (geo['Incorporated Places'] || []).some((p) => p?.NAME === 'Greer city') ? 'in' : 'out';
+  } catch (e) { log({ cityLimits: 'census', error: e.message }); return ''; }
+}
+
+/** A listing's address -> 'in' | 'out' | '' (see cityLimits) */
+export async function locate(address, city, deps = {}) {
+  const g = await geocode(`${address}, ${city || 'Greer'}, SC`, deps);
+  return g?.precision === 'address' ? cityLimits(g.ll, deps) : '';
 }

@@ -2,7 +2,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { forgedToken, accessToken } from '../../../platform/tests/helpers/tokens.mjs';
 import { CLIENT_ID, ROUTES, call, table } from './helpers/house-hunt-api.mjs';
-import { geocode } from '../api/geocode.mjs';
+import { cityLimits, geocode, locate } from '../api/geocode.mjs';
 
 beforeEach(() => table.clear());
 const hood = (o = {}) => ({ name: 'Pelham Falls', pool: 'Two pools', high: 'Riverside High', price: 510000, sales: 15, rev: 0, ...o });
@@ -147,12 +147,14 @@ test('the inbox shows the latest emails first', async () => {
 });
 
 // A fetch that answers the Census and Nominatim geocoders from canned replies, and records the calls
-function geoFetch({ census = [], osm = [], fail = [] } = {}) {
+// `places` answers the Census "what town is this point in" lookup; leaving it out is a point in no town.
+function geoFetch({ census = [], osm = [], fail = [], places } = {}) {
   const calls = [];
   const f = async (url, o = {}) => {
     const host = new URL(url).host;
     calls.push({ host, q: new URL(url).searchParams.get(host.startsWith('geocoding') ? 'address' : 'q'), ua: o.headers?.['user-agent'] });
     if (fail.some((h) => host.includes(h))) return { ok: false, status: 503, json: async () => ({}) };
+    if (url.includes('/geographies/')) return { ok: true, status: 200, json: async () => ({ result: { geographies: places ? { 'Incorporated Places': places } : {} } }) };
     return { ok: true, status: 200, json: async () => (host.startsWith('geocoding') ? { result: { addressMatches: census } } : osm) };
   };
   f.calls = calls;
@@ -184,11 +186,33 @@ test('GET /geocode looks up the address for members; too short is refused, nothi
     const r = await call('GET', '/geocode?q=' + encodeURIComponent('12 Sugar Lake Ct, Greer'));
     assert.equal(r.status, 200);
     assert.deepEqual(r.body.ll, [34.85768, -82.21123]);
+    assert.equal(r.body.cityLimits, 'out', 'a point in no town');
+    globalThis.fetch = geoFetch({ census: [CENSUS_HIT], places: [{ NAME: 'Greer city' }] });
+    assert.equal((await call('GET', '/geocode?q=' + encodeURIComponent('12 Sugar Lake Ct, Greer'))).body.cityLimits, 'in');
     assert.equal((await call('GET', '/geocode?q=ab')).status, 400);
     globalThis.fetch = geoFetch();
     assert.equal((await call('GET', '/geocode?q=nowhere', undefined)).status, 404);
     assert.equal((await call('GET', '/geocode?q=12+Sugar+Lake', undefined, null)).status, 401);
   } finally { globalThis.fetch = real; }
+});
+
+test('city limits: in Greer, in another town or none is out, a failed lookup is unknown; only house-level points are asked', async () => {
+  const quiet = { log: () => {} };
+  assert.equal(await cityLimits([34.93, -82.23], { fetch: geoFetch({ places: [{ NAME: 'Greer city' }] }), ...quiet }), 'in');
+  assert.equal(await cityLimits([34.88, -82.26], { fetch: geoFetch(), ...quiet }), 'out');
+  assert.equal(await cityLimits([34.88, -82.26], { fetch: geoFetch({ places: [{ NAME: 'Taylors CDP' }] }), ...quiet }), 'out');
+  assert.equal(await cityLimits([34.88, -82.26], { fetch: geoFetch({ fail: ['census'] }), ...quiet }), '');
+  const f = geoFetch({ osm: [{ lat: '34.8812', lon: '-82.1778', addresstype: 'road' }], places: [{ NAME: 'Greer city' }] });
+  assert.equal(await locate('1317 Algeddis Dr', '', { fetch: f, ...quiet }), '', 'only the street is known');
+  assert.ok(!f.calls.some((c) => c.q === null), 'no town lookup for a street-level point');
+  assert.equal(await locate('12 Sugar Lake Ct', 'Greer', { fetch: geoFetch({ census: [CENSUS_HIT], places: [{ NAME: 'Greer city' }] }), ...quiet }), 'in');
+});
+
+test('a listing keeps its city limits answer; anything else is unknown', async () => {
+  await call('PUT', '/listings/a', { address: '1 Main St', cityLimits: 'in', rev: 0 });
+  await call('PUT', '/listings/b', { address: '2 Main St', cityLimits: 'maybe', rev: 0 });
+  const got = Object.fromEntries((await call('GET', '/all')).body.listings.map((l) => [l.id, l.cityLimits]));
+  assert.deepEqual(got, { a: 'in', b: '' });
 });
 
 test('API Gateway routes match the ones the handler serves', async () => {

@@ -118,6 +118,7 @@ ol.lst:empty::before { content: "Drag listings here, or add one."; color: var(--
 .ltag { font-size: 11px; font-weight: 700; border-radius: var(--r-pill); padding: 1px 7px; margin-left: 4px; background: var(--surface); color: var(--ink); vertical-align: 1px }
 .ltag.new { background: var(--sun); color: var(--on-sun) }
 .ltag.cut { background: var(--leaf); color: var(--on-accent) }
+.ltag.city { background: var(--pool); color: var(--on-accent) }
 .ltag.pending, .ltag.sold, .ltag.gone { background: var(--muted); color: var(--surface) }
 .lnotes { grid-column: 3 / -1 }
 form.ladd { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 6px }
@@ -323,6 +324,7 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
       if (foundPin) foundPin.remove();
       foundPin = L.marker(g.ll, { title: title, icon: pin("found", "found", "⌂", 30), zIndexOffset: 1000 })
         .bindPopup("<b>" + esc(title) + "</b>" + (extra || "") + '<br><span class="pop-meta">' + esc(where) + "</span>" +
+          (LIMITS[g.cityLimits] ? "<br>" + (g.cityLimits === "in" ? "Inside" : "Outside") + " Greer city limits (Census map)" : "") +
           (near ? "<br>Closest neighborhood pin: " + esc(near.h.name) + ", " + near.mi.toFixed(1) + " mi" : ""), { maxWidth: 260 }).addTo(map);
       document.getElementById("map-card").scrollIntoView({ behavior: "smooth", block: "center" });
       map.flyTo(g.ll, g.precision === "address" ? 16 : 15, { duration: 0.8 });
@@ -454,6 +456,11 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
   }
   var STATUS_TAG = { pending: "Pending", sold: "Sold", gone: "Off market" };
 
+  // Inside Greer's city limits, by the Census map (geocode.mjs): a guide, not the city's word
+  var LIMITS = { "in": "In city limits", out: "Outside city limits" };
+  function cityTag(v) {
+    return LIMITS[v] ? '<span class="ltag' + (v === "in" ? " city" : "") + '" title="Census map, updated yearly. The city’s GIS office has the final word.">' + LIMITS[v] + "</span>" : "";
+  }
   function listingItem(l, i) {
     var chg = priceChange(l), facts = [];
     if (l.beds) facts.push(l.beds + " bd"); if (l.baths) facts.push(l.baths + " ba"); if (l.sqft) facts.push(Number(l.sqft).toLocaleString("en-US") + " sqft");
@@ -461,7 +468,7 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
     var tags = (!l.reviewed && !l.rejected && l.event !== "price_cut" ? '<span class="ltag new">New</span>' : "") +
       (chg ? '<span class="ltag ' + (chg.cut ? "cut" : "") + '">' + (chg.cut ? "Price cut " : "Price up ") + money(chg.amount) + "</span>" : "") +
       (STATUS_TAG[l.status] ? '<span class="ltag ' + l.status + '">' + STATUS_TAG[l.status] + "</span>" : "") +
-      (l.rejected ? '<span class="ltag gone">Rejected</span>' : "");
+      (l.rejected ? '<span class="ltag gone">Rejected</span>' : "") + cityTag(l.cityLimits);
     var moveOpts = '<option value="">Unsorted</option>' + hoods.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (h) {
       return '<option value="' + esc(h.id) + '"' + (h.id === l.hoodId ? " selected" : "") + ">" + esc(h.name) + "</option>";
     }).join("");

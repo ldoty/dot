@@ -2,9 +2,9 @@
 // and invokes this Lambda. For each message from an allowed sender that passes DMARC, Claude (on
 // Bedrock) pulls out the homes it mentions and matches each to one of our neighborhoods; new homes
 // are added to the bottom of that neighborhood's listings (or unsorted), and homes we already have
-// get their price, status and history updated. Homes outside Greer (isGreer) or outside our size and price
-// ranges (inSearch) are dropped. A MAIL# row
-// records what happened to each message.
+// get their price, status and history updated; each is checked once against Greer's city limits
+// (locate). Homes outside Greer (isGreer) or outside our size and price ranges (inSearch) are
+// dropped. A MAIL# row records what happened to each message.
 //
 // The email is untrusted: Claude only returns data in a fixed schema, the neighborhood it picks must
 // be one of ours, links must be http(s), and nothing in the message can do anything but add rows.
@@ -14,6 +14,7 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
+import { locate } from './geocode.mjs';
 import { EVENTS, addressKey, cleanListing, inSearch, isGreer } from './listing.mjs';
 
 const PK = 'TOOL';
@@ -81,7 +82,7 @@ function hoodContext(hoods, listings) {
 const statusFor = (event, before) => (event === 'pending' ? 'pending' : event === 'sold' ? 'sold'
   : ['new', 'back_on_market', 'price_cut', 'price_increase'].includes(event) ? 'active' : before || 'active');
 
-export function makeIngest({ db, table, getRaw, claude, model, allowed, now = () => new Date(), log = console.log }) {
+export function makeIngest({ db, table, getRaw, claude, model, allowed, locate, now = () => new Date(), log = console.log }) {
   const query = async () => (await db.send(new QueryCommand({
     TableName: table, KeyConditionExpression: 'pk = :pk', ExpressionAttributeValues: { ':pk': PK },
   }))).Items;
@@ -126,11 +127,13 @@ export function makeIngest({ db, table, getRaw, claude, model, allowed, now = ()
     const hoodId = hoodIds.includes(x.hoodId) ? x.hoodId : null;
     const price = x.price > 0 ? x.price : null;
     const event = EVENTS.includes(x.event) ? x.event : 'other';
+    let limits = null; // looked up once, only for a home that doesn't have it yet
     for (let attempt = 0; attempt < 3; attempt++) {
       const listings = (await query()).filter((i) => i.sk.startsWith('LISTING#'));
       const key = addressKey(x.address);
       const old = listings.find((l) => addressKey(l.address) === key);
       const entry = { at, kind: event, price };
+      if (!old?.cityLimits && limits === null) limits = await locate(x.address, x.city);
       let row, rev;
       if (old) {
         const status = statusFor(event, old.status);
@@ -139,7 +142,7 @@ export function makeIngest({ db, table, getRaw, claude, model, allowed, now = ()
           ...old, price: price ?? old.price, status, event, lastSeenAt: at,
           url: old.url || x.url, city: old.city || x.city, summary: x.summary || old.summary,
           beds: old.beds ?? (x.beds || null), baths: old.baths ?? (x.baths || null), sqft: old.sqft ?? (x.sqft || null),
-          hoodId: old.hoodId ?? hoodId, reviewed: changed ? false : old.reviewed,
+          hoodId: old.hoodId ?? hoodId, cityLimits: old.cityLimits || limits, reviewed: changed ? false : old.reviewed,
           // Filed now for the first time: to the bottom of that neighborhood's list
           rank: old.hoodId == null && hoodId ? Math.max(0, ...listings.filter((l) => l.hoodId === hoodId).map((l) => l.rank || 0)) + 1 : old.rank,
           history: [...(old.history || []), entry],
@@ -149,7 +152,7 @@ export function makeIngest({ db, table, getRaw, claude, model, allowed, now = ()
         const ranks = listings.filter((l) => (l.hoodId ?? null) === hoodId).map((l) => l.rank || 0);
         row = {
           address: x.address, city: x.city, price, beds: x.beds || null, baths: x.baths || null, sqft: x.sqft || null,
-          url: x.url, status: statusFor(event), event, summary: x.summary, notes: '', hoodId, rank: Math.max(0, ...ranks) + 1,
+          url: x.url, status: statusFor(event), event, summary: x.summary, notes: '', hoodId, cityLimits: limits, rank: Math.max(0, ...ranks) + 1,
           reviewed: false, source: 'email', firstSeenAt: at, lastSeenAt: at, history: [entry],
         };
         rev = 0;
@@ -212,7 +215,7 @@ export const handler = async (event) => {
     handle = makeIngest({
       db: DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } }),
       table: TABLE, model: MODEL, allowed: ALLOWED_SENDERS.split(',').filter(Boolean),
-      claude: new AnthropicBedrock({ awsRegion: AWS_REGION }),
+      claude: new AnthropicBedrock({ awsRegion: AWS_REGION }), locate,
       getRaw: async (id) => Buffer.from(await (await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: PREFIX + id }))).Body.transformToByteArray()),
       log: (o) => console.log(JSON.stringify(o)),
     });
