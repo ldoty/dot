@@ -1,4 +1,4 @@
-// Read-only checks against the deployed Cheer Research: `npm run test:live`
+// Read-only checks against the deployed Youth Activities Research: `npm run test:live`
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 

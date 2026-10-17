@@ -1,15 +1,15 @@
-# Cheer Research
+# Youth Activities Research
 
 `https://cheer-research.dot-y.co/` · permission group **`lukes_research`** · progress table `family-cheer-research`
 
-Luke’s field guide to the youth cheer and dance market, for a planned SaaS: the thesis, chapters on the
+Luke’s field guide to the youth activities market, starting from cheer and dance, for a planned SaaS: the thesis, chapters on the
 segments, Varsity, private equity, software rivals, money flows, owners, timing, distribution, risk and
 revenue paths; the players and who owns them; who bills what, where, with a calculator for one gym; the
 questions to ask the first client and contacts; and flashcards.
 
 The guide is private business research, so it is **not in git**. It lives in `private/` (gitignored), is
 built into `private/guide.json`, bundled into the Lambda at deploy, and served only to members (`GET /guide`).
-The public page holds none of it. The research behind it (six sets of notes and the cited report) is in the
+The public page holds none of it. The research behind it (two cited reports and their notes) is in the
 repo root’s gitignored `private/research/`.
 
 | Where | What |

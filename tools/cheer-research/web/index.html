@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Cheer Research</title>
+<title>Youth Activities Research</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="family.css">
 <style>
@@ -130,7 +130,7 @@ label.inc { display: flex; gap: 8px; align-items: baseline; font-size: 14px }
 <body>
 <div class="wrap">
   <div class="home"><a href="https://dot-y.co/">← dot-y.co</a><span class="sync" id="sync"></span></div>
-  <div id="app"><div class="gate"><h1>Cheer Research</h1><p class="muted" id="gate-msg">Loading…</p></div></div>
+  <div id="app"><div class="gate"><h1>Youth Activities Research</h1><p class="muted" id="gate-msg">Loading…</p></div></div>
 </div>
 <script src="family-auth.js"></script>
 <script>
@@ -180,8 +180,8 @@ window.startGuide = function (G, initial) {
   function sources(src) { return src && src.length ? '<span class="src">' + src.map(function (s) { return '<a href="' + esc(s) + '" target="_blank" rel="noopener">' + esc(s.replace(/^https?:\/\/(www\.)?/, "").split("/")[0]) + "</a>"; }).join(" · ") + "</span>" : ""; }
 
   $("#app").innerHTML =
-    '<header class="top"><div><div class="eyebrow">Market research</div><h1>Cheer Research</h1>' +
-    "<p>" + esc(G.thesis.title) + ". The youth cheer and dance market: who’s in it, who owns them, who bills what where, and a deck to learn it.</p></div>" +
+    '<header class="top"><div><div class="eyebrow">Market research</div><h1>Youth Activities Research</h1>' +
+    "<p>" + esc(G.thesis.title) + ". The youth activities market, from cheer and dance out: who’s in it, who owns them, who bills what where, and a deck to learn it.</p></div>" +
     '<div class="chips"><span class="tag">' + G.cards.length + " cards</span><span class=\"tag\">" + G.players.length + " players</span><span class=\"tag\">" + G.flows.length + " money flows</span></div></header>" +
     '<nav class="tabs" role="tablist">' +
     [["study", "Study"], ["guide", "Guide"], ["players", "Players"], ["money", "Money"], ["timing", "Timing"], ["ask", "Ask"]].map(function (t) {
@@ -557,7 +557,7 @@ window.startGuide = function (G, initial) {
   }).then(function (user) {
     if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.", true);
     return Promise.all([api("GET", "/guide"), api("GET", "/progress")]).then(function (r) {
-      if (r[0].status === 403) return gate("Your account doesn’t have access to Cheer Research.");
+      if (r[0].status === 403) return gate("Your account doesn’t have access to Youth Activities Research.");
       if (!r[0].ok || !(r[1].ok || r[1].status === 404)) throw new Error("load failed");
       return Promise.all([r[0].json(), r[1].status === 404 ? null : r[1].json()]).then(function (x) {
         var local = null;
@@ -570,7 +570,7 @@ window.startGuide = function (G, initial) {
       });
     });
   }).catch(function () {
-    gate("Couldn’t load Cheer Research. Reload to try again.", true);
+    gate("Couldn’t load Youth Activities Research. Reload to try again.", true);
   });
 })();
 </script>

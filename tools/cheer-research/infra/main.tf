@@ -1,4 +1,4 @@
-# Cheer Research at cheer-research.dot-y.co: Luke’s field guide to the youth cheer and dance market, for members of lukes_research.
+# Youth Activities Research at cheer-research.dot-y.co: Luke’s field guide to the youth activities market, for members of lukes_research.
 
 variable "domain_name" {
   type    = string
@@ -38,8 +38,8 @@ module "app" {
   user_pool_id  = local.pool_id
   callback_urls = [local.app_url, local.dev_url]
   tile = {
-    title       = "Cheer Research"
-    description = "The cheer and dance market: players, money flows, a calculator, and flashcards."
+    title       = "Youth Activities Research"
+    description = "The youth activities market, from cheer and dance out: players, money flows, a calculator, and flashcards."
     url         = local.app_url
     icon        = "climb" # see the icon list in platform/core/portal/index.html
   }

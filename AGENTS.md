@@ -23,7 +23,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/biomap` | biomap.dot-y.co | `lukes_biomap` | Field-guide flashcards from a private photo collection |
 | `tools/tempi` | tempi.dot-y.co | `family_tempi` | An OT course, served to members only |
 | `tools/boards` | boards.dot-y.co | `lukes_boards` | Field guide + flashcards for two nonprofit boards; the guide lives in gitignored `private/` |
-| `tools/cheer-research` | cheer-research.dot-y.co | `lukes_research` | Market research for a cheer and dance SaaS: guide, players, money flows + calculator, flashcards; the guide lives in gitignored `private/` |
+| `tools/cheer-research` | cheer-research.dot-y.co | `lukes_research` | Market research for a youth activities SaaS (cheer and dance first): guide, players, money flows + calculator, flashcards; the guide lives in gitignored `private/` |
 | `tools/house-hunt` | house-hunt.dot-y.co | `family_house_hunt` | Neighborhoods on a map, ranked listings; listing emails to househunt@dot-y.co are filed by Claude |
 | `tools/chamber` | chamber.dot-y.co | `lukes_chamber` | Mushroom chamber: Arduino firmware + build notes; the board posts telemetry to `POST /ingest` (device key), the page shows it and sets the board’s settings |
 | `tools/sms` | (API only) | | Dot-y texting program: opt-in consent records, and Twilio’s webhook that hands members’ texts to Dot |
