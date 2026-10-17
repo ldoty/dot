@@ -19,7 +19,8 @@ box under the map, drops one pin there and names the closest neighborhood pin.
 and the map popup says so for any address found to the house. The answer comes from the Census’s incorporated
 places for the point (`cityLimits` in `api/geocode.mjs`), which the Census redraws once a year, so a recent
 annexation can be missing; the city’s GIS office has the final word, and council districts aren’t covered. The
-email ingest looks it up for each new home; `scripts/city-limits.mjs` fills in the rest (hand-added ones too).
+email ingest looks it up for each new home, and the API for each one added by hand; `scripts/city-limits.mjs`
+fills in any still missing (re-run it if the Census was down).
 Table rows (`pk = TOOL`): `HOOD#<id>`, `LISTING#<id>`, `PLACE#<id>` (map reference points, read-only in
 the app), `MAIL#<time>#<messageId>` (what the ingest did with each email), `NOTES`.
 
@@ -32,7 +33,8 @@ only when it passes DMARC. Claude on Bedrock (`var.model`) reads the email as un
 the homes in a fixed schema, each matched to one of our neighborhood ids or none. Only Greer homes are
 filed (city Greer, or a 29650–29652 zip; `isGreer` in `api/listing.mjs`); the rest are counted as `notGreer` on the
 message’s `MAIL#` row and dropped. So are homes outside 2,700–3,200 sqft or $450k–$700k (`inSearch`,
-counted as `outOfRange`); one with no price or size given is kept. A home we already have
+counted as `outOfRange`); one with no price or size given is kept. A home added by hand is kept either way, but tagged
+“Outside our range” (the page gets the ranges as `search` from `GET /all`). A home we already have
 (same street address) gets its price, status and history updated; our notes, rank and neighborhood stay.
 New homes go to the bottom of their neighborhood's list, or the inbox. A listing you reject is hidden but kept (`rejected`), so a later
 alert about that house updates it quietly instead of adding it back; the inbox can show rejected ones to undo. The ingest is bundled with

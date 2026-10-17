@@ -208,6 +208,21 @@ test('city limits: in Greer, in another town or none is out, a failed lookup is 
   assert.equal(await locate('12 Sugar Lake Ct', 'Greer', { fetch: geoFetch({ census: [CENSUS_HIT], places: [{ NAME: 'Greer city' }] }), ...quiet }), 'in');
 });
 
+test('a listing added by hand gets the city limits lookup; a saved one isn’t looked up again', async () => {
+  const before = globalThis.fetch;
+  try {
+    globalThis.fetch = geoFetch({ census: [CENSUS_HIT], places: [{ NAME: 'Greer city' }] });
+    assert.equal((await call('PUT', '/listings/a', { address: '12 Sugar Lake Ct', rev: 0 })).body.cityLimits, 'in');
+    globalThis.fetch = geoFetch({ census: [CENSUS_HIT] });
+    assert.equal((await call('PUT', '/listings/a', { address: '12 Sugar Lake Ct', cityLimits: 'in', rev: 1 })).body.cityLimits, 'in');
+    assert.equal(globalThis.fetch.calls.length, 0);
+    globalThis.fetch = geoFetch({ fail: ['census', 'openstreetmap'] });
+    const r = await call('PUT', '/listings/b', { address: '2 Main St', rev: 0 });
+    assert.deepEqual([r.status, r.body.cityLimits], [200, ''], 'a failed lookup still saves');
+  } finally { globalThis.fetch = before; }
+  assert.deepEqual((await call('GET', '/all')).body.search, { sqft: [2700, 3200], price: [450000, 700000] });
+});
+
 test('a listing keeps its city limits answer; anything else is unknown', async () => {
   await call('PUT', '/listings/a', { address: '1 Main St', cityLimits: 'in', rev: 0 });
   await call('PUT', '/listings/b', { address: '2 Main St', cityLimits: 'maybe', rev: 0 });

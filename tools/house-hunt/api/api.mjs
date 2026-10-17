@@ -17,8 +17,8 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { verifyAccessToken } from './verify-token.mjs';
-import { cleanListing, listingOut } from './listing.mjs';
-import { cityLimits, geocode } from './geocode.mjs';
+import { SEARCH, cleanListing, listingOut } from './listing.mjs';
+import { cityLimits, geocode, locate } from './geocode.mjs';
 
 const { TABLE, GROUP, ISSUER, CLIENT_ID } = process.env;
 const PK = 'TOOL';
@@ -103,7 +103,7 @@ export const handler = async (event) => {
       const places = r.Items.filter((i) => i.sk.startsWith('PLACE#')).map(placeOut);
       const listings = r.Items.filter((i) => i.sk.startsWith('LISTING#')).map(listingOut);
       const mail = r.Items.filter((i) => i.sk.startsWith('MAIL#')).map(mailOut).sort((a, b) => (a.receivedAt < b.receivedAt ? 1 : -1)).slice(0, 10);
-      return json(200, { hoods, listings, places, mail, notes: notesOut(r.Items.find((i) => i.sk === 'NOTES')) });
+      return json(200, { hoods, listings, places, mail, search: SEARCH, notes: notesOut(r.Items.find((i) => i.sk === 'NOTES')) });
     }
     case 'PUT /hoods/{id}': {
       const name = str(body.name, 120);
@@ -152,6 +152,8 @@ export const handler = async (event) => {
       if (rev === null) return json(400, { error: 'rev required' });
       const { listing, error } = cleanListing(body, id);
       if (error) return json(400, { error });
+      // A home added by hand gets the city limits lookup the email ingest does (unknown if it fails)
+      if (rev === 0 && !listing.cityLimits) listing.cityLimits = await locate(listing.address, listing.city);
       const now = new Date().toISOString();
       const { id: _, ...fields } = listing;
       const item = { pk: PK, sk: `LISTING#${id}`, ...fields, firstSeenAt: fields.firstSeenAt || now, ...stamp };

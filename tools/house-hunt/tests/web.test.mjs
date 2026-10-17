@@ -326,9 +326,13 @@ test('add a listing by hand, mark one reviewed, keep notes on it, and delete it'
   p.el('form.ladd [name="address"]').value = '7 Pond View Ct';
   p.el('form.ladd [name="price"]').value = '$449,000';
   p.el('form.ladd [name="url"]').value = 'redfin.com/home/7';
+  p.el('form.ladd [name="sqft"]').value = '2,950';
   await p.submit('form.ladd'); await wait(40);
   const added = (await call('GET', '/all')).body.listings.find((l) => l.address === '7 Pond View Ct');
-  assert.deepEqual([added.hoodId, added.price, added.url, added.rank, added.source], ['sf', 449000, 'https://redfin.com/home/7', 1, 'manual']);
+  assert.deepEqual([added.hoodId, added.price, added.sqft, added.url, added.rank, added.source], ['sf', 449000, 2950, 'https://redfin.com/home/7', 1, 'manual']);
+  const tags = [...p.d.querySelectorAll(`[data-listing="${added.id}"] .ltag`)];
+  assert.ok(tags.some((t) => t.textContent === 'Outside our range' && /2,700–3,200 sq ft at \$450,000–\$700,000/.test(t.title)), '$449,000 is kept but marked');
+  assert.ok(![...p.d.querySelectorAll('[data-listing="a"] .ltag')].some((t) => t.textContent === 'Outside our range'), '$500,000 with no size is fine');
   await p.click('[data-lreview="a"]');
   assert.equal((await call('GET', '/all')).body.listings.find((l) => l.id === 'a').reviewed, true);
   assert.match(p.el('[data-lreview="a"]').textContent, /✓ Reviewed/);

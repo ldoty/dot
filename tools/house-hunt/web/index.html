@@ -160,7 +160,7 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
 <script>
 (function () {
   var cfg, me = "", hoods = [], places = [], listings = [], mail = [], notes = { text: "", rev: 0 };
-  var addingListing = null, openNotes = {}, sortables = [], showRejected = false;
+  var addingListing = null, openNotes = {}, sortables = [], showRejected = false, search = null;
   // How explore and no-go are sorted: "order" (ours, set by dragging) or by price. Remembered per browser.
   var editing = null, armed = null, sort = "price";
   try { sort = localStorage.getItem("househunt.sort") || "price"; } catch (e) {}
@@ -218,7 +218,7 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
     return api("GET", "/all").then(function (all) { load(all); render(); });
   }
 
-  function load(all) { hoods = all.hoods; places = all.places || []; listings = all.listings || []; mail = all.mail || []; notes = all.notes; }
+  function load(all) { hoods = all.hoods; places = all.places || []; listings = all.listings || []; mail = all.mail || []; notes = all.notes; search = all.search || null; }
 
   // Saves a neighborhood with changes; on a conflict keeps the newer row and reports it.
   function saveHood(h, changes, okMsg) {
@@ -461,6 +461,16 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
   function cityTag(v) {
     return LIMITS[v] ? '<span class="ltag' + (v === "in" ? " city" : "") + '" title="Census map, updated yearly. The city’s GIS office has the final word.">' + LIMITS[v] + "</span>" : "";
   }
+  // What we're shopping for comes from the API (SEARCH in listing.mjs). Alerts outside it are never
+  // filed; one added by hand is kept but marked. An unknown price or size isn't held against it.
+  function outOfRange(l) {
+    if (!search) return false;
+    function off(v, r) { return v > 0 && (v < r[0] || v > r[1]); }
+    return off(l.price, search.price) || off(l.sqft, search.sqft);
+  }
+  function rangeText() {
+    return search.sqft[0].toLocaleString("en-US") + "–" + search.sqft[1].toLocaleString("en-US") + " sq ft at " + money(search.price[0]) + "–" + money(search.price[1]);
+  }
   function listingItem(l, i) {
     var chg = priceChange(l), facts = [];
     if (l.beds) facts.push(l.beds + " bd"); if (l.baths) facts.push(l.baths + " ba"); if (l.sqft) facts.push(Number(l.sqft).toLocaleString("en-US") + " sqft");
@@ -468,7 +478,8 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
     var tags = (!l.reviewed && !l.rejected && l.event !== "price_cut" ? '<span class="ltag new">New</span>' : "") +
       (chg ? '<span class="ltag ' + (chg.cut ? "cut" : "") + '">' + (chg.cut ? "Price cut " : "Price up ") + money(chg.amount) + "</span>" : "") +
       (STATUS_TAG[l.status] ? '<span class="ltag ' + l.status + '">' + STATUS_TAG[l.status] + "</span>" : "") +
-      (l.rejected ? '<span class="ltag gone">Rejected</span>' : "") + cityTag(l.cityLimits);
+      (l.rejected ? '<span class="ltag gone">Rejected</span>' : "") + cityTag(l.cityLimits) +
+      (outOfRange(l) ? '<span class="ltag" title="We’re looking at ' + esc(rangeText()) + '">Outside our range</span>' : "");
     var moveOpts = '<option value="">Unsorted</option>' + hoods.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (h) {
       return '<option value="' + esc(h.id) + '"' + (h.id === l.hoodId ? " selected" : "") + ">" + esc(h.name) + "</option>";
     }).join("");
@@ -499,7 +510,8 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
     return '<div class="listings"><div class="listings-head"><p class="sub">Listings' + (list.length ? " · " + list.length : "") + (n ? " · " + n + " to review" : "") + "</p>" +
       (addingListing === key ? "" : '<button class="small-btn" data-ladd="' + esc(key) + '">+ Add listing</button>') + "</div>" +
       (addingListing === key ? '<form class="ladd" data-hood="' + esc(key) + '"><input name="address" placeholder="Street address" aria-label="Street address" required maxlength="160">' +
-        '<input name="price" placeholder="Price" aria-label="Price" inputmode="numeric"><input class="wide" name="url" placeholder="Listing link (https://…)" aria-label="Listing link">' +
+        '<input name="price" placeholder="Price" aria-label="Price" inputmode="numeric"><input name="url" placeholder="Listing link (https://…)" aria-label="Listing link">' +
+        '<input name="sqft" placeholder="Sq ft" aria-label="Square feet" inputmode="numeric">' +
         '<div class="buttons"><button class="btn primary">Add</button><button type="button" class="btn ghost" data-cancel-listing>Cancel</button></div></form>' : "") +
       '<ol class="lst" data-lst="' + esc(key) + '">' + list.map(listingItem).join("") + "</ol></div>";
   }
@@ -702,10 +714,13 @@ form.ladd .btn { padding: 5px 12px; font-size: 13px }
     if (!address) { el.address.focus(); return; }
     var price = el.price.value.replace(/[$,\s]/g, "");
     if (price && !/^\d+$/.test(price)) { el.price.focus(); status("Price should be whole dollars, like 425000."); return; }
+    var sqft = el.sqft.value.replace(/[,\s]/g, "");
+    if (sqft && !/^\d+$/.test(sqft)) { el.sqft.focus(); status("Square feet should be a whole number, like 2900."); return; }
     var url = el.url.value.trim();
     if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
-    var l = { id: uid(), rev: 0, address: address, hoodId: hoodId, price: price ? Number(price) : null, url: url, status: "active", source: "manual",
+    var l = { id: uid(), rev: 0, address: address, hoodId: hoodId, price: price ? Number(price) : null, sqft: sqft ? Number(sqft) : null, url: url, status: "active", source: "manual",
       reviewed: true, rank: inHood(hoodId).length + 1, notes: "", history: [] };
+    status("Adding " + address + "…");
     saveListing(l, {}, address + " added").then(function () { addingListing = null; render(); }, function () {});
   }
 

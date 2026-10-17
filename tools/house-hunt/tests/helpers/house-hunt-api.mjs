@@ -7,6 +7,13 @@ export const CLIENT_ID = 'house-hunt-client';
 Object.assign(process.env, { TABLE: 'family-house-hunt', GROUP: 'family_house_hunt', ISSUER, CLIENT_ID });
 export const table = fakeTable();
 const { handler } = await import('../../api/api.mjs');
+// The handler looks up city limits for new listings; tests never reach the real geocoders (they find
+// nothing). Other requests (the test JWKS) pass through. A test that wants answers swaps in its own
+// fetch and puts this one back.
+const passThrough = globalThis.fetch;
+globalThis.fetch = async (url, o) => (/geocoding\.geo\.census\.gov|nominatim\.openstreetmap\.org/.test(String(url))
+  ? { ok: true, status: 200, json: async () => ({ result: { addressMatches: [] } }) }
+  : passThrough(url, o));
 export const memberToken = () => accessToken({ clientId: CLIENT_ID, group: 'family_house_hunt' });
 export const ROUTES = ['GET /all', 'PUT /hoods/{id}', 'DELETE /hoods/{id}', 'PUT /notes', 'PUT /listings/{id}', 'DELETE /listings/{id}', 'GET /geocode'];
 const callApi = caller(handler, ROUTES);
