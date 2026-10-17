@@ -44,6 +44,14 @@ export function isGreer(city, address) {
   return str(city, 60).toLowerCase() === 'greer' || /,\s*greer\b|\b2965[012]\b/i.test(str(address, 200));
 }
 
+// What we're shopping for (2026-10-16): 2,700–3,200 sqft at $450k–$700k. A home outside either range
+// isn't filed; a missing price or size (0 from the ingest) isn't held against it, since we can't tell.
+export const SEARCH = { sqft: [2700, 3200], price: [450000, 700000] };
+export function inSearch(price, sqft) {
+  const within = (v, [lo, hi]) => !(v > 0) || (v >= lo && v <= hi);
+  return within(price, SEARCH.price) && within(sqft, SEARCH.sqft);
+}
+
 /** Validates a listing from the page or ingest. Returns { listing } or { error }. */
 export function cleanListing(body, id) {
   const address = str(body.address, 160);

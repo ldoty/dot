@@ -4,7 +4,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { table } from './helpers/house-hunt-api.mjs';
 import { makeIngest, senderAllowed, links } from '../api/ingest.mjs';
-import { isGreer } from '../api/listing.mjs';
+import { inSearch, isGreer } from '../api/listing.mjs';
 
 const ALLOWED = ['luke.doty@gmail.com', 'zillow.com'];
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }));
@@ -49,11 +49,11 @@ beforeEach(() => {
 });
 
 test('files each Greer home from an alert under its neighborhood, at the bottom of that list; others are dropped', async () => {
-  const unmatched = { city: 'Greer', price: 389900, beds: 3, baths: 0, sqft: 0, url: '', hoodId: '', matchReason: '' };
+  const unmatched = { city: 'Greer', price: 489900, beds: 3, baths: 0, sqft: 0, url: '', hoodId: '', matchReason: '' };
   reply = answer([home(), home({ address: '9 Elsewhere Rd', ...unmatched }), home({ address: '5 Taylors Rd', city: 'Taylors', hoodId: '' }),
     home({ address: '7 Pine St', city: '', hoodId: '' })]);
   const r = await ingest()(record());
-  assert.deepEqual(r, { outcome: 'ok', found: 4, added: 2, updated: 0, notGreer: 2 });
+  assert.deepEqual(r, { outcome: 'ok', found: 4, added: 2, updated: 0, notGreer: 2, outOfRange: 0 });
   const added = listings().filter((l) => l.source === 'email');
   const sc = added.find((l) => l.address === '12 Sugar Lake Court');
   assert.deepEqual([sc.hoodId, sc.rank, sc.price, sc.beds, sc.baths, sc.status, sc.reviewed], ['sugar-creek', 2, 615000, 4, 3, 'active', false]);
@@ -156,6 +156,20 @@ test('a Redfin tour link is filed as the home’s page, and Redfin tracking is d
   assert.equal(byAddress['1317 Algeddis Dr'], 'https://www.redfin.com/SC/Greer/1317-Algeddis-Dr/home/194507028');
   assert.equal(byAddress['321 Upwey Pl'], 'https://www.redfin.com/SC/Greer/321-Upwey-Pl-29651/home/205994015');
   assert.match(requests[0].system, /tour link only when it is the only link/);
+});
+
+test('homes outside 2,700–3,200 sqft or $450k–$700k are dropped, not filed', async () => {
+  reply = answer([home({ address: '1 Big Rd', sqft: 3400 }), home({ address: '2 Cheap Rd', price: 425000 }),
+    home({ address: '3 Dear Rd', price: 725000 }), home({ address: '4 Unknown Rd', price: 0, sqft: 0 })]);
+  const r = await ingest()(record());
+  assert.deepEqual([r.added, r.outOfRange], [1, 3]);
+  assert.deepEqual(listings().filter((l) => l.source === 'email').map((l) => l.address), ['4 Unknown Rd']);
+  assert.equal(mails()[0].outOfRange, 3);
+});
+
+test('our ranges include their ends; an unknown price or size passes', () => {
+  for (const [price, sqft] of [[450000, 2700], [700000, 3200], [615000, null], [null, 2900], [0, 0]]) assert.ok(inSearch(price, sqft), `${price} ${sqft}`);
+  for (const [price, sqft] of [[449999, 2900], [700001, 2900], [615000, 2699], [615000, 3201]]) assert.ok(!inSearch(price, sqft), `${price} ${sqft}`);
 });
 
 test('a Greer address: the city, or a Greer zip or city in the address', () => {

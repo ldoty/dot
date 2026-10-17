@@ -25,7 +25,8 @@ Lambda, which takes mail only from `allowed_senders` (your Gmail addresses and t
 only when it passes DMARC. Claude on Bedrock (`var.model`) reads the email as untrusted data and returns
 the homes in a fixed schema, each matched to one of our neighborhood ids or none. Only Greer homes are
 filed (city Greer, or a 29650–29652 zip; `isGreer` in `api/listing.mjs`); the rest are counted as `notGreer` on the
-message’s `MAIL#` row and dropped. A home we already have
+message’s `MAIL#` row and dropped. So are homes outside 2,700–3,200 sqft or $450k–$700k (`inSearch`,
+counted as `outOfRange`); one with no price or size given is kept. A home we already have
 (same street address) gets its price, status and history updated; our notes, rank and neighborhood stay.
 New homes go to the bottom of their neighborhood's list, or the inbox. A listing you reject is hidden but kept (`rejected`), so a later
 alert about that house updates it quietly instead of adding it back; the inbox can show rejected ones to undo. The ingest is bundled with

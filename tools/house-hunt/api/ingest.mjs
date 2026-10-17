@@ -2,7 +2,8 @@
 // and invokes this Lambda. For each message from an allowed sender that passes DMARC, Claude (on
 // Bedrock) pulls out the homes it mentions and matches each to one of our neighborhoods; new homes
 // are added to the bottom of that neighborhood's listings (or unsorted), and homes we already have
-// get their price, status and history updated. Homes outside Greer are dropped (isGreer). A MAIL# row
+// get their price, status and history updated. Homes outside Greer (isGreer) or outside our size and price
+// ranges (inSearch) are dropped. A MAIL# row
 // records what happened to each message.
 //
 // The email is untrusted: Claude only returns data in a fixed schema, the neighborhood it picks must
@@ -13,7 +14,7 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
-import { EVENTS, addressKey, cleanListing, isGreer } from './listing.mjs';
+import { EVENTS, addressKey, cleanListing, inSearch, isGreer } from './listing.mjs';
 
 const PK = 'TOOL';
 const MAX_EMAIL_CHARS = 120000;
@@ -174,7 +175,7 @@ export function makeIngest({ db, table, getRaw, claude, model, allowed, now = ()
     if (!senderAllowed(from, allowed)) return log({ ignored: 'sender not allowed', from, messageId: mail.messageId });
 
     const at = now().toISOString();
-    const result = { outcome: 'ok', found: 0, added: 0, updated: 0, notGreer: 0 };
+    const result = { outcome: 'ok', found: 0, added: 0, updated: 0, notGreer: 0, outOfRange: 0 };
     try {
       const parsed = await simpleParser(await getRaw(mail.messageId));
       const items = await query();
@@ -185,6 +186,7 @@ export function makeIngest({ db, table, getRaw, claude, model, allowed, now = ()
       const hoodIds = hoods.map((h) => h.sk.slice(5));
       for (const x of found.filter((f) => f.address?.trim())) {
         if (!isGreer(x.city, x.address)) { result.notGreer++; continue; }
+        if (!inSearch(x.price, x.sqft)) { result.outOfRange++; continue; }
         const r = await upsert(x, hoodIds, at);
         if (r) result[r]++;
       }
