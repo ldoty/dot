@@ -1,0 +1,48 @@
+{
+  "title": "Test market",
+  "note": "Invented research for tests.",
+  "thesis": { "title": "Follow the widgets", "intro": "Sell widgets to gyms.", "legs": [{ "name": "Payments", "what": "Half a percent." }, { "name": "Texting", "what": "A cent a text." }], "deadline": "Before the widget season." },
+  "chapters": [
+    { "id": "alpha", "title": "Alpha chapter", "eyebrow": "Players", "summary": "Who makes widgets.", "points": [{ "text": "Acme Events runs 40 widget shows.", "label": "C", "src": ["https://example.com/acme"] }, { "text": "Widgets may double by 2030.", "label": "E" }] },
+    { "id": "beta", "title": "Beta chapter", "eyebrow": "Money", "summary": "Who pays.", "points": [{ "text": "Families pay the gym.", "label": "R" }] },
+    { "id": "calendar", "title": "Seasons", "eyebrow": "Timing", "summary": "When.", "points": [{ "text": "Widget season opens in May.", "label": "C" }] }
+  ],
+  "players": [
+    { "id": "acme", "name": "Acme Events", "kind": "events", "role": "gatekeeper", "owner": "Bigfund Capital", "what": "Runs widget shows.", "label": "C" },
+    { "id": "zed", "name": "Zed Software", "kind": "software", "role": "rival", "owner": "Smallfund Partners", "what": "Gym widget software.", "label": "C" },
+    { "id": "guild", "name": "Widget Guild", "kind": "network", "role": "channel", "owner": "Nonprofit", "what": "Owners’ club.", "label": "R" },
+    { "id": "omega", "name": "Omega Roll-up", "kind": "rollup", "role": "prospect", "owner": "Founder group", "what": "Buys studios.", "label": "C" },
+    { "id": "pine", "name": "Pine Apparel", "kind": "apparel", "role": "ally", "owner": "Pine Holdings", "what": "Uniforms.", "label": "C" }
+  ],
+  "kinds": { "events": "Events", "software": "Software", "network": "Owner network", "rollup": "Roll-up", "apparel": "Apparel" },
+  "roles": { "gatekeeper": "Gatekeeper", "rival": "Rival", "prospect": "Prospect", "channel": "Channel", "ally": "Ally" },
+  "segments": { "allstar": "All-star cheer", "dance": "Dance studio" },
+  "flows": [
+    { "id": "t", "seg": "allstar", "item": "Tuition", "payer": "Family", "via": "Gym", "payee": "Gym", "low": 1000, "mid": 2000, "high": 3000, "timing": "Monthly", "capture": "high", "label": "C" },
+    { "id": "c", "seg": "allstar", "item": "Competition fees", "payer": "Family", "via": "Gym", "payee": "Event producer", "low": 500, "mid": 1000, "high": 1500, "timing": "Season", "capture": "high", "label": "C" },
+    { "id": "h", "seg": "allstar", "item": "Hotels", "payer": "Family", "via": "Producer portal", "payee": "Hotels", "low": 0, "mid": 1500, "high": 3000, "timing": "Per event", "capture": "low", "label": "E" },
+    { "id": "d", "seg": "dance", "item": "Dance tuition", "payer": "Family", "via": "Studio", "payee": "Studio", "low": 1000, "mid": 3000, "high": 5000, "timing": "Monthly", "capture": "high", "label": "C" }
+  ],
+  "calc": {
+    "athletes": { "allstar": 100, "rec": 0, "dance": 0, "class": 0, "school": 0, "recCheer": 0 },
+    "cardShare": 50, "cardTake": 0.5, "achTake": 0.1, "parentFee": 0, "parentFeeShare": 100,
+    "textsPerFamily": 10, "textPrice": 3, "textCost": 1, "familySize": 1,
+    "marketingMonthly": 100, "websitesMonthly": 0,
+    "outcomes": [{ "id": "enroll", "name": "New enrollment", "count": 10, "price": 50 }],
+    "gyms": 1000, "share": 10
+  },
+  "calendar": [{ "when": "May", "cheer": "Tryouts", "dance": "Recitals", "so": "Sell now" }],
+  "questions": [
+    { "who": "First client", "ask": "What’s your card share?", "why": "Sets the mix." },
+    { "who": "First client", "ask": "What do you pay now?", "why": "Pricing." },
+    { "who": "Omega", "ask": "What software do you run?", "why": "Prospect." }
+  ],
+  "cards": [
+    { "id": "alpha:a1", "topic": "alpha", "q": "Who runs widget shows?", "a": "Acme Events" },
+    { "id": "alpha:a2", "topic": "alpha", "q": "How many widget shows?", "a": "40" },
+    { "id": "alpha:a3", "topic": "alpha", "q": "Who owns Zed?", "a": "Smallfund Partners" },
+    { "id": "alpha:a4", "topic": "alpha", "q": "Who’s the owners’ club?", "a": "Widget Guild" },
+    { "id": "beta:b1", "topic": "beta", "q": "Who pays the gym?", "a": "Families", "sub": "Monthly." },
+    { "id": "beta:b2", "topic": "beta", "q": "Net take?", "a": "0.5%" }
+  ]
+}
