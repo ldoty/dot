@@ -10,13 +10,23 @@
 //     operations: [{
 //       name: 'month',                  // the tool Claude sees: <name>_<operation>
 //       description: 'What it returns and when to use it',
-//       path: '/month/{month}',         // GET only; {x} comes from input.x, other inputs go in the query
+//       path: '/month/{month}',         // {x} comes from input.x, other inputs go in the query (a write: the body)
+//       method: 'GET',                  // optional, GET by default; see Writes below
 //       input: { type: 'object', properties: { month: { type: 'string', pattern: '…' } }, required: ['month'], additionalProperties: false },
 //     }],
 //   }
 //
-// Dot calls operations with a short-lived, read-only token for the person asking (delegation.mjs),
-// so the tool decides what they may see, exactly as for its own page. Only GET: Dot never writes.
+// Dot calls operations with a short-lived token for the person asking (delegation.mjs), so the tool
+// decides what they may see and do, exactly as for its own page.
+//
+// Writes. An operation with method POST, PUT, PATCH or DELETE changes something, as the person. The tool
+// opts in per route: it accepts a via-Dot token only on the routes its manifest declares (writeRoutes
+// below), and refuses every other non-GET. When the person must agree first (always, for anything that
+// runs on its own later), it answers 202 { confirm_id, prompt } and goes ahead only when the same request
+// comes again with ?confirm_id=, checking itself that it's the same person and the same change, in time,
+// once. Dot asks the person the prompt, and sends the confirmation only after their own reply (Dot's
+// confirm.mjs: never because something it read says so), with exactly the request it asked about.
+// Dot never offers a write to a run that may only read (a scheduled ask's).
 //
 // Roles. An operation may also say it's one of the shapes every tool answers alike, so Dot can put
 // the family's tools side by side without code for each (at most one operation per role, no inputs
@@ -29,6 +39,7 @@
 
 const NAME = /^[a-z][a-z0-9_]{0,23}$/;
 export const ROLES = ['automations', 'sent'];
+export const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 const PARAM = /\{([a-z][a-z0-9_]*)\}/g;
 
 /** Throws with a reason unless `m` is a usable manifest; returns it */
@@ -41,6 +52,8 @@ export function validateManifest(m) {
   if (!Array.isArray(m.operations) || !m.operations.length) bad('no operations');
   const seen = new Set(), roles = new Set();
   for (const op of m.operations) {
+    if (op.method !== undefined && !METHODS.includes(op.method)) bad(`${op.name}: method "${op.method}"`);
+    if (op.role !== undefined && (op.method ?? 'GET') !== 'GET') bad(`${op.name}: a role is read with GET`);
     if (op.role !== undefined) {
       if (!ROLES.includes(op.role) || roles.has(op.role)) bad(`${op.name}: role "${op.role}"`);
       roles.add(op.role);
@@ -59,7 +72,16 @@ export function validateManifest(m) {
   return m;
 }
 
-/** The request path for one call: path parameters filled in, other inputs as the query string */
+/** "POST /automations" for each write the manifest declares: the only non-GET routes a via-Dot token may use */
+export const writeRoutes = (m) => m.operations.filter((op) => (op.method ?? 'GET') !== 'GET').map((op) => `${op.method} ${op.path}`);
+
+/** A write's body: its inputs that aren't path parameters */
+export function requestBody(op, input = {}) {
+  const inPath = new Set([...op.path.matchAll(PARAM)].map((m) => m[1]));
+  return Object.fromEntries(Object.entries(input).filter(([k, v]) => !inPath.has(k) && v !== undefined && op.input.properties[k]));
+}
+
+/** The request path for one call: path parameters filled in, other inputs as the query string (not for a write: they're its body) */
 export function requestPath(op, input = {}) {
   const used = new Set();
   const path = op.path.replace(PARAM, (_, p) => {
@@ -69,6 +91,7 @@ export function requestPath(op, input = {}) {
     return encodeURIComponent(v);
   });
   const q = new URLSearchParams();
+  if ((op.method ?? 'GET') !== 'GET') return path;
   for (const [k, v] of Object.entries(input)) {
     if (!used.has(k) && v !== undefined && v !== null && op.input.properties[k]) q.set(k, String(v));
   }

@@ -6,11 +6,16 @@
 //   2. borrows a read-only token for that person on each (delegation.mjs); a tool they can't use
 //      refuses, and Dot simply doesn't offer it,
 //   3. reads each tool's manifest and offers its operations to Claude as <name>_<operation>,
-//   4. runs a call as a GET with that person's token, and logs it in the audit log.
+//   4. runs a call with that person's token, and logs it in the audit log.
+// A write the manifest declares (dot-manifest.mjs, Writes) is offered with a `confirm` field: when the
+// tool answers 202 { confirm_id, prompt }, Dot asks the person and stops; the confirmation goes back only
+// after their own reply (confirm.mjs), and it's exactly the request that was asked about, never a new one
+// from the confirming call. Writes are named in `writes`, so a read-only run (a scheduled ask) leaves them out.
 // Tools with no manifest (a 404 at /dot, e.g. Budget, which Dot reads with its own code) are skipped.
 // An operation with a role (dot-manifest.mjs: 'automations', 'sent') is also handed back under it, so
 // Dot can put every tool's automations in one list, and read what was texted to someone before they reply.
-import { requestPath, validateManifest } from './dot-manifest.mjs';
+import { requestBody, requestPath, validateManifest } from './dot-manifest.mjs';
+import { asking, pendingIn } from './confirm.mjs';
 
 const TTL_MS = 5 * 60_000;
 const MAX_CHARS = 60_000; // a tool's answer beyond this is cut, and Claude is told so
@@ -40,11 +45,12 @@ export function makeDiscovery({ listApps, tokenFor, fetch = globalThis.fetch, no
   }
 
   /**
-   * The discovered tools for one person: { definitions, connected, handlers, apps, roles } (apps: every tool
-   * they can use; roles: { automations: [{ tool, run }], sent: [...] }, run() -> the operation's answer, parsed)
+   * The discovered tools for one person: { definitions, connected, handlers, apps, roles, writes } (apps: every tool
+   * they can use; roles: { automations: [{ tool, run }], sent: [...] }, run() -> the operation's answer, parsed;
+   * writes: the names of the tools that change things)
    */
   async function forUser({ user, channel = 'web', audit = async () => {} }) {
-    const definitions = [], connected = [], handlers = {}, apps = {}, roles = { automations: [], sent: [] };
+    const definitions = [], connected = [], handlers = {}, apps = {}, roles = { automations: [], sent: [] }, writes = [];
     for (const app of await published()) {
       let token;
       try {
@@ -60,13 +66,43 @@ export function makeDiscovery({ listApps, tokenFor, fetch = globalThis.fetch, no
       connected.push({ title: m.title, description: m.description, tools: m.operations.map((op) => `${m.name}_${op.name}`) });
       for (const op of m.operations) {
         const name = `${m.name}_${op.name}`;
-        definitions.push({ name, description: `${m.title}: ${op.description} (read-only)`, input_schema: op.input });
-        handlers[name] = async (input) => {
-          const path = requestPath(op, input);
-          const record = (outcome, detail) => audit({ tool: app.app, action: `GET ${path}`, outcome, ...(detail ? { detail } : {}) });
+        const method = op.method ?? 'GET';
+        if (method === 'GET') definitions.push({ name, description: `${m.title}: ${op.description} (read-only)`, input_schema: op.input });
+        else {
+          writes.push(name);
+          definitions.push({
+            name, description: `${m.title}: ${op.description} (changes things, as them). If the answer says it needs their confirmation, ask them in plain words `
+              + 'and wait for their reply; only if they agree, call it again with confirm: true.',
+            // Only the ids in its path are required: a confirming call sends just those and confirm, and the tool checks the rest
+            input_schema: {
+              ...op.input,
+              properties: { ...op.input.properties, confirm: { type: 'boolean', description: 'Only after the person agreed' } },
+              required: (op.input.required ?? []).filter((k) => op.path.includes(`{${k}}`)),
+            },
+          });
+        }
+        handlers[name] = async ({ confirm, ...input } = {}, { history = [] } = {}) => {
+          let req;
+          if (method !== 'GET' && confirm) {
+            // Exactly what they were asked about: the request recorded when the tool asked
+            const p = pendingIn(history, name);
+            // A confirming call that names something else (another id) isn't a yes to what was asked
+            let named = null;
+            try { named = requestPath(op, input); } catch { /* no ids given: it's the one asked about */ }
+            if (!p || (named && named !== p.path)) throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
+            if (!p.answered) throw new Error('Wait for the person’s reply before confirming.');
+            req = { path: `${p.path}?confirm_id=${encodeURIComponent(p.confirm_id)}`, body: p.body };
+          } else {
+            req = { path: requestPath(op, input), ...(method !== 'GET' ? { body: requestBody(op, input) } : {}) };
+          }
+          const what = `${method} ${req.path.split('?')[0]}${confirm ? ' (confirmed)' : ''}`;
+          const record = (outcome, detail) => audit({ tool: app.app, action: what, outcome, ...(detail ? { detail } : {}) });
           // The token may have expired since the turn began; tokenFor caches it while it's good
           const t = await tokenFor({ clientId: app.client_id, sub: user.sub, username: user.username, channel });
-          const res = await fetch(`${app.api_url}${path}`, { headers: { authorization: `Bearer ${t}` } });
+          const res = await fetch(`${app.api_url}${req.path}`, {
+            method, headers: { authorization: `Bearer ${t}`, ...(req.body ? { 'content-type': 'application/json' } : {}) },
+            ...(req.body ? { body: JSON.stringify(req.body) } : {}),
+          });
           const text = await res.text();
           if (!res.ok) {
             await record(res.status === 403 ? 'denied' : 'error', `${app.app} ${res.status}`);
@@ -74,13 +110,21 @@ export function makeDiscovery({ listApps, tokenFor, fetch = globalThis.fetch, no
             try { msg = JSON.parse(text).error || ''; } catch { /* not JSON */ }
             throw new Error(`${m.title} answered ${res.status}${msg ? `: ${msg}` : ''}`);
           }
+          if (method !== 'GET' && res.status === 202) {
+            let out = {};
+            try { out = JSON.parse(text); } catch { /* not JSON */ }
+            if (out.confirm_id) {
+              await record('asked', out.prompt);
+              return asking(name, { ask_them: out.prompt, confirm_id: out.confirm_id, path: req.path, body: req.body });
+            }
+          }
           await record('ok');
           return text.length > MAX_CHARS ? `${text.slice(0, MAX_CHARS)}\n[cut: the answer was ${text.length} characters]` : text;
         };
         if (op.role && roles[op.role]) roles[op.role].push({ tool: m.title, run: async () => JSON.parse(await handlers[name]({})) });
       }
     }
-    return { definitions, connected, handlers, apps, roles };
+    return { definitions, connected, handlers, apps, roles, writes };
   }
 
   return { forUser };

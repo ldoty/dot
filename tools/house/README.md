@@ -27,9 +27,10 @@ Page ┘          (grants)                                (dials out)     (ceili
 |---|---|---|
 | `GET /home[?area=]` | members, Dot | Rooms and devices the caller may read, each with their level; how fresh the picture is |
 | `POST /commands` | members, Dot | `{ entity_id, action, data?, confirm_id? }`: 200 done, 202 confirm first, 403 not theirs, 502 refused/failed, 504 offline. Never queued |
-| `GET /dot` | Dot | The manifest: `house_state`, `house_automations` (role `automations`), `house_sent` (role `sent`) |
+| `GET /dot` | Dot | The manifest: `house_state`, `house_automations` (role `automations`), `house_sent` (role `sent`), and Dot's writes `house_automation_create`, `_change`, `_delete` |
 | `GET /automations` | members, Dot | The automations they may see (their own, or all of whose devices they can see; admins all): what each says, on / paused / stopped and why, the last run |
 | `POST /automations`, `PUT`/`DELETE /automations/{id}` | members, Dot | Needs `control` on every device in it (pausing doesn't); only its owner or an admin changes it; `rev`-checked. From Dot: 202 `{ confirm_id, prompt }` first, then again with `?confirm_id=` |
+| `PATCH /automations/{id}` | members, Dot | The given fields over the current version (how Dot changes, pauses and resumes one); from Dot, 202 first |
 | `GET /sent` | members, Dot | Texts the caller's automations sent them in the last 2 days, newest first |
 | `GET /access` | admins, not Dot | Grants, the family's groups, the people in `family_house` (named as dot-y.co/family names them), rooms and devices to pick from |
 | `PUT`/`DELETE /grants/{id}` | admins, not Dot | `rev`-checked (409 + current) |

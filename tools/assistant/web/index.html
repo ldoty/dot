@@ -112,7 +112,9 @@ body { display: flex; flex-direction: column }
     recall: ["Checking notes…", "Checked notes"],
     house_state: ["Checking the house…", "Checked the house"],
     house_control: ["Changing the lights…", "Changed the lights"],
-    house_automation: ["Setting up an automation…", "Worked on an automation"],
+    house_automation_create: ["Setting up an automation…", "Worked on an automation"],
+    house_automation_change: ["Changing an automation…", "Worked on an automation"],
+    house_automation_delete: ["Deleting an automation…", "Worked on an automation"],
     schedule: ["Working on a scheduled ask…", "Worked on a scheduled ask"],
   };
   function toolLabel(name, done) { var l = TOOL_LABELS[name]; return l ? l[done ? 1 : 0] : name; }

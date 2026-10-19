@@ -11,9 +11,10 @@
 //                                 404 unknown device, 502 the house refused or failed, 504 the house is offline
 //                                 or didn't answer. Never queued: a command runs now or not at all.
 //   GET  /dot               -> this tool's description for Dot (platform/api/dot-manifest.mjs)
-//   GET /automations, POST /automations, PUT|DELETE /automations/{id}
+//   GET /automations, POST /automations, PUT|PATCH|DELETE /automations/{id}
 //                           -> what runs by itself, and when: see automations.mjs (from Dot, changes
-//                              need the person's OK first)
+//                              need the person's OK first). Dot's writes are declared in the manifest:
+//                              the only non-GET routes a via-Dot token may use, besides POST /commands
 //   GET  /sent              -> [{ sentAt, channel, text, about, automation }] texts automations sent this
 //                              person in the last two days, newest first (notify.mjs)
 //   GET /access, PUT|DELETE /grants/{id}, GET /log
@@ -32,7 +33,7 @@ import { randomBytes } from 'node:crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { verifyAccessToken } from './verify-token.mjs';
-import { validateManifest } from './dot-manifest.mjs';
+import { validateManifest, writeRoutes } from './dot-manifest.mjs';
 import { atLeast, grantsFor, levelFor } from './grants.mjs';
 import { ID, KEY, parseData } from './protocol.mjs';
 import { makeAccess } from './access.mjs';
@@ -54,6 +55,37 @@ const json = (statusCode, body) => ({
 });
 const same = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
 
+// An automation's fields, as Dot sends them (automation.mjs checks them)
+const AUTOMATION_FIELDS = {
+  name: { type: 'string', description: 'Short name, e.g. “Kitchen lights on weekday mornings”' },
+  when: {
+    type: 'object',
+    description: 'What sets it off, one of: { "at": "HH:MM" } (24-hour, the house’s local time); { "sun": "sunrise" | "sunset", "offset": minutes, -180 to 180 }; '
+      + '{ "changes": entity id from house_state (e.g. person.luke_doty), "to": "home" | "not_home" | "on" | "off" } (not_home is leaving home)',
+  },
+  repeat: {
+    type: 'object',
+    description: 'Which days: { "rule": a calendar RRULE (no "RRULE:"), "start"?: "YYYY-MM-DD" }, the same rules as lists and scheduled asks. Leave out for every day. '
+      + 'Weekdays: FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR. Every other Monday: FREQ=WEEKLY;INTERVAL=2;BYDAY=MO. First Saturday: FREQ=MONTHLY;BYDAY=1SA. UNTIL=YYYYMMDD ends it (no COUNT)',
+  },
+  actions: {
+    type: 'array',
+    maxItems: 20,
+    description: 'What it switches: devices this person controls (from house_state)',
+    items: {
+      type: 'object',
+      properties: {
+        entity_id: { type: 'string' },
+        action: { type: 'string', enum: ['turn_on', 'turn_off'] },
+        data: { type: 'object', description: 'Optional, for turn_on on a light: { "brightness_pct": 1–100, "transition": seconds to fade }' },
+      },
+      required: ['entity_id', 'action'],
+      additionalProperties: false,
+    },
+  },
+  notify: { type: 'object', description: '{ "message": … }: text this to the person making it (only them) each time it runs; plain words, no links, up to 160 characters. null removes it' },
+};
+
 export const MANIFEST = validateManifest({
   name: 'house',
   title: 'House',
@@ -73,7 +105,7 @@ export const MANIFEST = validateManifest({
     description: 'What the house does by itself, and when (e.g. every weekday at 6:00 AM, turn on the kitchen lights): each automation’s id, name, '
       + 'what it does in words (says), its days (repeat: an RRULE and its start), time or sunrise/sunset offset, devices and actions, whether it’s on, paused or stopped (and why), when it runs next (next_at, for a clock time), '
       + 'whose it is, whether this person may change it (can_change), and how its last run went. Only the ones this person may see. '
-      + 'Times are the house’s local time. To make or change one, use house_automation.',
+      + 'Times are the house’s local time. To make, change or delete one, use house_automation_create, _change or _delete.',
     path: '/automations',
     role: 'automations',
     input: { type: 'object', properties: {}, additionalProperties: false },
@@ -84,6 +116,31 @@ export const MANIFEST = validateManifest({
     path: '/sent',
     role: 'sent',
     input: { type: 'object', properties: {}, additionalProperties: false },
+  }, {
+    name: 'automation_create',
+    description: 'Make an automation, something the house does by itself (every weekday at 6:00 turn on the kitchen lights; when Luke leaves home, text him). '
+      + 'It needs control of every device it switches, and to see what sets it off. It must switch something or text. It always asks them first.',
+    method: 'POST',
+    path: '/automations',
+    input: { type: 'object', properties: AUTOMATION_FIELDS, required: ['name', 'when'], additionalProperties: false },
+  }, {
+    name: 'automation_change',
+    description: 'Change, pause (enabled: false) or resume (enabled: true) an automation, by its id from house_automations: only the fields given change '
+      + '(actions, if given, replace them all). Only its owner or an admin may. It always asks them first.',
+    method: 'PATCH',
+    path: '/automations/{id}',
+    input: {
+      type: 'object',
+      properties: { id: { type: 'string', pattern: '^[a-z0-9]{8,24}$' }, ...AUTOMATION_FIELDS, enabled: { type: 'boolean' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  }, {
+    name: 'automation_delete',
+    description: 'Delete an automation, by its id from house_automations. Only its owner or an admin may. It always asks them first.',
+    method: 'DELETE',
+    path: '/automations/{id}',
+    input: { type: 'object', properties: { id: { type: 'string', pattern: '^[a-z0-9]{8,24}$' } }, required: ['id'], additionalProperties: false },
   }],
 });
 
@@ -187,7 +244,9 @@ export function createApi(deps) {
     return json(504, { error: 'The house didn’t answer' });
   }
 
-  const AUTOMATION_WRITES = ['POST /automations', 'PUT /automations/{id}', 'DELETE /automations/{id}'];
+  // The automation routes; Dot may use only the ones its manifest declares (writeRoutes)
+  const AUTOMATION_ROUTES = ['POST /automations', 'PUT /automations/{id}', 'PATCH /automations/{id}', 'DELETE /automations/{id}'];
+  const DOT_WRITES = ['POST /commands', ...writeRoutes(MANIFEST)];
   const bodyOf = (event) => {
     try {
       return JSON.parse(event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString() : event.body || '');
@@ -206,7 +265,7 @@ export function createApi(deps) {
       return json(e.status, { error: e.status === 403 ? 'forbidden' : 'unauthorized' });
     }
     const viaDot = claims.via === 'dot' || (!!deps.dotClientId && claims.client_id === deps.dotClientId);
-    if (viaDot && !event.routeKey?.startsWith('GET ') && event.routeKey !== 'POST /commands' && !AUTOMATION_WRITES.includes(event.routeKey)) {
+    if (viaDot && !event.routeKey?.startsWith('GET ') && !DOT_WRITES.includes(event.routeKey)) {
       console.warn('denied: Dot is read-only here', event.routeKey, claims.username);
       return json(403, { error: 'read-only' });
     }
@@ -240,10 +299,10 @@ export function createApi(deps) {
     }
 
     if (event.routeKey === 'GET /automations') return automations.list(claims.sub, admin);
-    if (AUTOMATION_WRITES.includes(event.routeKey)) {
+    if (AUTOMATION_ROUTES.includes(event.routeKey)) {
       const body = event.routeKey.startsWith('DELETE') ? {} : bodyOf(event);
       if (!body || typeof body !== 'object') return json(400, { error: 'bad json' });
-      const op = event.routeKey.startsWith('POST') ? 'create' : event.routeKey.startsWith('PUT') ? 'replace' : 'delete';
+      const op = { POST: 'create', PUT: 'replace', PATCH: 'patch', DELETE: 'delete' }[event.routeKey.split(' ')[0]];
       const who = { sub: claims.sub, username: claims.username, isAdmin: admin, via: viaDot ? 'dot' : 'page' };
       return automations.change(op, who, event.pathParameters?.id, body, event.queryStringParameters?.confirm_id);
     }

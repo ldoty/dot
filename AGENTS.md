@@ -60,7 +60,11 @@ person* from the other tool's **delegated client** (`platform/api/delegation.mjs
 - The target tool opts in with family-app `delegated = true` and lists who may read it in
   `delegates` (default `["dot"]`). It publishes `{api_url, client_id}` at SSM `/family/delegation/<group>`.
 - Cognito still applies the group gate; tokens come out marked `via: "dot"`; **the target refuses
-  every non-GET from them** (403 `read-only`); the exceptions are House's `POST /commands` (Dot's `house_control`) and automations (`house_automation`, each change after the person's own reply), editing lists the person can edit (Dot's `lists_change`), never sharing, and events on calendars they may change (Dot's calendar tools). Reads are audited by the reader.
+  every non-GET from them** (403 `read-only`) except the writes its manifest declares (`method` on an operation;
+  `writeRoutes()` in `platform/api/dot-manifest.mjs` gives the tool its own allowlist from the same manifest). A declared
+  write that needs the person's OK answers 202 `{ confirm_id, prompt }`, and Dot sends the confirmation only after their own
+  reply. Declared today: House's automations (create, change, delete; each asks first). Built into Dot instead: House's
+  `POST /commands` (Dot's `house_control`), editing lists the person can edit (Dot's `lists_change`), never sharing, and events on calendars they may change (Dot's calendar tools). Reads are audited by the reader.
 
 Current links: Dot → any tool with a manifest (today the three finances tools, House and Lists); finances tools → Budget (as their person);
 Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`).
@@ -68,9 +72,10 @@ Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`)
 ### Dot (the assistant) and tool discovery
 
 Dot (`tools/assistant`; internals in `tools/assistant/AGENTS.md`) acts as whoever is signed in. Apart
-from its built-ins (calendar tools, through `tools/calendars`; `read_budget`, `house_control`, `house_automation`, `lists_change`, memory), **every tool is discovered** (`api/discovery.mjs`): Dot lists `/family/delegation/*`, borrows a token for the
+from its built-ins (calendar tools, through `tools/calendars`; `read_budget`, `house_control`, `lists_change`, memory), **every tool is discovered** (`api/discovery.mjs`): Dot lists `/family/delegation/*`, borrows a token for the
 asker, reads each tool's `GET /dot` manifest (`platform/api/dot-manifest.mjs`) and offers its
-operations as `<name>_<operation>` tools, GET only. Dot **remembers** what people tell it that's likely to come up again (`api/memory.mjs`: household and
+operations as `<name>_<operation>` tools: reads, and the writes the tool declares (always through the confirmation
+protocol above; never in a scheduled ask's read-only run). Dot **remembers** what people tell it that's likely to come up again (`api/memory.mjs`: household and
 personal notes, shown on its page under “What Dot knows”), and runs **scheduled asks** (`api/schedules.mjs`:
 “a budget overview every Sunday at 1”) as the person, read-only, sending the answer by text or email.
 
@@ -90,7 +95,8 @@ verified Cognito `phone_number` in `family_assistant` to the person, and Dot's S
 (`tools/sms/README.md`, `tools/assistant/README.md`). They can **email** dot@dot-y.co the same way: the gate in
 `platform/email/lambda/dot.mjs` requires DMARC and a verified Cognito `email` in `family_assistant`, then Dot's email worker replies. To make a tool usable by Dot: `delegated = true`,
 publish `/family/delegation/<group>`, serve `GET /dot` (validate it with `validateManifest`), accept the
-delegated client id in its token check, refuse non-GET from it. No Dot code change. If it runs things on its own
+delegated client id in its token check, refuse non-GET from it except the writes it declares (derive that list
+with `writeRoutes(MANIFEST)`, so the two can't drift). No Dot code change. If it runs things on its own
 or texts people, give those operations their roles.
 
 ### Family groups

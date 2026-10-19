@@ -205,7 +205,7 @@ export const definition = {
     + '(calendars, budget, lists, the house), not change anything. list: theirs, with ids. create: title, ask (the request in their words, '
     + 'complete enough to run on its own later), time, repeat, by?. pause, resume, delete: id. Every change asks them first: ask them in plain words '
     + 'and wait for their reply; only if they agree, call again with the same op (and id) and confirm: true. For things the house should do by itself, '
-    + 'use house_automation; for a plain reminder, use their lists.',
+    + 'use the house’s automations (house_automation_create); for a plain reminder, use their lists.',
   input_schema: {
     type: 'object',
     properties: {

@@ -67,3 +67,14 @@ test('a sent text in the shared shape', () => {
   assert.deepEqual(sentItem(x), { sentAt: x.sentAt, channel: 'sms', text: x.text, about: x.about });
   for (const bad of [{ channel: 'fax' }, { sentAt: 'today' }, { text: '' }, { about: undefined }]) assert.equal(sentItem({ ...x, ...bad }), null, JSON.stringify(bad));
 });
+
+test('writes: a method, declared per route; their inputs are the body, not the query', async () => {
+  const { requestBody, writeRoutes } = await import('../api/dot-manifest.mjs');
+  const change = op({ name: 'change', method: 'PATCH', path: '/things/{id}', input: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, when: { type: 'object' } }, required: ['id'], additionalProperties: false } });
+  const m = validateManifest(manifest({ operations: [op(), change, op({ name: 'remove', method: 'DELETE', path: '/things/{month}' })] }));
+  assert.deepEqual(writeRoutes(m), ['PATCH /things/{id}', 'DELETE /things/{month}']);
+  assert.equal(requestPath(change, { id: 'a1', name: 'x' }), '/things/a1');
+  assert.deepEqual(requestBody(change, { id: 'a1', name: 'x', when: { at: '06:00' }, extra: 1 }), { name: 'x', when: { at: '06:00' } });
+  assert.throws(() => validateManifest(manifest({ operations: [op({ method: 'TRACE' })] })), /method "TRACE"/);
+  assert.throws(() => validateManifest(manifest({ operations: [{ ...plain('a', 'automations'), method: 'POST' }] })), /a role is read with GET/);
+});

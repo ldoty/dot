@@ -1,13 +1,13 @@
 // The tools Claude can call for one person: calendar tools for their calendars (if they have any),
 // read_budget (if Budget is set up for Dot; it reads with their own access), house_control and
-// house_automation (if they can use House; house.mjs), lists_change (if they can use Lists; lists.mjs), memory (remember, forget, recall; memory.mjs), schedule (scheduled asks;
+// lists_change (if they can use Lists; lists.mjs), memory (remember, forget, recall; memory.mjs), schedule (scheduled asks;
 // schedules.mjs), automations (everything that runs on its own for them, from every tool; automations.mjs), and whatever family tools discovery found for them. readOnly (a scheduled ask's run) leaves out every
 // tool that changes anything
 // (discovery.mjs: { definitions, connected, handlers }). Each tool's input
 // is checked here before anything runs, and a failure comes back to Claude as an error result.
 
 import { COLORS } from './calendars.mjs';
-import { automationDefinition as houseAutomation, definition as houseControl } from './house.mjs';
+import { definition as houseControl } from './house.mjs';
 import { definition as listsChange } from './lists.mjs';
 import { definitions as memoryTools } from './memory.mjs';
 import { definition as scheduleTool } from './schedules.mjs';
@@ -33,7 +33,8 @@ const people = {
 };
 
 // What a scheduled ask's run may not use: with no one there to ask, it only reads
-export const WRITE_TOOLS = ['house_control', 'house_automation', 'lists_change', 'create_event', 'update_event', 'delete_event', 'remember', 'forget', 'schedule'];
+// (discovered writes, like House's automations, are left out by discovery's `writes`)
+export const WRITE_TOOLS = ['house_control', 'lists_change', 'create_event', 'update_event', 'delete_event', 'remember', 'forget', 'schedule'];
 
 export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = [], budget, house, lists, memory, schedule, automations, readOnly = false, discovered = { definitions: [], connected: [], handlers: {} } }) {
   const cal = { type: 'string', enum: calendarNames, description: 'Which calendar' };
@@ -137,13 +138,14 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
   }] : [];
   const writeTools = ['create_event', 'update_event', 'delete_event'];
   const offered = calendarTools.filter((t) => writable.length || !writeTools.includes(t.name));
-  const all = [...(calendarNames.length ? offered : []), ...budgetTools, ...(house ? [houseControl, houseAutomation] : []), ...(lists ? [listsChange] : []), ...(memory ? memoryTools : []), ...(schedule ? [scheduleTool] : []), ...(automations ? [automationsTool] : []), ...discovered.definitions];
-  const definitions = readOnly ? all.filter((d) => !WRITE_TOOLS.includes(d.name)) : all;
+  const all = [...(calendarNames.length ? offered : []), ...budgetTools, ...(house ? [houseControl] : []), ...(lists ? [listsChange] : []), ...(memory ? memoryTools : []), ...(schedule ? [scheduleTool] : []), ...(automations ? [automationsTool] : []), ...discovered.definitions];
+  // Discovered writes (a tool's declared POST/PUT/PATCH/DELETE) change things too
+  const writing = new Set([...WRITE_TOOLS, ...(discovered.writes ?? [])]);
+  const definitions = readOnly ? all.filter((d) => !writing.has(d.name)) : all;
 
   const handlers = {
     read_budget: (i) => budget.read(i),
     house_control: (i, ctx) => house.control(i, ctx),
-    house_automation: (i, ctx) => house.automation(i, ctx),
     lists_change: (i, ctx) => lists.change(i, ctx),
     remember: (i, ctx) => memory.remember(i, ctx),
     forget: (i) => memory.forget(i),

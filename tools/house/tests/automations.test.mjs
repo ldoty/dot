@@ -214,20 +214,52 @@ test('from Dot, every change asks first, and goes ahead only with that confirmat
   assert.equal((await call('POST', `/automations?confirm_id=${ask4.body.confirm_id}`, { ...MORNING, id: 'again12345' }, dot())).status, 400, 'once');
 });
 
-test('from Dot, changing and deleting ask first too, and a confirmation expires', async () => {
+test('from Dot, changing (PATCH) and deleting ask first too, and a confirmation expires', async () => {
   grant('g1', `sub:${KID}`, 'area:kitchen', 'control');
   const id = (await call('POST', '/automations', MORNING, kid())).body.id;
-  const ask = await call('PUT', `/automations/${id}`, { ...MORNING, enabled: false, rev: 1 }, dot());
+  const ask = await call('PATCH', `/automations/${id}`, { enabled: false }, dot());
   assert.deepEqual([ask.status, ask.body.prompt], [202, 'Pause “Kitchen mornings”?']);
   assert.equal(table.get('AUTO', id).enabled, true);
-  assert.equal((await call('PUT', `/automations/${id}?confirm_id=${ask.body.confirm_id}`, { ...MORNING, enabled: false, rev: 1 }, dot())).status, 200);
+  assert.equal((await call('PATCH', `/automations/${id}?confirm_id=${ask.body.confirm_id}`, { enabled: false }, dot())).status, 200);
+  assert.equal(table.get('AUTO', id).enabled, false);
   const del = await call('DELETE', `/automations/${id}`, undefined, dot());
   assert.deepEqual([del.status, del.body.prompt], [202, 'Delete the automation “Kitchen mornings”?']);
   table.put({ ...table.get('PENDING', del.body.confirm_id), until: Date.now() - 1 });
   assert.equal((await call('DELETE', `/automations/${id}?confirm_id=${del.body.confirm_id}`, undefined, dot())).status, 400, 'expired');
   assert.ok(table.get('AUTO', id));
-  const change = await call('PUT', `/automations/${id}`, { ...MORNING, when: { at: '07:15' }, rev: 2 }, dot());
+  const change = await call('PATCH', `/automations/${id}`, { when: { at: '07:15' }, enabled: true }, dot());
   assert.equal(change.body.prompt, 'Change “Kitchen mornings” to: Every weekday at 7:15 AM: turn on kitchen main (80%) and turn on kitchen island pendants?');
+});
+
+test('a patch is the given fields over the current version; a confirmation is for that version', async () => {
+  grant('g1', `sub:${KID}`, 'area:kitchen', 'control');
+  const id = (await call('POST', '/automations', { ...MORNING, notify: { message: 'Lights on.' } }, kid())).body.id;
+  const ask = await call('PATCH', `/automations/${id}`, { when: { at: '07:00' } }, dot());
+  // Someone changes it before the person says yes: the yes is for what they were asked about, which is gone
+  await call('PATCH', `/automations/${id}`, { name: 'Renamed' }, kid());
+  assert.equal((await call('PATCH', `/automations/${id}?confirm_id=${ask.body.confirm_id}`, { when: { at: '07:00' } }, dot())).status, 400);
+  const again = await call('PATCH', `/automations/${id}`, { when: { at: '07:00' } }, dot());
+  const ok = await call('PATCH', `/automations/${id}?confirm_id=${again.body.confirm_id}`, { when: { at: '07:00' } }, dot());
+  assert.equal(ok.status, 200);
+  const row = table.get('AUTO', id);
+  assert.deepEqual([row.name, row.when, row.notify, row.repeat.rule, row.actions.length], ['Renamed', { at: '07:00' }, { message: 'Lights on.' }, WEEKDAYS, 2], 'everything else kept');
+  assert.equal((await call('PATCH', '/automations/nosuchone1', { enabled: false })).status, 404);
+});
+
+test('from Dot, only the writes House’s manifest declares: PATCH, not PUT', async () => {
+  grant('g1', `sub:${KID}`, 'area:kitchen', 'control');
+  const id = (await call('POST', '/automations', MORNING, kid())).body.id;
+  assert.deepEqual((await call('PUT', `/automations/${id}`, { ...MORNING, enabled: false, rev: 1 }, dot())).status, 403);
+  const { MANIFEST } = await import('../api/api.mjs');
+  const { writeRoutes } = await import('../api/dot-manifest.mjs');
+  assert.deepEqual(writeRoutes(MANIFEST), ['POST /automations', 'PATCH /automations/{id}', 'DELETE /automations/{id}']);
+});
+
+test('confirming a new one needs no id: it’s the one House named when it asked', async () => {
+  grant('g1', `sub:${KID}`, 'area:kitchen', 'control');
+  const ask = await call('POST', '/automations', MORNING, dot());
+  const ok = await call('POST', `/automations?confirm_id=${ask.body.confirm_id}`, MORNING, dot());
+  assert.deepEqual([ok.status, ok.body.id], [201, ask.body.automation_id]);
 });
 
 test('Dot is still refused everything else', async () => {

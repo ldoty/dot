@@ -6,6 +6,8 @@
 //                                   repeat { rule, start? } (automation.mjs): every day if left out; start is today
 //                                   (the house's time zone) unless given, and kept on a change that keeps the rule
 //   PUT    /automations/{id}     { …the same, rev }  -> the automation   rev-checked (409 + current)
+//   PATCH  /automations/{id}     { any of name, when, repeat, actions, notify, enabled } -> the automation: the given
+//                                   fields over the current version (what Dot sends; its confirmation is for that version)
 //   DELETE /automations/{id}                         -> { id }
 // Who may: making or changing one needs `control` (not just ask-first) on every device in it, now:
 // it will run with no one there to ask; one set off by a change needs `read` on what changes (a
@@ -194,11 +196,12 @@ export function makeAutomations({ db, table, get, all, members, admins, people, 
       return json(200, visible.map((r) => out(w, r, sub, isAdmin)).sort((a, b) => a.name.localeCompare(b.name)));
     },
 
-    /** op: 'create' | 'replace' | 'delete'; via: 'dot' | 'page' */
+    /** op: 'create' | 'replace' | 'patch' | 'delete'; via: 'dot' | 'page' */
     async change(op, { sub, username, isAdmin, via }, id, body, confirmId) {
-      // A new automation's id may come with it (Dot's confirmation names the one it asked about)
+      // A new automation's id may come with it; confirming one from Dot, it's the one House named when it asked
       if (op === 'create') {
-        id = body?.id ?? randomBytes(9).toString('hex');
+        const asked = confirmId && /^[a-f0-9]{24}$/.test(confirmId) ? await get('PENDING', confirmId) : null;
+        id = body?.id ?? asked?.automation ?? randomBytes(9).toString('hex');
         if (!AUTO_ID.test(id)) return json(400, { error: 'bad id' });
       }
       const w = await world();
@@ -217,6 +220,12 @@ export function makeAutomations({ db, table, get, all, members, admins, people, 
         return json(200, { id });
       }
 
+      // A patch is the given fields over the current version, at its rev
+      if (op === 'patch') {
+        const given = Object.fromEntries(['name', 'when', 'repeat', 'actions', 'notify', 'enabled'].filter((k) => body[k] !== undefined).map((k) => [k, body[k]]));
+        body = { ...shape(row), ...given, rev: row.rev };
+        op = 'replace';
+      }
       let a;
       try {
         a = parseAutomation(withRepeat(body, row));

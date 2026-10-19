@@ -11,9 +11,10 @@ Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
   Adding a domain (lock, cover, camera…) is an access change: ask Luke.
 - **Grants only narrow.** No grant, no access; the highest matching level wins; admins have control.
   Areas are matched as they are now, so moving a device in Home Assistant moves its grants.
-- **Dot may only `POST /commands` and change automations** (`POST`/`PUT`/`DELETE /automations…`), within
+- **Dot may only `POST /commands` and the automation writes the manifest declares** (`POST /automations`,
+  `PATCH`/`DELETE /automations/{id}`; the allowlist is `writeRoutes(MANIFEST)`, so declaring is allowing), within
   the person's grants; every automation change from Dot answers 202 first and needs their own reply.
-  Everything else from a `via: dot` token stays 403.
+  Everything else from a `via: dot` token stays 403 (`PUT /automations/{id}` is the page's).
 - **Automations run on the relay, not in Home Assistant.** HA's own automations need an admin token,
   which the relay must never hold. Making or changing one needs `control` on every device in it; AWS
   sends the relay only the ones whose owner still has that (`api/automations.mjs`, on every change and
@@ -42,7 +43,7 @@ Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
    the family's (`platform/family`); grants name them by id.
 5. Automations: at a time or around sunrise/sunset, on the days of a repeat rule (the RRULE subset Lists and
    Dot's scheduled asks use: `repeat.mjs` is Lists', symlinked into `relay/`); made through Dot
-   (`house_automation`), paused or deleted on the page, run by the relay. Done.
+   (House's declared writes, `house_automation_create`/`_change`/`_delete`), paused or deleted on the page, run by the relay. Done.
 6. Who's home: `person.*` in the ceiling (state only: home / not_home; never the phone trackers
    behind them, which carry IP, MAC and access point). Automations set off by a change ("when Luke
    leaves home") and texts to the automation's owner (`api/notify.mjs`). Done.

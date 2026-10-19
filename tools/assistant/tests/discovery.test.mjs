@@ -98,6 +98,6 @@ test('long answers are cut, and Claude is told', async () => {
 test('the system prompt names the connected tools, and that they’re read-only', () => {
   const p = systemPrompt({ name: 'Luke', connected: [{ title: 'Luke’s Finances', description: 'Luke’s accounts', tools: ['finances_month'] }] });
   assert.match(p, /- Luke’s Finances \(finances_month\): Luke’s accounts/);
-  assert.match(p, /can't change anything/);
+  assert.match(p, /you can change things in them only with a tool that says it changes things/);
   assert.doesNotMatch(p, /don't have any tools/);
 });

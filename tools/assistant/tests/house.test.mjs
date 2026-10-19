@@ -149,19 +149,42 @@ test('confirm with nothing asked is refused before anything is sent', async () =
   assert.deepEqual(c.audits, []);
 });
 
-// ---- automations ----
+// ---- automations: House's declared writes, through discovery ----
+
+import { makeDiscovery } from '../api/discovery.mjs';
+
+/** Dot's discovered House tools for one person, House reached through its real handler */
+async function discoveredFor(sub, groups = ['family_house']) {
+  const audits = [];
+  const d = makeDiscovery({
+    listApps: async () => [{ app: 'family_house', api_url: API, client_id: 'house-via-dot' }],
+    tokenFor: async ({ clientId }) => token({ sub, clientId, via: 'dot', groups }),
+    fetch: async (url, o = {}) => {
+      const r = await call(o.method || 'GET', url.slice(API.length), o.body ? JSON.parse(o.body) : undefined, o.headers.authorization.slice(7));
+      return { ok: r.status < 300, status: r.status, json: async () => r.body, text: async () => JSON.stringify(r.body) };
+    },
+  });
+  const discovered = await d.forUser({ user: { sub, username: sub }, channel: 'sms', audit: async (e) => audits.push(e) });
+  const { house } = dotFor(sub, groups);
+  return { discovered, audits, tools: (o = {}) => makeTools({ house, discovered, ...o }) };
+}
 
 const MORNING = {
-  op: 'create', name: 'Kitchen mornings', time: '06:00', repeat: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
-  actions: [{ entity_id: 'light.kitchen_main', action: 'turn_on', brightness_pct: 80, transition_s: 30 }],
+  name: 'Kitchen mornings', when: { at: '06:00' }, repeat: { rule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR' },
+  actions: [{ entity_id: 'light.kitchen_main', action: 'turn_on', data: { brightness_pct: 80, transition: 30 } }],
 };
 const autos = () => table.dump().filter(([k]) => k.startsWith('AUTO')).map(([, v]) => v);
+const use = (tools, name, input, history = []) => tools.run({ type: 'tool_use', id: 't', name, input }, { history });
+const answered = (asked, reply = 'yes') => [
+  { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: asked }] },
+  ...(reply ? [{ role: 'user', content: [{ type: 'text', text: reply }] }] : []),
+];
 
-function automationTalk(script, sub = KID, groups) {
-  const { house, audits } = dotFor(sub, groups);
+async function automationTalk(script, sub = KID, groups) {
+  const { tools, audits } = await discoveredFor(sub, groups);
   const claude = fakeClaude(script);
   const store = memoryStore();
-  const d = { client: claude.client, store, model: 'm', timeZone: 'America/New_York', tools: makeTools({ house }), now: () => new Date('2026-10-18T22:00:00Z') };
+  const d = { client: claude.client, store, model: 'm', timeZone: 'America/New_York', tools: tools(), now: () => new Date('2026-10-18T22:00:00Z') };
   let id;
   const say = async (words) => {
     const r = await runTurn({ ...d, userId: sub, conversationId: id, text: words, channel: 'sms' });
@@ -172,21 +195,26 @@ function automationTalk(script, sub = KID, groups) {
   return { say, results, audits };
 }
 
-test('house_automation is offered with house_control, and the prompt explains it', () => {
-  const { house } = dotFor(LUKE, ADMIN);
-  assert.ok(makeTools({ house }).definitions.some((d) => d.name === 'house_automation'));
-  assert.ok(!makeTools({}).definitions.some((d) => d.name === 'house_automation'));
-  assert.match(systemPrompt({ house: true }), /house_automation: it always asks them first/);
+test('House’s automation writes are discovered, with confirm; a read-only run never gets them', async () => {
+  const { discovered, tools } = await discoveredFor(LUKE, ADMIN);
+  assert.deepEqual(discovered.writes, ['house_automation_create', 'house_automation_change', 'house_automation_delete']);
+  const create = tools().definitions.find((d) => d.name === 'house_automation_create');
+  assert.match(create.description, /\(changes things, as them\)/);
+  assert.equal(create.input_schema.properties.confirm.type, 'boolean');
+  assert.ok(!tools().definitions.some((d) => d.name === 'house_automation'), 'the old built-in is gone');
+  const reading = tools({ readOnly: true }).definitions.map((d) => d.name);
+  assert.ok(reading.includes('house_automations') && !reading.some((n) => /^house_automation_/.test(n)));
+  assert.match(systemPrompt({ house: true }), /house_automation_create/);
 });
 
 test('making one: Dot asks, can’t approve itself, and saves exactly what it asked about after the person’s yes', async () => {
   table.put({ pk: 'GRANT', sk: 'grant1', who: `sub:${KID}`, where: 'area:kitchen', level: 'control' });
-  const c = automationTalk([
-    toolUse('house_automation', MORNING, 't1'),
-    toolUse('house_automation', { op: 'create', confirm: true }, 't2'),
+  const c = await automationTalk([
+    toolUse('house_automation_create', MORNING, 't1'),
+    toolUse('house_automation_create', { confirm: true }, 't2'),
     text('Every weekday at 6, kitchen main to 80%. Save it?'),
     // A changed time in the confirming call is ignored: what was asked about is what's saved
-    toolUse('house_automation', { ...MORNING, time: '03:00', confirm: true }, 't3'),
+    toolUse('house_automation_create', { ...MORNING, when: { at: '03:00' }, confirm: true }, 't3'),
     text('Saved.'),
   ]);
   await c.say('turn on the kitchen lights every weekday at 6');
@@ -195,62 +223,66 @@ test('making one: Dot asks, can’t approve itself, and saves exactly what it as
   assert.deepEqual([self.is_error, self.content], [true, 'Wait for the person’s reply before confirming.']);
   assert.deepEqual(autos(), []);
   await c.say('yes');
-  assert.equal(c.results().at(-1).content, 'Saved: Every weekday at 6:00 AM: turn on kitchen main (80%, fading over 30 s).');
+  assert.equal(JSON.parse(c.results().at(-1).content).says, 'Every weekday at 6:00 AM: turn on kitchen main (80%, fading over 30 s)');
   const [row] = autos();
   assert.deepEqual([row.owner, row.when, row.actions[0].data], [KID, { at: '06:00' }, { brightness_pct: 80, transition: 30 }]);
-  assert.equal(row.sk, JSON.parse(asked.content).automation_id);
   assert.deepEqual(relay.automations.items.map((a) => a.name), ['Kitchen mornings']);
   assert.deepEqual(c.audits.map((a) => [a.action, a.outcome]), [['POST /automations', 'asked'], ['POST /automations (confirmed)', 'ok']]);
 });
 
 test('only devices they control: refused before anything is asked', async () => {
   table.put({ pk: 'GRANT', sk: 'grant1', who: `sub:${KID}`, where: 'area:kitchen', level: 'confirm' });
-  const { house } = dotFor(KID);
-  await assert.rejects(house.automation(MORNING), /Not allowed: not allowed: kitchen main/);
+  const { tools } = await discoveredFor(KID);
+  const r = await use(tools(), 'house_automation_create', MORNING);
+  assert.deepEqual([r.is_error, r.content], [true, 'House answered 403: not allowed: kitchen main']);
   assert.deepEqual(table.dump().filter(([k]) => k.startsWith('PENDING')), []);
 });
 
 test('changing one keeps what wasn’t mentioned; pausing and deleting ask too', async () => {
-  const { house } = dotFor(LUKE, ADMIN);
+  const { tools } = await discoveredFor(LUKE, ADMIN);
+  const t = tools();
   const r = await call('POST', '/automations', { name: 'Porch', when: { sun: 'sunset', offset: -15 }, repeat: { rule: 'FREQ=WEEKLY;BYDAY=SA,SU', start: '2026-10-03' }, actions: [{ entity_id: 'light.dining_room_main', action: 'turn_on' }] });
   const id = r.body.id;
-  const asked = JSON.parse(await house.automation({ op: 'update', automation_id: id, time: '19:30' }));
+  const asked = JSON.parse((await use(t, 'house_automation_change', { id, when: { at: '19:30' } })).content);
   assert.equal(asked.ask_them, 'Change “Porch” to: Every Saturday, Sunday at 7:30 PM: turn on dining room main?');
-  assert.deepEqual(asked.body.repeat, { rule: 'FREQ=WEEKLY;BYDAY=SA,SU', start: '2026-10-03' }, 'its days and start, kept');
-  const fortnight = JSON.parse(await house.automation({ op: 'update', automation_id: id, repeat: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=SA', start: '2026-10-24' }));
+  const fortnight = JSON.parse((await use(t, 'house_automation_change', { id, repeat: { rule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=SA', start: '2026-10-24' } })).content);
   assert.equal(fortnight.ask_them, 'Change “Porch” to: Every other Saturday 15 minutes before sunset: turn on dining room main?');
-  assert.equal(JSON.parse(await house.automation({ op: 'pause', automation_id: id })).ask_them, 'Pause “Porch”?');
-  assert.equal(JSON.parse(await house.automation({ op: 'delete', automation_id: id })).ask_them, 'Delete the automation “Porch”?');
+  assert.equal(JSON.parse((await use(t, 'house_automation_change', { id, enabled: false })).content).ask_them, 'Pause “Porch”?');
+  const del = (await use(t, 'house_automation_delete', { id })).content;
+  assert.equal(JSON.parse(del).ask_them, 'Delete the automation “Porch”?');
   assert.equal(table.get('AUTO', id).when.sun, 'sunset', 'nothing changed without a yes');
-  await assert.rejects(house.automation({ op: 'update', automation_id: 'nosuchone1', time: '07:00' }), /No automation with that id/);
-  await assert.rejects(house.automation({ op: 'create', name: 'x', time: '06:00', sun: 'sunrise', actions: MORNING.actions }), /one of time, sun or when_changes/);
-  await assert.rejects(house.automation({ ...MORNING, repeat: 'FREQ=HOURLY' }), /FREQ/);
-  await assert.rejects(house.automation({ ...MORNING, repeat: undefined, start: '2026-10-20' }), /start goes with repeat/);
+  assert.match((await use(t, 'house_automation_change', { id: 'nosuchone1', when: { at: '07:00' } })).content, /House answered 404/);
+  // The yes goes through, and only for the one asked about
+  assert.match((await use(t, 'house_automation_delete', { id: 'nosuchone1', confirm: true }, answered(del))).content, /Nothing like that is waiting/);
+  assert.match((await use(t, 'house_automation_delete', { id, confirm: true }, answered(del))).content, /"id"/);
+  assert.equal(table.get('AUTO', id), undefined);
 });
 
-test('a confirmation fits only the automation it asked about', async () => {
+test('a confirmation fits only the tool and automation it asked about', async () => {
   const id = (await call('POST', '/automations', { name: 'A', when: { at: '06:00' }, actions: [{ entity_id: 'light.kitchen_main', action: 'turn_on' }] })).body.id;
   const other = (await call('POST', '/automations', { name: 'B', when: { at: '07:00' }, actions: [{ entity_id: 'light.kitchen_main', action: 'turn_on' }] })).body.id;
-  const c = automationTalk([
-    toolUse('house_automation', { op: 'delete', automation_id: id }, 't1'),
+  const c = await automationTalk([
+    toolUse('house_automation_delete', { id }, 't1'),
     text('Delete A?'),
-    toolUse('house_automation', { op: 'delete', automation_id: other, confirm: true }, 't2'),
+    toolUse('house_automation_delete', { id: other, confirm: true }, 't2'),
+    toolUse('house_automation_change', { id, enabled: false, confirm: true }, 't3'),
     text('Hmm.'),
   ], LUKE, ADMIN);
   await c.say('delete A');
   await c.say('yes');
-  assert.match(c.results().at(-1).content, /Nothing like that is waiting/);
+  const [, b, change] = c.results();
+  assert.match(b.content, /Nothing like that is waiting/);
+  assert.match(change.content, /Nothing like that is waiting/, 'a yes to deleting isn’t a yes to changing');
   assert.ok(table.get('AUTO', id) && table.get('AUTO', other));
 });
 
 test('an automation set off by someone leaving home, that texts: asked about in words, saved as asked', async () => {
   table.put({ pk: 'ENTITY', sk: 'person.luke_doty', name: 'Luke Doty', area: null, domain: 'person', state: 'home', attrs: {}, updated: '2026-10-19T17:00:00Z', actions: {} });
-  const { house } = dotFor(LUKE, ADMIN);
-  const input = { op: 'create', name: 'Garage check', when_changes: 'person.luke_doty', to: 'not_home', notify: 'You left: is the garage shut?' };
-  const asked = JSON.parse(await house.automation(input));
+  const { tools } = await discoveredFor(LUKE, ADMIN);
+  const input = { name: 'Garage check', when: { changes: 'person.luke_doty', to: 'not_home' }, notify: { message: 'You left: is the garage shut?' } };
+  const asked = JSON.parse((await use(tools(), 'house_automation_create', input)).content);
   assert.equal(asked.ask_them, 'Save “Garage check”? When Luke Doty leaves home: text “You left: is the garage shut?”.');
   assert.deepEqual(asked.body.when, { changes: 'person.luke_doty', to: 'not_home' });
-  await assert.rejects(house.automation({ ...input, time: '06:00' }), /one of time, sun or when_changes/);
-  await assert.rejects(house.automation({ ...input, to: undefined }), /go together/);
-  await assert.rejects(house.automation({ ...input, notify: 'see www.example.com' }), /no links/);
+  const bad = await use(tools(), 'house_automation_create', { ...input, notify: { message: 'see www.example.com' } });
+  assert.match(bad.content, /no links/);
 });

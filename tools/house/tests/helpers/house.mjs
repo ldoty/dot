@@ -16,7 +16,7 @@ const { createRelayWs } = await import('../../api/relay-ws.mjs');
 export const ROUTES = [
   'GET /home', 'GET /dot', 'POST /commands',
   'GET /access', 'PUT /grants/{id}', 'DELETE /grants/{id}', 'GET /log',
-  'GET /automations', 'POST /automations', 'PUT /automations/{id}', 'DELETE /automations/{id}', 'GET /sent',
+  'GET /automations', 'POST /automations', 'PUT /automations/{id}', 'PATCH /automations/{id}', 'DELETE /automations/{id}', 'GET /sent',
 ];
 export const LUKE = '22222222-2222-2222-2222-222222222222';
 export const KID = '11111111-1111-1111-1111-111111111111';

@@ -2,7 +2,7 @@ locals {
   routes = [
     "GET /home", "GET /dot", "POST /commands",
     "GET /access", "PUT /grants/{id}", "DELETE /grants/{id}", "GET /log",
-    "GET /automations", "POST /automations", "PUT /automations/{id}", "DELETE /automations/{id}", "GET /sent",
+    "GET /automations", "POST /automations", "PUT /automations/{id}", "PATCH /automations/{id}", "DELETE /automations/{id}", "GET /sent",
   ]
 }
 
