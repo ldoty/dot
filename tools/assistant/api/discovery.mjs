@@ -37,7 +37,7 @@ export function makeDiscovery({ listApps, tokenFor, fetch = globalThis.fetch, no
     return manifest;
   }
 
-  /** The discovered tools for one person: { definitions, connected, handlers, apps } (apps: the ones they can use) */
+  /** The discovered tools for one person: { definitions, connected, handlers, apps } (apps: every tool they can use) */
   async function forUser({ user, channel = 'web', audit = async () => {} }) {
     const definitions = [], connected = [], handlers = {}, apps = {};
     for (const app of await published()) {
@@ -48,9 +48,10 @@ export function makeDiscovery({ listApps, tokenFor, fetch = globalThis.fetch, no
         if (!e.denied) log({ discovery: app.app, error: e.message });
         continue; // not theirs to use
       }
+      // Usable by this person, manifest or not (Calendars has none: Dot's calendar tools are built in)
+      apps[app.app] = { api_url: app.api_url, client_id: app.client_id };
       const m = await manifestOf(app, token);
       if (!m) continue;
-      apps[app.app] = { api_url: app.api_url, client_id: app.client_id };
       connected.push({ title: m.title, description: m.description, tools: m.operations.map((op) => `${m.name}_${op.name}`) });
       for (const op of m.operations) {
         const name = `${m.name}_${op.name}`;

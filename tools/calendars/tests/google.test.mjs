@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { makeCalendar } from '../api/calendar.mjs';
+import { makeCalendar } from '../api/google-calendar.mjs';
 import { makeGoogleAuth } from '../api/google.mjs';
 
 const CALS = { luke: 'luke.doty@gmail.com', shared: 'abc@group.calendar.google.com' };

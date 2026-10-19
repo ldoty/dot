@@ -16,7 +16,7 @@
 // describes itself (discovery.mjs).
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { SSMClient, GetParameterCommand, GetParametersByPathCommand } from '@aws-sdk/client-ssm';
+import { SSMClient, GetParametersByPathCommand } from '@aws-sdk/client-ssm';
 import { KMSClient, SignCommand } from '@aws-sdk/client-kms';
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import Anthropic, { BetaFallbackState, betaRefusalFallbackMiddleware } from '@anthropic-ai/sdk';
@@ -29,8 +29,7 @@ import { makeHouse } from './house.mjs';
 import { makeLists } from './lists.mjs';
 import { makeMemoryTools, makeNotes, NOTE_ID } from './memory.mjs';
 import { makeDiscovery } from './discovery.mjs';
-import { makeGoogleAuth } from './google.mjs';
-import { makeCalendar } from './calendar.mjs';
+import { makeCalendars } from './calendars.mjs';
 import { makeTools } from './tools.mjs';
 import { runTurn, toTranscript } from './agent.mjs';
 
@@ -62,14 +61,11 @@ export function s3Photos(bucket, s3 = new S3Client({})) {
 
 /** Builds the real dependencies from the Lambda environment */
 export function liveDeps(env = process.env) {
-  // { "<cognito sub>": { name, calendars: { alias: googleCalendarId }, read_only: [alias] } }
+  // { "<cognito sub>": { name } }: calendars and who sees them are in the Calendars tool now
   const people = JSON.parse(env.PEOPLE || '{}');
   const budgetApp = env.BUDGET ? JSON.parse(env.BUDGET) : null;
   const ssm = new SSMClient({});
   const kms = new KMSClient({});
-  const accessToken = makeGoogleAuth({
-    loadKey: async () => JSON.parse((await ssm.send(new GetParameterCommand({ Name: env.GOOGLE_KEY_PARAM, WithDecryption: true }))).Parameter.Value),
-  });
   const tokenFor = makeDelegation({
     region: env.AWS_REGION,
     sign: async (bytes) => Buffer.from((await kms.send(new SignCommand({
@@ -110,20 +106,23 @@ export function liveDeps(env = process.env) {
     async forUser(claims, channel = 'web') {
       const userId = claims.sub || claims.username;
       const me = people[userId] || {};
-      const calendars = me.calendars || {};
       const audit = (entry) => store.addAudit({ user: userId, username: claims.username, channel, ...entry });
       const user = { sub: claims.sub, username: claims.username };
       const discovered = await discovery.forUser({ user, channel, audit });
       // House is discovered for reading; control is built in, only for people who can use House
       const houseApp = discovered.apps?.family_house;
       const listsApp = discovered.apps?.family_lists;
+      // Calendars: which ones, and which they may change, are Calendars' to say (their grants)
+      const calApp = discovered.apps?.family_calendars;
+      const calendar = calApp && makeCalendars({ tokenFor, apiUrl: calApp.api_url, clientId: calApp.client_id, user, channel, audit });
+      const mine = calendar ? await calendar.listCalendars().catch((e) => { console.warn('calendars unavailable', e.message); return []; }) : [];
       return {
         person: { name: me.name },
         notes: await notes.forPerson(userId),
         tools: makeTools({
-          calendar: makeCalendar({ accessToken, calendars, readOnly: me.read_only || [], timeZone: env.TIME_ZONE }),
-          calendarNames: Object.keys(calendars),
-          readOnlyCalendars: me.read_only || [],
+          calendar,
+          calendarNames: mine.map((c) => c.calendar),
+          readOnlyCalendars: mine.filter((c) => c.read_only).map((c) => c.calendar),
           budget: budgetApp && makeBudget({
             tokenFor, apiUrl: budgetApp.api_url, clientId: budgetApp.client_id,
             user: { sub: claims.sub, username: claims.username }, channel, audit,

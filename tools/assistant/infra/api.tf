@@ -1,7 +1,7 @@
 # The assistant runs behind a Lambda Function URL with response streaming (API Gateway
 # can't stream and caps requests at 30s; a turn with several tool calls can take longer).
 # Access: Cognito only issues this app's tokens to family_assistant members, the Lambda
-# verifies every token itself, and its role reaches only its table, its Google key and Bedrock.
+# verifies every token itself, and its role reaches only its table and Bedrock (calendars go through tools/calendars).
 
 variable "model" {
   type    = string
@@ -18,33 +18,12 @@ variable "fallback_model" {
 
 variable "people" {
   type = map(object({
-    name      = string
-    calendars = optional(map(string), {})  # alias => Google calendar id (shared with Dot's service account)
-    read_only = optional(list(string), []) # aliases they can see but not change (enforced in api/calendar.mjs)
+    name = string
   }))
-  description = "Who Dot is talking with, by Cognito sub (the user's id in the pool): their name and their calendars"
+  description = "Who Dot is talking with, by Cognito sub (the user's id in the pool): their name. Their calendars, and who sees which, are in tools/calendars."
   default = {
-    "44f8c468-4011-70b8-76aa-ec2b68b0b004" = {
-      name = "Luke"
-      calendars = {
-        luke  = "luke.doty@gmail.com"
-        amber = "amber.n.brackett@gmail.com"                                                                   # "Amber Master Calendar", shared read-only
-        kids  = "c_f537b84b64316f087a7eaccd63171d16078c755c3075041292daf050708b1fa8@group.calendar.google.com" # "L&A Kids"
-      }
-    }
-    "74c8b418-e0b1-7075-7ae5-ca791980dd07" = {
-      name = "Amber"
-      calendars = {
-        amber = "amber.n.brackett@gmail.com"
-        luke  = "luke.doty@gmail.com"
-        kids  = "c_f537b84b64316f087a7eaccd63171d16078c755c3075041292daf050708b1fa8@group.calendar.google.com" # "L&A Kids"
-      }
-      read_only = ["luke", "kids"] # Dot can write to Luke's and the kids' calendars for him, never for her
-    }
-  }
-  validation {
-    condition     = alltrue([for p in var.people : alltrue([for c in p.read_only : contains(keys(p.calendars), c)])])
-    error_message = "Every read_only entry must be one of that person's calendar aliases."
+    "44f8c468-4011-70b8-76aa-ec2b68b0b004" = { name = "Luke" }
+    "74c8b418-e0b1-7075-7ae5-ca791980dd07" = { name = "Amber" }
   }
 }
 
@@ -58,8 +37,7 @@ data "aws_ssm_parameter" "budget" {
 }
 
 locals {
-  google_key_param = "/family/calendar/google-key"
-  bundle           = "${path.module}/../api/dist/index.mjs" # npm run build
+  bundle = "${path.module}/../api/dist/index.mjs" # npm run build
 }
 
 data "aws_caller_identity" "current" {}
@@ -101,11 +79,6 @@ resource "aws_iam_role_policy" "api" {
         Resource = aws_dynamodb_table.main.arn
       },
       {
-        Effect   = "Allow"
-        Action   = "ssm:GetParameter"
-        Resource = "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter${local.google_key_param}"
-      },
-      {
         # Discovery: the family tools published for Dot (/family/delegation/<app> = API + delegated client)
         Effect   = "Allow"
         Action   = "ssm:GetParametersByPath"
@@ -143,19 +116,18 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      TABLE            = aws_dynamodb_table.main.name
-      GROUP            = module.app.member_group
-      ISSUER           = local.issuer
-      CLIENT_ID        = module.app.client_id
-      MODEL            = var.model
-      FALLBACK_MODEL   = var.fallback_model
-      GOOGLE_KEY_PARAM = local.google_key_param
-      PEOPLE           = jsonencode(var.people)
-      DELEGATION_KEY   = data.aws_ssm_parameter.delegation_key.value
-      BUDGET           = data.aws_ssm_parameter.budget.value
-      DELEGATION_PATH  = "/family/delegation"
-      TIME_ZONE        = "America/New_York"
-      PHOTOS_BUCKET    = aws_s3_bucket.photos.id
+      TABLE           = aws_dynamodb_table.main.name
+      GROUP           = module.app.member_group
+      ISSUER          = local.issuer
+      CLIENT_ID       = module.app.client_id
+      MODEL           = var.model
+      FALLBACK_MODEL  = var.fallback_model
+      PEOPLE          = jsonencode(var.people)
+      DELEGATION_KEY  = data.aws_ssm_parameter.delegation_key.value
+      BUDGET          = data.aws_ssm_parameter.budget.value
+      DELEGATION_PATH = "/family/delegation"
+      TIME_ZONE       = "America/New_York"
+      PHOTOS_BUCKET   = aws_s3_bucket.photos.id
     }
   }
 }

@@ -4,7 +4,7 @@
 // (discovery.mjs: { definitions, connected, handlers }). Each tool's input
 // is checked here before anything runs, and a failure comes back to Claude as an error result.
 
-import { COLORS } from './calendar.mjs';
+import { COLORS } from './calendars.mjs';
 import { definition as houseControl } from './house.mjs';
 import { definition as listsChange } from './lists.mjs';
 import { definitions as memoryTools } from './memory.mjs';
@@ -12,7 +12,7 @@ import { definitions as memoryTools } from './memory.mjs';
 const dateTime = 'Date "YYYY-MM-DD" or local time "YYYY-MM-DDTHH:MM" (the calendar’s time zone unless an offset is given)';
 
 const color = {
-  type: 'string', enum: [...Object.keys(COLORS), 'default'],
+  type: 'string', enum: [...COLORS, 'default'],
   description: 'Event color, by the names Google Calendar shows; "default" uses the calendar’s own color',
 };
 
@@ -30,7 +30,7 @@ const people = {
 
 export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = [], budget, house, lists, memory, discovered = { definitions: [], connected: [], handlers: {} } }) {
   const cal = { type: 'string', enum: calendarNames, description: 'Which calendar' };
-  // Changes are offered only on calendars this person may change (calendar.mjs refuses the rest too)
+  // Changes are offered only on calendars this person may change (Calendars refuses the rest too)
   const writable = calendarNames.filter((c) => !readOnlyCalendars.includes(c));
   const writableCal = { type: 'string', enum: writable, description: 'Which calendar (only ones you can change)' };
   const calendarTools = [
@@ -98,10 +98,10 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
     },
     {
       name: 'delete_event',
-      description: 'Delete an event.',
+      description: 'Delete an event. It asks the person first: when it says so, ask them and stop; only when they agree, call again with confirm: true.',
       input_schema: {
         type: 'object',
-        properties: { calendar: writableCal, event_id: { type: 'string' } },
+        properties: { calendar: writableCal, event_id: { type: 'string' }, confirm: { type: 'boolean', description: 'Only after the person agreed' } },
         required: ['calendar', 'event_id'],
         additionalProperties: false,
       },
@@ -143,7 +143,7 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
     list_events: (i) => calendar.listEvents(i),
     create_event: (i) => calendar.createEvent(i),
     update_event: (i) => calendar.updateEvent(i),
-    delete_event: (i) => calendar.deleteEvent(i),
+    delete_event: (i, ctx) => calendar.deleteEvent(i, ctx),
     ...discovered.handlers,
   };
 

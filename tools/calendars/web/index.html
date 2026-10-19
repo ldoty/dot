@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calendars</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="family.css">
+<style>
+/* Layout: one column. The next 7 days across your calendars, a day per card; then, for admins,
+   which calendars Dot knows and who may see or change each. */
+.wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 20px }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+.top a { color: var(--muted); text-decoration: none; font-size: 14px }
+h1 { font-size: clamp(30px, 6vw, 44px) }
+h2 { font-size: 22px; margin: 8px 0 0 }
+.status { color: var(--muted); font-size: 14px; min-height: 1.4em; margin: 0 }
+.status.warn { color: var(--ember) }
+.day h3 { font-size: 16px; margin: 0 0 6px }
+.ev { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-top: 1px solid var(--line) }
+.ev:first-of-type { border-top: 0 }
+.ev time { color: var(--muted); font-size: 14px }
+.ev small { display: block; color: var(--muted); font-size: 13px }
+.chip { font-size: 12px; font-weight: 600; color: var(--pool); margin-left: 6px }
+.rows { list-style: none; margin: 0; padding: 0 }
+.rows li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px }
+.rows li:first-child { border-top: 0 }
+.rows small { display: block; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere }
+.x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 18px }
+.x:hover { color: var(--ember) }
+.pick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px }
+.pick input, .pick select { flex: 1 1 160px; min-width: 0; background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 8px 10px; color: var(--ink); font: inherit }
+.pick input:focus, .pick select:focus { border-color: var(--pool); outline: none }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
+  <h1>Calendars</h1>
+  <div id="main"><p class="status">Loading…</p></div>
+  <div id="admin" hidden></div>
+</div>
+<script src="family-auth.js"></script>
+<script>
+(function () {
+  var cfg, admin = null, msg = "";
+  var main = document.getElementById("main"), adminEl = document.getElementById("admin");
+  var ROLE = { owner: "can change (owner)", writer: "can change", reader: "read-only" };
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
+
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, { method: method, headers: { authorization: "Bearer " + tok, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+    });
+  }
+
+  // ---- the week ahead ----
+  function dayOf(e) { return String(e.start).slice(0, 10); }
+  function timeOf(e) {
+    if (e.all_day) return "All day";
+    return new Date(e.start).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  function renderAgenda(events) {
+    if (!events.length) { main.innerHTML = '<p class="status">Nothing in the next 7 days on the calendars you can see.</p>'; return; }
+    var days = {};
+    events.forEach(function (e) { (days[dayOf(e)] = days[dayOf(e)] || []).push(e); });
+    main.innerHTML = Object.keys(days).sort().map(function (d) {
+      var label = new Date(d + "T12:00:00").toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+      return '<section class="card day"><h3>' + esc(label) + "</h3>" + days[d].map(function (e) {
+        return '<div class="ev"><time>' + esc(timeOf(e)) + "</time><div>" + esc(e.title || "(no title)") + '<span class="chip">' + esc(e.calendar_name || e.calendar) + "</span>" +
+          (e.location ? "<small>" + esc(e.location) + "</small>" : "") + "</div></div>";
+      }).join("") + "</section>";
+    }).join("");
+  }
+  function loadAgenda() {
+    return api("GET", "/agenda?days=7").then(function (res) {
+      if (res.status === 403) { main.innerHTML = '<p class="status">Your account doesn’t have access to Calendars yet.</p>'; return; }
+      return res.json().then(function (events) { if (res.ok) renderAgenda(events); else main.innerHTML = '<p class="status warn">Couldn’t load your calendars.</p>'; });
+    });
+  }
+
+  // ---- calendars & access (admins; the API refuses everyone else) ----
+  function nameOfWho(who) {
+    var id = who.slice(who.indexOf(":") + 1), list = who.indexOf("group:") === 0 ? admin.groups : admin.people, key = who.indexOf("group:") === 0 ? "id" : "sub";
+    for (var n = 0; n < list.length; n++) if (list[n][key] === id) return key === "id" ? "Group “" + list[n].name + "”" : list[n].name;
+    return who.indexOf("group:") === 0 ? "A removed group" : "Someone no longer in Calendars";
+  }
+  function renderAdmin() {
+    var opts = function (list, val, label) { return list.map(function (x) { return '<option value="' + esc(val(x)) + '">' + esc(label(x)) + "</option>"; }).join(""); };
+    adminEl.innerHTML = "<h2>Calendars &amp; access</h2>" + (msg ? '<p class="status warn">' + esc(msg) + "</p>" : "") +
+      '<section class="card"><h3>Calendars Dot knows</h3><ul class="rows">' + (admin.calendars.length ? admin.calendars.map(function (c) {
+        return '<li data-cal="' + esc(c.alias) + '"><span><strong>' + esc(c.alias) + "</strong> · " + esc(c.name) + " <small>" + esc(ROLE[c.role] || c.role) + " for Dot · " + esc(c.googleId) +
+          '</small></span><button class="x" data-del-cal aria-label="Remove ' + esc(c.alias) + '">&times;</button></li>';
+      }).join("") : '<li class="status">None yet.</li>') + "</ul>" +
+      '<p class="status">First share the calendar in Google with calendar-manager@home-host-510501.iam.gserviceaccount.com, then add it here with its Calendar ID (Settings → Integrate calendar) or its embed link.</p>' +
+      '<form class="pick" id="add-cal"><input id="cal-alias" maxlength="24" placeholder="Short name, like kids" aria-label="Short name"><input id="cal-id" placeholder="Calendar ID or embed link" aria-label="Calendar ID"><button class="btn primary">Add</button></form></section>' +
+      '<section class="card"><h3>Who sees what</h3><ul class="rows">' + (admin.grants.length ? admin.grants.slice().sort(function (a, b) { return a.calendar.localeCompare(b.calendar); }).map(function (g) {
+        return '<li data-grant="' + esc(g.id) + '"><span>' + esc(g.calendar === "*" ? "Every calendar" : g.calendar) + " · " + esc(nameOfWho(g.who)) + " · <strong>" + (g.level === "edit" ? "can change" : "can see") +
+          '</strong></span><button class="x" data-del-grant aria-label="Remove">&times;</button></li>';
+      }).join("") : '<li class="status">No one yet.</li>') + "</ul>" +
+      '<form class="pick" id="add-grant"><select id="g-cal" aria-label="Calendar"><option value="*">Every calendar</option>' + opts(admin.calendars, function (c) { return c.alias; }, function (c) { return c.alias + " · " + c.name; }) + "</select>" +
+      '<select id="g-who" aria-label="Who">' + opts(admin.people, function (p) { return "sub:" + p.sub; }, function (p) { return p.name; }) + opts(admin.groups, function (g) { return "group:" + g.id; }, function (g) { return "Group “" + g.name + "”"; }) + "</select>" +
+      '<select id="g-level" aria-label="Level"><option value="read">can see</option><option value="edit">can change</option></select><button class="btn primary">Add</button></form>' +
+      '<p class="status">Groups are the family’s, at <a href="https://dot-y.co/family">dot-y.co/family</a>. A calendar Google shares read-only stays read-only, whatever it says here.</p></section>';
+    adminEl.hidden = false;
+  }
+  function loadAdmin() {
+    return api("GET", "/admin").then(function (res) {
+      if (!res.ok) return;
+      return res.json().then(function (a) { admin = a; renderAdmin(); });
+    });
+  }
+  function change(method, path, body) {
+    msg = "";
+    return api(method, path, body).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (out) {
+        if (!res.ok) msg = out.error || "Couldn’t save that (" + res.status + ").";
+        return Promise.all([loadAdmin(), loadAgenda()]);
+      });
+    }).catch(function () { msg = "Couldn’t reach Calendars. Try again."; renderAdmin(); });
+  }
+  // An embed link carries the ID in its src
+  function calendarId(text) {
+    var m = /[?&]src=([^&]+)/.exec(text);
+    return (m ? decodeURIComponent(m[1]) : text).trim();
+  }
+  adminEl.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (e.target.id === "add-cal") {
+      var alias = document.getElementById("cal-alias").value.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+      var id = calendarId(document.getElementById("cal-id").value);
+      if (alias && id) change("PUT", "/calendars/" + encodeURIComponent(alias), { googleId: id });
+    } else if (e.target.id === "add-grant") {
+      change("PUT", "/grants/" + uid(), { who: document.getElementById("g-who").value, calendar: document.getElementById("g-cal").value, level: document.getElementById("g-level").value });
+    }
+  });
+  adminEl.addEventListener("click", function (e) {
+    var g = e.target.closest("[data-del-grant]"), c = e.target.closest("[data-del-cal]");
+    if (g) change("DELETE", "/grants/" + encodeURIComponent(g.closest("li").dataset.grant));
+    if (c) {
+      var alias = c.closest("li").dataset.cal;
+      if (window.confirm("Remove “" + alias + "”? Dot stops using it, and its access is removed. Nothing changes in Google.")) change("DELETE", "/calendars/" + encodeURIComponent(alias));
+    }
+  });
+
+  function gate(text) {
+    main.innerHTML = '<p class="status">' + esc(text) + '</p><button class="btn primary" id="signin">Sign in</button>';
+    document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
+  }
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
+    document.getElementById("signout").hidden = false;
+    document.getElementById("signout").onclick = function () { FamilyAuth.logout(); };
+    return Promise.all([loadAgenda(), loadAdmin()]);
+  }).catch(function (e) { gate(e.message); });
+})();
+</script>
+</body>
+</html>

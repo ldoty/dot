@@ -1,0 +1,178 @@
+locals {
+  routes = [
+    "GET /calendars", "GET /events", "GET /agenda", "POST /events", "PUT /events/{calendar}/{eventId}", "DELETE /events/{calendar}/{eventId}",
+    "GET /admin", "PUT /calendars/{alias}", "DELETE /calendars/{alias}", "PUT /grants/{id}", "DELETE /grants/{id}",
+  ]
+  google_key_param = "/family/calendar/google-key" # SecureString set by hand: the service account calendars are shared with
+}
+
+# The tool's handler plus the platform's shared token check
+data "archive_file" "api" {
+  type        = "zip"
+  output_path = "${path.module}/.build/api.zip"
+  source {
+    content  = file("${path.module}/../api/api.mjs")
+    filename = "api.mjs"
+  }
+  source {
+    content  = file("${path.module}/../../../platform/api/verify-token.mjs")
+    filename = "verify-token.mjs"
+  }
+  source {
+    content  = file("${path.module}/../../../platform/api/people.mjs")
+    filename = "people.mjs"
+  }
+  source {
+    content  = file("${path.module}/../api/google-calendar.mjs")
+    filename = "google-calendar.mjs"
+  }
+  source {
+    content  = file("${path.module}/../api/google.mjs")
+    filename = "google.mjs"
+  }
+}
+
+data "aws_caller_identity" "current" {}
+
+# The family's groups (platform/family): read only, for granting by group
+data "aws_ssm_parameter" "people_table_arn" {
+  name = "/family/people/table-arn"
+}
+
+resource "aws_iam_role" "api" {
+  name = "family-calendars-api"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "api_logs" {
+  role       = aws_iam_role.api.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy" "api_table" {
+  role = aws_iam_role.api.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Query"], Resource = aws_dynamodb_table.main.arn },
+      { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:Query"], Resource = nonsensitive(data.aws_ssm_parameter.people_table_arn.value) },
+      {
+        # The Google key: only this tool reads it (Dot reaches calendars through this API)
+        Effect   = "Allow"
+        Action   = "ssm:GetParameter"
+        Resource = "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter${local.google_key_param}"
+      },
+      {
+        # Who is in this tool's group, to grant calendars to (read only)
+        Effect   = "Allow"
+        Action   = "cognito-idp:ListUsersInGroup"
+        Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}"
+      },
+    ]
+  })
+}
+
+resource "aws_lambda_function" "api" {
+  function_name    = "family-calendars-api"
+  role             = aws_iam_role.api.arn
+  runtime          = "nodejs22.x"
+  handler          = "api.handler"
+  filename         = data.archive_file.api.output_path
+  source_code_hash = data.archive_file.api.output_base64sha256
+  timeout          = 10
+  memory_size      = 256
+
+  environment {
+    variables = {
+      TABLE            = aws_dynamodb_table.main.name
+      GROUP            = module.app.member_group
+      ISSUER           = local.issuer
+      CLIENT_ID        = module.app.client_id
+      DOT_CLIENT_ID    = module.app.delegated_client_id
+      PEOPLE_TABLE     = element(split("/", nonsensitive(data.aws_ssm_parameter.people_table_arn.value)), 1)
+      USER_POOL_ID     = local.pool_id
+      GOOGLE_KEY_PARAM = local.google_key_param
+      TIME_ZONE        = "America/New_York"
+    }
+  }
+}
+
+resource "aws_cloudwatch_log_group" "api" {
+  name              = "/aws/lambda/${aws_lambda_function.api.function_name}"
+  retention_in_days = 30
+}
+
+resource "aws_apigatewayv2_api" "api" {
+  name          = "family-calendars"
+  protocol_type = "HTTP"
+  cors_configuration {
+    allow_origins = [trimsuffix(local.app_url, "/"), trimsuffix(local.dev_url, "/")]
+    allow_methods = ["GET", "POST", "PUT", "DELETE"]
+    allow_headers = ["authorization", "content-type"]
+    max_age       = 600
+  }
+}
+
+resource "aws_apigatewayv2_authorizer" "cognito" {
+  api_id           = aws_apigatewayv2_api.api.id
+  name             = "cognito"
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+  jwt_configuration {
+    issuer   = local.issuer
+    audience = [module.app.client_id, module.app.delegated_client_id]
+  }
+}
+
+resource "aws_apigatewayv2_integration" "api" {
+  api_id                 = aws_apigatewayv2_api.api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.api.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "api" {
+  for_each           = toset(local.routes)
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = each.key
+  target             = "integrations/${aws_apigatewayv2_integration.api.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+}
+
+resource "aws_apigatewayv2_stage" "default" {
+  api_id      = aws_apigatewayv2_api.api.id
+  name        = "$default"
+  auto_deploy = true
+  default_route_settings {
+    throttling_burst_limit = 20
+    throttling_rate_limit  = 10
+  }
+}
+
+resource "aws_lambda_permission" "api" {
+  statement_id  = "AllowToolApi"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.api.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+# Where Dot finds this tool (tools/assistant/api/discovery.mjs). It has no GET /dot manifest: Dot's
+# calendar tools are built in (tools/assistant/api/calendars.mjs) and call this API as the person.
+resource "aws_ssm_parameter" "delegation" {
+  name        = "/family/delegation/${local.name}"
+  description = "Calendars API and delegated client, for Dot"
+  type        = "String"
+  value = jsonencode({
+    api_url   = aws_apigatewayv2_api.api.api_endpoint
+    client_id = module.app.delegated_client_id
+  })
+}
