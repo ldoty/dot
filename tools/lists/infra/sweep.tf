@@ -29,6 +29,10 @@ data "archive_file" "sweep" {
     content  = file("${path.module}/../../../platform/api/twilio.mjs")
     filename = "twilio.mjs"
   }
+  source {
+    content  = file("${path.module}/../../../platform/api/send-limit.mjs")
+    filename = "send-limit.mjs"
+  }
 }
 
 resource "aws_iam_role" "sweep" {
@@ -50,6 +54,7 @@ resource "aws_iam_role_policy" "sweep" {
     Version = "2012-10-17"
     Statement = [
       { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Query"], Resource = aws_dynamodb_table.main.arn },
+      { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:PutItem"], Resource = nonsensitive(data.aws_ssm_parameter.sends_table_arn.value) },
       {
         # A person's verified phone and email, nothing else about them
         Effect   = "Allow"
@@ -83,6 +88,8 @@ resource "aws_lambda_function" "sweep" {
       USER_POOL_ID = local.pool_id
       TWILIO_PARAM = local.twilio_param
       FROM_ADDRESS = local.from_address
+      SENDS_TABLE  = element(split("/", nonsensitive(data.aws_ssm_parameter.sends_table_arn.value)), 1)
+      TIME_ZONE    = "America/New_York"
     }
   }
 }
@@ -109,4 +116,9 @@ resource "aws_lambda_permission" "sweep" {
   function_name = aws_lambda_function.sweep.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.sweep.arn
+}
+
+# The daily limit on what Dot-y sends unasked (tools/sms/infra/sends.tf; apply that first)
+data "aws_ssm_parameter" "sends_table_arn" {
+  name = "/family/sms/sends-table-arn"
 }

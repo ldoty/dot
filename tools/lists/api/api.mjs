@@ -324,7 +324,7 @@ export function createApi(deps) {
       case 'GET /reminders/recent': {
         const days = [0, 1, 2].map((d) => new Date(now.getTime() - d * 86_400_000).toISOString().slice(0, 10));
         const sent = (await Promise.all(days.map((d) => all(`SENT#${d}`)))).flat()
-          .filter((r) => r.to === sub && now.getTime() - Date.parse(r.sentAt) < RECENT_MS)
+          .filter((r) => r.to === sub && !r.error && now.getTime() - Date.parse(r.sentAt) < RECENT_MS)
           .sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1));
         // `about` and `channel` make each one the shape every tool's sent texts share (role 'sent')
         return json(200, sent.map((r) => ({

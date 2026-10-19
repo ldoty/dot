@@ -210,3 +210,18 @@ test('reminders still to come are their automations: in words, with when next, o
   const sent = (await call('GET', '/reminders/recent')).body;
   assert.ok(sent.length && sent.every((s) => sentItem(s)?.about === 'Lists reminder (Chores)'), 'sent texts in the shared shape');
 });
+
+test('every reminder counts toward the daily limit on what Dot-y sends; past it, nothing goes, and it says why', async () => {
+  const l = await newList('Errands');
+  await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Call the dentist', remind: at('2026-10-20T13:00:00Z') });
+  await call('PUT', `/lists/${l.id}/items/i00002`, { text: 'Bins out', remind: at('2026-10-20T13:00:00Z') });
+  outbox.full = [LUKE];
+  const results = await minute('2026-10-20T13:00:30Z');
+  assert.deepEqual(outbox.texts, []);
+  assert.deepEqual(outbox.counted, [LUKE, LUKE]);
+  assert.ok(results.every((r) => /today's limit of 50 texts and emails/.test(r.error)));
+  assert.deepEqual((await call('GET', '/reminders/recent')).body, [], 'not sent, so not among what was sent');
+  outbox.full = [];
+  await minute('2026-10-20T13:01:30Z');
+  assert.deepEqual(outbox.texts, [], 'recorded, not retried');
+});

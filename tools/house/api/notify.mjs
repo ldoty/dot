@@ -5,7 +5,8 @@
 //     House and can still see what sets it off), and have a notify;
 //   - the text goes only to its owner, to their verified phone (Cognito), with its own stored message;
 //   - once per run (NOTIFIED row, conditional), and at most PER_DAY a day per automation, so even a relay
-//     key in the wrong hands can't turn this into a stream of texts.
+//     key in the wrong hands can't turn this into a stream of texts;
+//   - within the person's daily limit on everything Dot-y sends unasked (platform/api/send-limit.mjs).
 // Texts go through the Dot-y number's registered campaign, with no links (automation.mjs refuses them).
 //
 // The text says which automation sent it ("Dot-y, Leaving home: check the garage"), and a SENT row keeps
@@ -17,6 +18,7 @@
 //       CMD#<UTC day> / <ISO>#<id>n             audit: via 'automation', action 'notify'
 import { PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { AUTO_ID } from './automation.mjs';
+import { LIMIT_REACHED } from './send-limit.mjs';
 
 export const PER_DAY = 10;
 
@@ -24,8 +26,11 @@ export const PER_DAY = 10;
 export const textFor = (row) => `Dot-y, ${row.name}: ${row.notify.message}`;
 const KEY = /^(\d{4}-\d{2}-\d{2})@\d{1,4}$/;
 
-/** deps: db, table, get(pk, sk), automations (automations.mjs), contact(sub) -> { phone }, text(phone, body), now() */
-export function createNotify({ db, table, get, automations, contact, text, now }) {
+/**
+ * deps: db, table, get(pk, sk), automations (automations.mjs), contact(sub) -> { phone }, text(phone, body), now(),
+ * limit(sub) -> { ok } (send-limit.mjs: counts one, if there's room today)
+ */
+export function createNotify({ db, table, get, automations, contact, text, now, limit }) {
   return async ({ id, key } = {}) => {
     const day = KEY.exec(key ?? '')?.[1];
     if (!AUTO_ID.test(id ?? '') || !day) return { sent: false, why: 'bad request' };
@@ -61,6 +66,7 @@ export function createNotify({ db, table, get, automations, contact, text, now }
     let outcome = 'done', error = null;
     const body = textFor(row);
     try {
+      if (!(await limit(row.owner)).ok) throw new Error(LIMIT_REACHED);
       const who = await contact(row.owner);
       if (!who.phone) throw new Error('no verified phone');
       await text(who.phone, body);

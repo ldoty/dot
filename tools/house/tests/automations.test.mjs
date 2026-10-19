@@ -306,7 +306,7 @@ test('a run that texts: only its owner, with its stored message, once, and only 
   const { DynamoDBDocumentClient, GetCommand } = await import('@aws-sdk/lib-dynamodb');
   const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }));
   const send = createNotify({
-    db, table: 'family-house', get: async (pk, sk) => (await db.send(new GetCommand({ TableName: 'family-house', Key: { pk, sk } }))).Item,
+    db, table: 'family-house', limit: async () => ({ ok: true }), get: async (pk, sk) => (await db.send(new GetCommand({ TableName: 'family-house', Key: { pk, sk } }))).Item,
     automations: handler.automations, now: () => new Date('2026-10-19T17:30:00Z'),
     contact: async (sub) => { contacts.push(sub); return { phone: '+18645550100' }; },
     text: async (to, body) => texts.push({ to, body }),
@@ -341,7 +341,7 @@ test('what was texted is kept two days for its owner (GET /sent), so Dot knows w
   const sentAt = new Date(Date.now() - 60_000);
   let failing = false;
   const send = createNotify({
-    db, table: 'family-house', get: async (pk, sk) => (await db.send(new GetCommand({ TableName: 'family-house', Key: { pk, sk } }))).Item,
+    db, table: 'family-house', limit: async () => ({ ok: true }), get: async (pk, sk) => (await db.send(new GetCommand({ TableName: 'family-house', Key: { pk, sk } }))).Item,
     automations: handler.automations, now: () => sentAt, contact: async () => ({ phone: '+18645550100' }),
     text: async () => { if (failing) throw new Error('Twilio said no'); },
   });
@@ -373,7 +373,7 @@ test('at most PER_DAY texts a day per automation, whatever the relay says', asyn
   const { DynamoDBDocumentClient, GetCommand } = await import('@aws-sdk/lib-dynamodb');
   const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }));
   const send = createNotify({
-    db, table: 'family-house', get: async (pk, sk) => (await db.send(new GetCommand({ TableName: 'family-house', Key: { pk, sk } }))).Item,
+    db, table: 'family-house', limit: async () => ({ ok: true }), get: async (pk, sk) => (await db.send(new GetCommand({ TableName: 'family-house', Key: { pk, sk } }))).Item,
     automations: handler.automations, now: () => new Date(), contact: async () => ({ phone: '+18645550100' }), text: async (to, body) => texts.push(body),
   });
   for (let m = 0; m < PER_DAY + 3; m++) await send({ id, key: `2026-10-19@${600 + m}` });
@@ -381,9 +381,28 @@ test('at most PER_DAY texts a day per automation, whatever the relay says', asyn
   await send({ id, key: '2026-10-20@600' });
   assert.equal(texts.length, PER_DAY + 1, 'a new day');
   // No verified phone: recorded as failed, nothing sent
-  const none = createNotify({
-    db, table: 'family-house', get: async (pk, sk) => (await db.send(new GetCommand({ TableName: 'family-house', Key: { pk, sk } }))).Item,
+  const none = createNotify({ limit: async () => ({ ok: true }),
+    db, table: 'family-house', limit: async () => ({ ok: true }), get: async (pk, sk) => (await db.send(new GetCommand({ TableName: 'family-house', Key: { pk, sk } }))).Item,
     automations: handler.automations, now: () => new Date(), contact: async () => ({ phone: null }), text: async () => { throw new Error('never'); },
   });
   assert.deepEqual(await none({ id, key: '2026-10-21@600' }), { sent: false, why: 'no verified phone' });
+});
+
+test('a text counts toward its owner’s daily limit on what Dot-y sends; past it, none goes', async () => {
+  person();
+  const id = (await call('POST', '/automations', LEAVES)).body.id;
+  const { handler } = await import('./helpers/house.mjs');
+  const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb');
+  const { DynamoDBDocumentClient, GetCommand } = await import('@aws-sdk/lib-dynamodb');
+  const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }));
+  const texts = [], counted = [];
+  const send = createNotify({
+    db, table: 'family-house', get: async (pk, sk) => (await db.send(new GetCommand({ TableName: 'family-house', Key: { pk, sk } }))).Item,
+    automations: handler.automations, now: () => new Date(), contact: async () => ({ phone: '+18645550100' }),
+    text: async (to, body) => texts.push(body), limit: async (sub) => { counted.push(sub); return { ok: false }; },
+  });
+  const r = await send({ id, key: '2026-10-19@810' });
+  assert.deepEqual([r.sent, texts, counted], [false, [], [LUKE]]);
+  assert.match(r.why, /today's limit of 50 texts and emails/);
+  assert.equal(audit().find((x) => x.action === 'notify').outcome, 'failed');
 });

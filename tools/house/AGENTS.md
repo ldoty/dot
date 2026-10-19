@@ -25,7 +25,8 @@ Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
   relay drops a command that arrives after its `expires` (5 s) or twice.
 - Every command, allowed or not, gets an audit row.
 - **Texts from automations go only to the automation's owner**, decided in AWS from the stored
-  automation (never from what the relay says), once per run, at most 10 a day each, no links.
+  automation (never from what the relay says), once per run, at most 10 a day each, no links, and within
+  the owner's daily limit on everything Dot-y sends unasked (`send-limit.mjs`, 50 across all tools).
   What sets one off must be inside the ceiling (the relay checks) and readable by its owner (AWS checks).
 - The relay must recover on its own after a power cut: its unit waits for a default route
   (network-online.target doesn't wait in the container), and it exits after 2 minutes without a

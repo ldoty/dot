@@ -39,6 +39,7 @@ import { makeAccess } from './access.mjs';
 import { makePeople } from './people.mjs';
 import { makeAutomations } from './automations.mjs';
 import { createNotify } from './notify.mjs';
+import { makeSendLimit } from './send-limit.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 // The relay sends everything every 5 minutes; past this its picture of the house may be old
@@ -358,4 +359,5 @@ async function sendTextLive(phone, body) {
 export const notify = createNotify({
   db, table: env.TABLE, get: async (pk, sk) => (await db.send(new GetCommand({ TableName: env.TABLE, Key: { pk, sk } }))).Item,
   automations: handler.automations, contact, text: sendTextLive, now: () => new Date(),
+  limit: makeSendLimit({ db, table: env.SENDS_TABLE, timeZone: env.TIME_ZONE }),
 });

@@ -39,6 +39,10 @@ data "archive_file" "api" {
     filename = "repeat.mjs"
   }
   source {
+    content  = file("${path.module}/../api/send-limit.mjs")
+    filename = "send-limit.mjs"
+  }
+  source {
     content  = file("${path.module}/../../../platform/api/twilio.mjs")
     filename = "twilio.mjs"
   }

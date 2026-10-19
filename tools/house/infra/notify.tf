@@ -33,6 +33,7 @@ resource "aws_iam_role_policy" "notify" {
         Condition = { "ForAllValues:StringLike" = { "dynamodb:LeadingKeys" = ["NOTIFIED", "SENT#*", "CMD#*"] } }
       },
       { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:Query"], Resource = nonsensitive(data.aws_ssm_parameter.people_table_arn.value) },
+      { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:PutItem"], Resource = nonsensitive(data.aws_ssm_parameter.sends_table_arn.value) },
       {
         # Who's in House and its admins (whether the owner may still run it), and the owner's verified phone
         Effect   = "Allow"
@@ -55,7 +56,10 @@ resource "aws_lambda_function" "notify" {
   memory_size      = 256
 
   environment {
-    variables = merge(aws_lambda_function.api.environment[0].variables, { TWILIO_PARAM = local.twilio_param })
+    variables = merge(aws_lambda_function.api.environment[0].variables, {
+      TWILIO_PARAM = local.twilio_param
+      SENDS_TABLE  = element(split("/", nonsensitive(data.aws_ssm_parameter.sends_table_arn.value)), 1)
+    })
   }
 }
 
@@ -69,4 +73,9 @@ resource "aws_lambda_function_event_invoke_config" "notify" {
 resource "aws_cloudwatch_log_group" "notify" {
   name              = "/aws/lambda/${aws_lambda_function.notify.function_name}"
   retention_in_days = 30
+}
+
+# The daily limit on what Dot-y sends unasked (tools/sms/infra/sends.tf; apply that first)
+data "aws_ssm_parameter" "sends_table_arn" {
+  name = "/family/sms/sends-table-arn"
 }

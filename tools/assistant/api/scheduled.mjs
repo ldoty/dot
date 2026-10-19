@@ -4,6 +4,8 @@
 //   - only while they're still an enabled family_assistant member (Cognito), to their verified phone or
 //     email, and never more than an hour late (a run that was missed is recorded, not made up later);
 //   - read-only: the turn gets only Dot's reading tools (forUser readOnly), whatever the ask says;
+//   - within their daily limit on what Dot-y sends unasked (platform/api/send-limit.mjs), checked before
+//     the turn runs, so a run past it costs nothing;
 //   - its message is marked (SCHEDULED_MARK), so it never counts as the person's reply to a confirmation.
 // By text, the run is the latest texting conversation, so replying carries on from it; by email, the
 // message starts a thread whose replies come back to the same conversation (email.mjs conversationIdFor).
@@ -20,6 +22,7 @@ import { cognitoContact, makeSchedules } from './schedules.mjs';
 import { toTexts } from './sms.mjs';
 import { conversationIdFor } from './email.mjs';
 import { maskPhone, sendText, twilioConfig } from './twilio.mjs';
+import { LIMIT_REACHED, makeSendLimit } from './send-limit.mjs';
 
 export const LATE_MS = 60 * 60_000;
 
@@ -43,7 +46,8 @@ export function scheduledEmail({ from, to, subject, body, messageId, date }) {
 /**
  * deps: what liveDeps() returns (store, forUser, client, …), plus schedules (schedules.mjs),
  * contact(sub) -> { member, phone, email } (member: enabled and in family_assistant; phone and email
- * verified only), text(phone, body), sendRaw({ to, raw }), address (dot@…), people { sub: { name } }
+ * verified only), text(phone, body), sendRaw({ to, raw }), address (dot@…), people { sub: { name } },
+ * limit(sub) -> { ok } (send-limit.mjs)
  */
 export function createScheduleRunner(depsOrFactory) {
   let deps = typeof depsOrFactory === 'function' ? null : depsOrFactory;
@@ -53,6 +57,7 @@ export function createScheduleRunner(depsOrFactory) {
     if (!who.member) return { ok: false, error: 'no longer uses Dot' };
     const by = s.by === 'sms' && who.phone ? 'sms' : who.email ? 'email' : who.phone ? 'sms' : null;
     if (!by) return { ok: false, error: 'no verified phone or email' };
+    if (!(await deps.limit(sub)).ok) return { ok: false, error: LIMIT_REACHED };
     const name = deps.people?.[sub]?.name;
     const messageId = `<s${randomBytes(9).toString('hex')}@${deps.address.split('@')[1]}>`;
     let reply, conversationId;
@@ -126,6 +131,7 @@ function liveRunnerDeps(env = process.env) {
     text: async (to, body) => sendText(await twilio(), to, body),
     sendRaw: ({ to, raw }) => ses.send(new SendEmailCommand({ FromEmailAddress: env.DOT_ADDRESS, Destination: { ToAddresses: [to] }, Content: { Raw: { Data: Buffer.from(raw) } } })),
     contact: (sub) => cognitoContact(env, sub),
+    limit: makeSendLimit({ db: DynamoDBDocumentClient.from(new DynamoDBClient({})), table: env.SENDS_TABLE, timeZone: env.TIME_ZONE }),
   };
 }
 

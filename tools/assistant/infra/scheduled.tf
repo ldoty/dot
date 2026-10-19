@@ -27,6 +27,11 @@ resource "aws_iam_role_policy" "people" {
       Effect   = "Allow"
       Action   = ["cognito-idp:AdminGetUser", "cognito-idp:AdminListGroupsForUser"]
       Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}"
+      }, {
+      # Counting each run toward the person's daily limit on what Dot-y sends unasked
+      Effect   = "Allow"
+      Action   = ["dynamodb:GetItem", "dynamodb:PutItem"]
+      Resource = nonsensitive(data.aws_ssm_parameter.sends_table_arn.value)
     }]
   })
 }
@@ -44,7 +49,11 @@ resource "aws_lambda_function" "scheduled" {
   reserved_concurrent_executions = 1
 
   environment {
-    variables = merge(aws_lambda_function.api.environment[0].variables, { TWILIO_PARAM = local.twilio_param, DOT_ADDRESS = local.dot_address })
+    variables = merge(aws_lambda_function.api.environment[0].variables, {
+      TWILIO_PARAM = local.twilio_param
+      DOT_ADDRESS  = local.dot_address
+      SENDS_TABLE  = element(split("/", nonsensitive(data.aws_ssm_parameter.sends_table_arn.value)), 1)
+    })
   }
 }
 
@@ -77,4 +86,9 @@ resource "aws_lambda_permission" "scheduled" {
   function_name = aws_lambda_function.scheduled.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.scheduled.arn
+}
+
+# The daily limit on what Dot-y sends unasked (tools/sms/infra/sends.tf; apply that first)
+data "aws_ssm_parameter" "sends_table_arn" {
+  name = "/family/sms/sends-table-arn"
 }

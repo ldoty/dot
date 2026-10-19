@@ -81,7 +81,9 @@ RRULE subset (`tools/lists/api/repeat.mjs`, shared), each describes itself in on
 to a House automation or a scheduled ask needs the person's own reply. A tool joins by giving a manifest operation
 `role: 'automations'`; Dot lists them all together (its `automations` tool, and “Runs on its own” on its page).
 What a tool texted or emailed someone is its `role: 'sent'` operation: a text or email to Dot starts with a note of
-what Dot-y sent them since they last wrote, so a reply to one makes sense.
+what Dot-y sent them since they last wrote, so a reply to one makes sense. Everything sent unasked counts toward
+one limit, **50 a person a day** across all tools (`platform/api/send-limit.mjs`, counted before sending; a new
+sender must use it too), on top of each tool's own limits.
 
 Members can also **text** Dot: the SMS webhook maps a
 verified Cognito `phone_number` in `family_assistant` to the person, and Dot's SMS worker runs the same turn
@@ -170,6 +172,7 @@ npm run test:live
 | `/family/house/relay-key` | SecureString, set by hand: the house relay's key for its WebSocket `$connect` (also in the relay container's `/etc/house-relay/house-key`) |
 | `/family/people/table-arn`, `/family/people/api-url` | The family's groups and names (`platform/family`): tools read the table; dot-y.co/family calls the API |
 | `/family/sms/optin-url` | The SMS opt-in endpoint, for the public page |
+| `/family/sms/sends-table-arn` | The table behind the daily limit on what Dot-y sends someone unasked (`platform/api/send-limit.mjs`); House's notify, Lists' sweep and Dot's scheduled runner may get and put there (apply `tools/sms` first) |
 | `/family/sms/twilio` | SecureString, set by hand: Twilio API key for sending `{accountSid, apiKeySid, apiKeySecret, messagingServiceSid}` |
 | `/family/sms/twilio-webhook` | SecureString, set by hand: `{accountSid, authToken}`, only for the webhook's signature checks |
 | `/family/assistant/sms-worker` | Dot’s SMS worker Lambda, which only the SMS webhook may invoke |

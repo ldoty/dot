@@ -13,6 +13,7 @@ Dot-y family assistant texts (reminders, to-dos, answers) to people invited by t
 | `api/webhook.mjs` | Twilio's `POST /twilio`: records STOP and START, and hands opted-in members' texts to Dot |
 | `platform/api/twilio.mjs` | Signature check and sending (symlinked here and into the assistant) |
 | `infra/` | Table `dot-y-sms-consent` (deletion protected, PITR), both Lambdas, HTTP API (throttled, CORS dot-y.co only) |
+| `infra/sends.tf` | Table `dot-y-sends`: the daily limit on what Dot-y sends someone unasked, 50 across all tools (`platform/api/send-limit.mjs`); House's notify, Lists' sweep and Dot's scheduled asks count there before sending |
 
 Texts must stay optional: Twilio rejected the campaign (error 30923, forced consent) when the box
 and the phone number were required. The form joins Dot-y with a name and email; the number and the

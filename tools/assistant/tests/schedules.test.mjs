@@ -137,8 +137,8 @@ test('the prompt explains it, and a read-only toolset leaves out everything that
 
 // ---- the runner ----
 
-function runner(script, { contact = async () => reach } = {}) {
-  const sent = { texts: [], emails: [] }, forUsers = [];
+function runner(script, { contact = async () => reach, room = true } = {}) {
+  const sent = { texts: [], emails: [] }, forUsers = [], counted = [];
   const claude = fakeClaude(script);
   const run = createScheduleRunner({
     store, schedules, client: claude.client, model: 'm', timeZone: TZ, now: () => clock, address: 'dot@dot-y.co',
@@ -150,8 +150,9 @@ function runner(script, { contact = async () => reach } = {}) {
     contact,
     text: async (to, body) => sent.texts.push({ to, body }),
     sendRaw: async (m) => sent.emails.push(m),
+    limit: async (sub) => { counted.push(sub); return { ok: room }; },
   });
-  return { run, sent, forUsers, claude };
+  return { run, sent, forUsers, claude, counted };
 }
 const at = (iso) => { clock = new Date(iso); };
 
@@ -288,4 +289,14 @@ test('as an automation: the shape every tool’s share', async () => {
   assert.deepEqual([askAutomation({ ...mine, nextAt: null }).status, askAutomation({ ...mine, nextAt: null }).why], ['stopped', 'its last day has passed']);
   assert.equal(askAutomation({ ...mine, lastRun: { at: '2026-10-25T17:00:00Z', ok: false, error: 'missed: the runner was down at that time' } }).last_run.outcome, 'missed');
   assert.equal(askAutomation({ ...mine, lastRun: { at: '2026-10-25T17:00:00Z', ok: false, error: 'no answer' } }).last_run.outcome, 'failed');
+});
+
+test('a run counts toward the daily limit on what Dot-y sends; past it, it doesn’t even run', async () => {
+  await schedules.create(LUKE, { ...clean(), by: 'sms' }, { via: 'sms' });
+  const r = runner([text('Should never be asked.')], { room: false });
+  at('2026-10-25T17:00:00Z');
+  const [done] = await r.run();
+  assert.deepEqual([done.ok, r.counted, r.sent.texts, r.claude.calls.length], [false, [LUKE], [], 0]);
+  assert.match(done.error, /today's limit of 50 texts and emails/);
+  assert.match((await schedules.list(LUKE))[0].lastRun.error, /limit/);
 });

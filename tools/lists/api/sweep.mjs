@@ -9,6 +9,9 @@
 // A repeating item in schedule mode that wasn't ticked off rolls on to its next occurrence here
 // (repeat.mjs), is reminded again, and gets the row for the one after.
 //
+// Every reminder counts toward the person's daily limit on what Dot-y sends unasked (platform/api/send-limit.mjs);
+// past it, it's recorded as not sent.
+//
 // Texts go through the Dot-y number's registered campaign ("reminder and assistant texts"; no
 // links, ever), only to a verified phone, and Twilio refuses anyone who replied STOP. Email comes
 // from Dot (dot@dot-y.co), so a reply reaches Dot. Either way the person can answer "done" or
@@ -20,6 +23,7 @@ import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCom
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { reminderKey } from './model.mjs';
 import { advance } from './repeat.mjs';
+import { LIMIT_REACHED, makeSendLimit } from './send-limit.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const LOOKBACK_DAYS = 2; // reminders due up to a day or so ago still go out (the sweep was down, say)
@@ -28,7 +32,7 @@ export const smsBody = (text, list) => `Dot-y reminder: ${text.length > 120 ? `$
 
 /**
  * deps: table, now(), contact(sub) -> { phone, email } (verified only; null if not),
- *       sendText(phone, body), sendEmail({ to, subject, text })
+ *       sendText(phone, body), sendEmail({ to, subject, text }), limit(sub) -> { ok } (send-limit.mjs)
  */
 export function createSweep(deps) {
   const { table } = deps;
@@ -86,6 +90,7 @@ export function createSweep(deps) {
       let error = null;
       try {
         if (!channel) throw new Error('no verified phone or email');
+        if (!(await deps.limit(to)).ok) throw new Error(LIMIT_REACHED);
         if (channel === 'sms') await deps.sendText(who.phone, smsBody(item.text, list.name));
         else {
           await deps.sendEmail({
@@ -143,4 +148,5 @@ async function sendEmailLive({ to, subject, text }) {
 
 export const handler = createSweep({
   table: process.env.TABLE, now: () => new Date(), contact, sendText: sendTextLive, sendEmail: sendEmailLive,
+  limit: makeSendLimit({ db, table: process.env.SENDS_TABLE, timeZone: process.env.TIME_ZONE }),
 });

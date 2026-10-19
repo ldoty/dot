@@ -29,7 +29,7 @@ export const handler = createApi({
   now: () => clock.now, timeZone: 'America/New_York',
 });
 
-export const outbox = { texts: [], emails: [], fail: null };
+export const outbox = { texts: [], emails: [], fail: null, full: [], counted: [] };
 export const contacts = {
   [LUKE]: { phone: '+18645550100', email: 'luke@x.test' },
   [AMBER]: { phone: null, email: 'amber@x.test' },
@@ -39,6 +39,8 @@ export const sweep = createSweep({
   table: 'family-lists', now: () => clock.now, contact: async (sub) => contacts[sub] ?? { phone: null, email: null },
   sendText: async (phone, body) => { if (outbox.fail) throw new Error(outbox.fail); outbox.texts.push({ phone, body }); },
   sendEmail: async (m) => { if (outbox.fail) throw new Error(outbox.fail); outbox.emails.push(m); },
+  // The daily limit on what Dot-y sends unasked: room unless a test says the person has none (outbox.full)
+  limit: async (sub) => { outbox.counted.push(sub); return { ok: !outbox.full.includes(sub) }; },
 });
 
 export const token = (sub = LUKE, over = {}) => accessToken({ clientId: 'lists-client', sub, 'cognito:groups': ['family_lists'], ...over });
@@ -48,7 +50,7 @@ export const call = (m, p, b, t = token()) => callApi(m, p, b, t);
 
 export function reset() {
   table.clear();
-  outbox.texts = []; outbox.emails = []; outbox.fail = null;
+  outbox.texts = []; outbox.emails = []; outbox.fail = null; outbox.full = []; outbox.counted = [];
   clock.now = new Date('2026-10-19T14:00:00Z');
 }
 /** A family group, as dot-y.co/family stores it */

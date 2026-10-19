@@ -23,7 +23,8 @@ every Sunday at 1". Each person's own (the `schedule` tool and the page's What D
 an admin's). Making one needs the person's own reply (`confirm.mjs`); it's a standing permission. A run is a turn
 as its owner with **read-only tools** (`makeTools({ readOnly })` leaves out `WRITE_TOOLS`; keep that list complete
 when adding a tool that changes anything), only while they're an enabled `family_assistant` member, to their
-verified phone or email, once (claimed with a rev check), and never more than an hour late. Its message starts with
+verified phone or email, once (claimed with a rev check), never more than an hour late, and within their daily
+limit on what Dot-y sends unasked (`send-limit.mjs`, checked before the turn). Its message starts with
 `SCHEDULED_MARK`, which never counts as the person's reply to a confirmation. Repeat rules are Lists' (`repeat.mjs`
 is a symlink to `tools/lists/api/repeat.mjs`), daily at most. Every change from Dot (create, pause, resume,
 delete) needs the person's reply, the same rule as House's automations; the page changes them directly.
