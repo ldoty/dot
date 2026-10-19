@@ -2,7 +2,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { KID, audit, call, familyGroup, relay, seed, table, token } from './helpers/house.mjs';
+import { KID, LUKE, audit, call, familyGroup, relay, seed, table, token } from './helpers/house.mjs';
 
 const HTML = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8').replace('<script src="family-auth.js"></script>', '');
 const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
@@ -169,4 +169,55 @@ test('recent activity says who did what, and what wasn’t allowed', async () =>
   assert.deepEqual(items.map((li) => li.querySelector('.what').textContent), ['kid@x.test turned off master bedroom main — not allowed', 'kid@x.test turned off kitchen main']);
   assert.match(items[0].querySelector('small').textContent, /through Dot/);
   p.close();
+});
+
+// ---- automations ----
+
+const auto = (sk, over = {}) => table.put({
+  pk: 'AUTO', sk, name: 'Kitchen mornings', when: { at: '06:00' }, days: ['mon', 'tue', 'wed', 'thu', 'fri'],
+  actions: [{ entity_id: 'light.kitchen_main', action: 'turn_on', data: { brightness_pct: 80 } }], enabled: true, owner: LUKE, rev: 1, ...over,
+});
+
+test('automations: what each does, whether it runs, pause and delete', async () => {
+  auto('auto000001');
+  auto('auto000002', { name: '<b>Porch</b>', when: { sun: 'sunset', offset: -15 }, enabled: false });
+  const p = await open({ sub: LUKE });
+  assert.deepEqual(p.text('.autos strong'), ['<b>Porch</b>', 'Kitchen mornings'], 'escaped, by name');
+  assert.deepEqual(p.text('.autos .says'), ['Every weekday 15 minutes before sunset: turn on kitchen main (80%)', 'Every weekday at 6:00 AM: turn on kitchen main (80%)']);
+  assert.deepEqual(p.text('.autos small'), ['Paused', 'On · hasn’t run yet']);
+  p.d.querySelector('li[data-auto="auto000001"] [data-pause]').click();
+  await wait(120);
+  assert.equal(table.get('AUTO', 'auto000001').enabled, false);
+  assert.deepEqual(p.text('.autos small'), ['Paused', 'Paused']);
+  assert.equal(p.d.querySelector('li[data-auto="auto000001"] [data-pause]').textContent, 'Resume');
+  p.d.querySelector('li[data-auto="auto000002"] [data-del-auto]').click();
+  await wait(120);
+  assert.equal(p.w.asked, 'Delete “<b>Porch</b>”? It stops running.');
+  assert.equal(table.get('AUTO', 'auto000002'), undefined);
+  assert.deepEqual(p.text('.autos strong'), ['Kitchen mornings']);
+});
+
+test('automations: someone else’s shows whose it is and can’t be changed; one that can’t run says why', async () => {
+  // The kid's own, made when they could control the kitchen; now they can only see it. Luke sees it, not as an admin
+  table.put({ pk: 'GRANT', sk: 'grant1', who: `sub:${KID}`, where: 'area:kitchen', level: 'read' });
+  table.put({ pk: 'GRANT', sk: 'grant2', who: `sub:${LUKE}`, where: 'area:kitchen', level: 'read' });
+  auto('auto000001', { owner: KID });
+  const p = await open({ sub: LUKE, groups: ['family_house'] });
+  assert.deepEqual(p.text('.autos small'), ['Not running: kid@x.test can’t control kitchen main anymore · kid@x.test’s']);
+  assert.equal(p.d.querySelector('.autos [data-pause]'), null);
+  assert.equal(p.d.querySelector('.autos [data-del-auto]'), null);
+});
+
+test('automations: none yet says how to make one; their runs show in the activity log', async () => {
+  let p = await open();
+  assert.deepEqual(p.text('.autos small'), ['Nothing runs by itself yet.']);
+  assert.match(p.d.getElementById('autos').textContent, /ask Dot: “Turn on the kitchen lights every weekday at 6.”/);
+  p.close();
+  auto('auto000001');
+  table.put({ pk: 'RAN', sk: 'auto000001', at: new Date().toISOString(), ok: true, results: [] });
+  const at = new Date().toISOString();
+  table.put({ pk: `CMD#${at.slice(0, 10)}`, sk: `${at}#auto0000010`, who: LUKE, via: 'automation', automationName: 'Kitchen mornings', entity_id: 'light.kitchen_main', name: 'kitchen main', action: 'turn_on', data: { brightness_pct: 80 }, outcome: 'done' });
+  p = await open({ sub: LUKE });
+  assert.match(p.text('.autos small')[0], /^On · last ran /);
+  assert.match(p.text('.log li')[0], /turned on kitchen main at 80%.*automation “Kitchen mornings”/);
 });

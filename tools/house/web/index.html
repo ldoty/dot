@@ -8,7 +8,8 @@
 <link rel="stylesheet" href="family.css">
 <style>
 /* Layout: one narrow column. Header, a line on how fresh the picture is, then a card per room.
-   A device you may control gets a switch, and a dimmer also a brightness slider under its name. */
+   A device you may control gets a switch, and a dimmer also a brightness slider under its name.
+   Then what the house does by itself (automations, made through Dot), and for admins, access. */
 .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 24px }
 .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
 .top a { color: var(--muted); text-decoration: none; font-size: 14px }
@@ -51,6 +52,12 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
 .log .what { display: block }
 .log small { display: block }
 .denied { color: var(--ember) }
+#autos h2 { font-size: 24px; margin: 8px 0 8px }
+.autos li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center }
+.autos .says { grid-column: 1; font-size: 14px; color: var(--muted) }
+.autos .acts { grid-column: 2; grid-row: 1 / span 3; display: flex; gap: 6px }
+.autos .btn { padding: 6px 10px; font-size: 13px }
+.autos .off { color: var(--ember) }
 @media (prefers-reduced-motion: reduce) { .switch::after { transition: none } }
 </style>
 </head>
@@ -59,6 +66,7 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
   <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
   <h1>House</h1>
   <div id="main"><p class="status">Loading…</p></div>
+  <div id="autos" hidden></div>
   <div id="admin" hidden></div>
 </div>
 <script src="family-auth.js"></script>
@@ -173,6 +181,54 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
     send(e, "turn_on", { brightness_pct: Number(ev.target.value) });
   });
 
+  // ---- Automations: what the house does by itself. Made by asking Dot; paused or removed here ----
+  var autosEl = document.getElementById("autos"), autos = null, autoMsg = "";
+  function ranText(r) {
+    if (!r) return "hasn’t run yet";
+    return "last ran " + new Date(r.at).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }) + (r.ok ? "" : ", not all of it worked");
+  }
+  function renderAutos() {
+    var html = "<h2>Automations</h2>" + (autoMsg ? '<p class="status warn">' + esc(autoMsg) + "</p>" : "");
+    html += '<section class="card"><ul class="rules autos">' + (autos.length ? autos.map(function (a) {
+      var state = a.status === "on" ? "On · " + ranText(a.last_run) : a.status === "paused" ? "Paused" : "Not running: " + a.why;
+      return '<li data-auto="' + esc(a.id) + '"><strong>' + esc(a.name) + "</strong>" +
+        (a.can_change ? '<span class="acts"><button class="btn ghost" data-pause>' + (a.enabled ? "Pause" : "Resume") + '</button><button class="x" data-del-auto aria-label="Delete ' + esc(a.name) + '">&times;</button></span>' : "") +
+        '<span class="says">' + esc(a.says) + '</span><small class="' + (a.status === "stopped" ? "off" : "") + '">' + esc(state) + (a.mine ? "" : " · " + esc(a.owner.name) + "’s") + "</small></li>";
+    }).join("") : "<li><small>Nothing runs by itself yet.</small></li>") + "</ul>" +
+      '<p class="status">To add or change one, ask Dot: “Turn on the kitchen lights every weekday at 6.” They run at home, so they work even when the internet is down.</p></section>';
+    autosEl.innerHTML = html;
+    autosEl.hidden = false;
+  }
+  function loadAutos() {
+    return api("GET", "/automations").then(function (res) {
+      if (!res.ok) return;
+      return res.json().then(function (list) { autos = list; renderAutos(); });
+    });
+  }
+  function findAuto(id) { for (var i = 0; i < autos.length; i++) if (autos[i].id === id) return autos[i]; return null; }
+  function changeAuto(method, path, body) {
+    autoMsg = "";
+    return api(method, path, body).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (out) {
+        if (res.status === 409) autoMsg = "Someone else changed that just now. Here’s the latest.";
+        else if (!res.ok) autoMsg = res.status === 403 ? "You can’t turn that back on: " + (out.error || "not allowed") + "." : "Couldn’t save that (" + (out.error || res.status) + ").";
+        return loadAutos();
+      });
+    }).catch(function () { autoMsg = "Couldn’t reach House. Try again."; renderAutos(); });
+  }
+  autosEl.addEventListener("click", function (ev) {
+    var li = ev.target.closest("[data-auto]"); if (!li) return;
+    var a = findAuto(li.dataset.auto); if (!a) return;
+    if (ev.target.closest("[data-pause]")) {
+      changeAuto("PUT", "/automations/" + encodeURIComponent(a.id), {
+        name: a.name, when: a.when, days: a.days, enabled: !a.enabled, rev: a.rev,
+        actions: a.actions.map(function (x) { return { entity_id: x.entity_id, action: x.action, data: x.data }; }),
+      });
+    } else if (ev.target.closest("[data-del-auto]")) {
+      if (window.confirm("Delete “" + a.name + "”? It stops running.")) changeAuto("DELETE", "/automations/" + encodeURIComponent(a.id));
+    }
+  });
+
   // ---- People & access (admins only; the API refuses everyone else) ----
   var adminEl = document.getElementById("admin"), access = null, activity = [], adminMsg = "";
   var LEVEL = { read: "Can see", confirm: "Ask first", control: "Can control" };
@@ -225,7 +281,8 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
     html += '<section class="card"><h3>Recent activity</h3><ul class="rules log">' + (activity.length ? activity.slice(0, 50).map(function (a) {
       var verb = (a.action === "turn_off" ? "turned off " : "turned on ") + (a.name || a.entity_id) + (a.data && a.data.brightness_pct ? " at " + a.data.brightness_pct + "%" : "");
       var how = DONE[a.outcome] === undefined ? a.outcome : DONE[a.outcome];
-      return '<li><span class="what' + (a.outcome === "done" ? "" : " denied") + '">' + esc(personName(a.who)) + " " + esc(verb) + (how ? " — " + esc(how) : "") + "</span><small>" + esc(when(a.at)) + (a.via === "dot" ? " · through Dot" : "") + "</small></li>";
+      var through = a.via === "dot" ? " · through Dot" : a.via === "automation" ? " · automation “" + (a.automation || "removed") + "”" : "";
+      return '<li><span class="what' + (a.outcome === "done" ? "" : " denied") + '">' + esc(a.who ? personName(a.who) : "Someone") + " " + esc(verb) + (how ? " — " + esc(how) : "") + "</span><small>" + esc(when(a.at)) + esc(through) + "</small></li>";
     }).join("") : '<li><small>Nothing this week.</small></li>') + "</ul></section>";
     adminEl.innerHTML = html;
     adminEl.hidden = false;
@@ -275,6 +332,7 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
         if (document.activeElement && document.activeElement.matches && document.activeElement.matches("[data-dim]")) return;
         var first = !home;
         home = h; render();
+        if (first) loadAutos().catch(function () {});
         if (first && h.you.admin) loadAdmin().catch(function () {});
       });
     });

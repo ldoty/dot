@@ -20,6 +20,8 @@ Restart=always
 RestartSec=5
 NoNewPrivileges=true
 ProtectSystem=strict
+# /var/lib/house-relay: the automations, kept across restarts (the one place it may write)
+StateDirectory=house-relay
 ProtectHome=true
 PrivateTmp=true
 

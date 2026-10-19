@@ -11,8 +11,14 @@ Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
   Adding a domain (lock, cover, camera…) is an access change: ask Luke.
 - **Grants only narrow.** No grant, no access; the highest matching level wins; admins have control.
   Areas are matched as they are now, so moving a device in Home Assistant moves its grants.
-- **Dot may only `POST /commands`**, within the person's grants. Everything else from a `via: dot`
-  token stays 403.
+- **Dot may only `POST /commands` and change automations** (`POST`/`PUT`/`DELETE /automations…`), within
+  the person's grants; every automation change from Dot answers 202 first and needs their own reply.
+  Everything else from a `via: dot` token stays 403.
+- **Automations run on the relay, not in Home Assistant.** HA's own automations need an admin token,
+  which the relay must never hold. Making or changing one needs `control` on every device in it; AWS
+  sends the relay only the ones whose owner still has that (`api/automations.mjs`, on every change and
+  every 5 minutes), and the relay checks each action against the ceiling when it runs. They run within
+  5 minutes of their time or not at all, and keep running from the relay's disk with the internet down.
 - The relay's HA user is **non-admin**: its token can't change Home Assistant's setup.
   If the relay needs an admin-only HA command, find another way.
 - Commands are never queued for later: if the relay is offline or silent, the answer is 504, and the
@@ -30,6 +36,8 @@ Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
 3. Dot's built-in `house_control` (`tools/assistant/api/house.mjs`), with confirmation enforced in Dot's code (only after a new message from the person). Done.
 4. Grants editor (People & access, admins only, never via Dot), `GET /log`. Done. Groups moved to
    the family's (`platform/family`); grants name them by id.
+5. Automations: at a time or around sunrise/sunset, on chosen days; made through Dot
+   (`house_automation`), paused or deleted on the page, run by the relay. Done.
 
 What syncs by itself: states, names, and areas (grants follow a device that moves). What doesn't, on
 purpose: a new area or a new domain appears only once it's in `relay/ceiling.json` (then `deploy-relay.sh`).

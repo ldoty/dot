@@ -1,11 +1,11 @@
 // The tools Claude can call for one person: calendar tools for their calendars (if they have any),
-// read_budget (if Budget is set up for Dot; it reads with their own access), house_control (if they
-// can use House; house.mjs), lists_change (if they can use Lists; lists.mjs), memory (remember, forget, recall; memory.mjs), and whatever family tools discovery found for them
+// read_budget (if Budget is set up for Dot; it reads with their own access), house_control and
+// house_automation (if they can use House; house.mjs), lists_change (if they can use Lists; lists.mjs), memory (remember, forget, recall; memory.mjs), and whatever family tools discovery found for them
 // (discovery.mjs: { definitions, connected, handlers }). Each tool's input
 // is checked here before anything runs, and a failure comes back to Claude as an error result.
 
 import { COLORS } from './calendars.mjs';
-import { definition as houseControl } from './house.mjs';
+import { automationDefinition as houseAutomation, definition as houseControl } from './house.mjs';
 import { definition as listsChange } from './lists.mjs';
 import { definitions as memoryTools } from './memory.mjs';
 
@@ -130,11 +130,12 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
   }] : [];
   const writeTools = ['create_event', 'update_event', 'delete_event'];
   const offered = calendarTools.filter((t) => writable.length || !writeTools.includes(t.name));
-  const definitions = [...(calendarNames.length ? offered : []), ...budgetTools, ...(house ? [houseControl] : []), ...(lists ? [listsChange] : []), ...(memory ? memoryTools : []), ...discovered.definitions];
+  const definitions = [...(calendarNames.length ? offered : []), ...budgetTools, ...(house ? [houseControl, houseAutomation] : []), ...(lists ? [listsChange] : []), ...(memory ? memoryTools : []), ...discovered.definitions];
 
   const handlers = {
     read_budget: (i) => budget.read(i),
     house_control: (i, ctx) => house.control(i, ctx),
+    house_automation: (i, ctx) => house.automation(i, ctx),
     lists_change: (i, ctx) => lists.change(i, ctx),
     remember: (i, ctx) => memory.remember(i, ctx),
     forget: (i) => memory.forget(i),

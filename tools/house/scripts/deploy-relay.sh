@@ -7,7 +7,7 @@ set -euo pipefail
 PVE="${PVE:-root@192.168.0.235}"
 CT="${CT:-102}"
 dir="$(cd "$(dirname "$0")/../relay" && pwd)"
-files=(relay.mjs ceiling.mjs ceiling.json protocol.mjs house-relay.service)
+files=(relay.mjs ceiling.mjs ceiling.json protocol.mjs automation.mjs house-relay.service)
 
 node -e "import('$dir/ceiling.mjs').then(m => m.validateCeiling(JSON.parse(require('fs').readFileSync('$dir/ceiling.json','utf8'))))" \
   || { echo "ceiling.json is invalid; not deploying" >&2; exit 1; }

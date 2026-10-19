@@ -2,6 +2,7 @@ locals {
   routes = [
     "GET /home", "GET /dot", "POST /commands",
     "GET /access", "PUT /grants/{id}", "DELETE /grants/{id}", "GET /log",
+    "GET /automations", "POST /automations", "PUT /automations/{id}", "DELETE /automations/{id}",
   ]
 }
 
@@ -20,6 +21,14 @@ data "archive_file" "api" {
   source {
     content  = file("${path.module}/../api/access.mjs")
     filename = "access.mjs"
+  }
+  source {
+    content  = file("${path.module}/../api/automations.mjs")
+    filename = "automations.mjs"
+  }
+  source {
+    content  = file("${path.module}/../relay/automation.mjs")
+    filename = "automation.mjs"
   }
   source {
     content  = file("${path.module}/../../../platform/api/people.mjs")
@@ -67,8 +76,8 @@ resource "aws_iam_role_policy" "api_table" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Reads everything; writes only confirmations (PENDING), the audit trail (CMD#…) and,
-        # for admins, grants
+        # Reads everything; writes only confirmations (PENDING), the audit trail (CMD#…),
+        # automations and, for admins, grants
         Effect   = "Allow"
         Action   = ["dynamodb:GetItem", "dynamodb:Query"]
         Resource = aws_dynamodb_table.main.arn
@@ -77,7 +86,7 @@ resource "aws_iam_role_policy" "api_table" {
         Effect    = "Allow"
         Action    = ["dynamodb:PutItem", "dynamodb:DeleteItem"]
         Resource  = aws_dynamodb_table.main.arn
-        Condition = { "ForAllValues:StringLike" = { "dynamodb:LeadingKeys" = ["PENDING", "CMD#*", "GRANT"] } }
+        Condition = { "ForAllValues:StringLike" = { "dynamodb:LeadingKeys" = ["PENDING", "CMD#*", "GRANT", "AUTO"] } }
       },
       {
         Effect   = "Allow"
@@ -85,13 +94,14 @@ resource "aws_iam_role_policy" "api_table" {
         Resource = nonsensitive(data.aws_ssm_parameter.people_table_arn.value)
       },
       {
-        # Who is in this tool's group, for the access pickers (read only)
+        # Who is in this tool's group and its admins' (read only): the access pickers, and whether an
+        # automation's owner may still run it
         Effect   = "Allow"
         Action   = "cognito-idp:ListUsersInGroup"
         Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}"
       },
       {
-        # Hand a command to the relay's connection; nothing else on that API
+        # Hand a command or the automations to the relay's connection; nothing else on that API
         Effect   = "Allow"
         Action   = "execute-api:ManageConnections"
         Resource = "${aws_apigatewayv2_api.relay.execution_arn}/${aws_apigatewayv2_stage.relay.name}/POST/@connections/*"
@@ -195,4 +205,46 @@ resource "aws_ssm_parameter" "delegation" {
     api_url   = aws_apigatewayv2_api.api.api_endpoint
     client_id = module.app.delegated_client_id
   })
+}
+
+# Every 5 minutes, send the relay the automations that may run now (api/automations.mjs). Changes
+# here and to grants are sent at once; this catches what the API doesn't see happen, like someone
+# leaving family_house, and a relay that has just reconnected. Same code and role as the API.
+resource "aws_lambda_function" "publish" {
+  function_name    = "family-house-publish"
+  role             = aws_iam_role.api.arn
+  runtime          = "nodejs22.x"
+  handler          = "api.publish"
+  filename         = data.archive_file.api.output_path
+  source_code_hash = data.archive_file.api.output_base64sha256
+  timeout          = 20
+  memory_size      = 256
+
+  environment {
+    variables = aws_lambda_function.api.environment[0].variables
+  }
+}
+
+resource "aws_cloudwatch_log_group" "publish" {
+  name              = "/aws/lambda/${aws_lambda_function.publish.function_name}"
+  retention_in_days = 14
+}
+
+resource "aws_cloudwatch_event_rule" "publish" {
+  name                = "family-house-publish"
+  description         = "Send the house relay the automations that may run"
+  schedule_expression = "rate(5 minutes)"
+}
+
+resource "aws_cloudwatch_event_target" "publish" {
+  rule = aws_cloudwatch_event_rule.publish.name
+  arn  = aws_lambda_function.publish.arn
+}
+
+resource "aws_lambda_permission" "publish" {
+  statement_id  = "AllowSchedule"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.publish.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.publish.arn
 }

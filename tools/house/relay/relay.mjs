@@ -8,15 +8,22 @@
 // checking them against its own ceiling again: AWS has already checked the person's grants, but
 // the ceiling is the line AWS can't move. A command that arrives late, or twice, is dropped.
 //
+// It also runs the house's automations (automation.mjs): AWS sends the set that may run, the relay
+// keeps it on disk and runs each at its time from its own clock, so a 6 AM light comes on with the
+// internet down. Each action is checked against the ceiling when it runs, like a command, and how it
+// went is reported back (held until AWS is reachable again).
+//
 // Config (environment, set by house-relay.service):
 //   HA_URL           ws://<home assistant>/api/websocket
 //   HA_TOKEN_FILE    file holding the relay user's long-lived HA token
 //   HOUSE_WS_URL     wss://… the House tool's WebSocket API (tofu output relay_url)
 //   HOUSE_KEY_FILE   file holding the device key (same value as SSM /family/house/relay-key)
 //   CEILING          path to ceiling.json (default: next to this file)
-import { readFileSync } from 'node:fs';
+//   STATE_FILE       where the automations are kept (default /var/lib/house-relay/automations.json)
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { validateCeiling, exposed, refuseCommand, reportState } from './ceiling.mjs';
 import { MAX_ENTITIES, parseCommand } from './protocol.mjs';
+import { dueKey, parseAutomations } from './automation.mjs';
 
 const env = process.env;
 const ceiling = validateCeiling(JSON.parse(readFileSync(env.CEILING ?? new URL('./ceiling.json', import.meta.url), 'utf8')));
@@ -39,6 +46,7 @@ let haId = 0;
 const haPending = new Map();
 let registry = { areas: [], areaOf: new Map() }; // entity id -> area id (entity's own, else its device's)
 let states = new Map();  // entity id -> HA state, for everything (filtered when reported)
+let timeZone = null;     // Home Assistant's, for when automations run
 
 function haCall(msg) {
   return new Promise((resolve, reject) => {
@@ -78,6 +86,7 @@ function connectHa() {
       haOkAt = Date.now();
       try {
         await loadRegistry();
+        timeZone = (await haCall({ type: 'get_config' })).time_zone;
         states = new Map((await haCall({ type: 'get_states' })).map((s) => [s.entity_id, s]));
         await haCall({ type: 'subscribe_events', event_type: 'state_changed' });
         for (const t of ['area_registry_updated', 'device_registry_updated', 'entity_registry_updated']) {
@@ -153,10 +162,10 @@ function queueChange(id) {
 
 const seen = new Set(); // recent command ids: a replayed command never runs twice
 
-async function runCommand(raw) {
+async function runCommand(m) {
   let cmd;
   try {
-    cmd = parseCommand(JSON.parse(raw));
+    cmd = parseCommand(m);
   } catch (e) {
     return log('aws: ignored a malformed message', e.message);
   }
@@ -189,8 +198,17 @@ function connectAws() {
     awsBackoff = 1000;
     log('aws: connected');
     sendFull();
+    flushRan();
   };
-  ws.onmessage = (ev) => runCommand(String(ev.data));
+  ws.onmessage = (ev) => {
+    let m;
+    try {
+      m = JSON.parse(String(ev.data));
+    } catch {
+      return log('aws: ignored a message that isn’t JSON');
+    }
+    return m?.type === 'automations' ? takeAutomations(m) : runCommand(m);
+  };
   ws.onclose = (ev) => {
     if (aws === ws) aws = null;
     log(`aws: closed (${ev.code}), retrying in ${awsBackoff / 1000} s`);
@@ -200,8 +218,84 @@ function connectAws() {
   ws.onerror = () => {};
 }
 
+// ---- automations ---------------------------------------------------------------------------
+
+const STATE_FILE = env.STATE_FILE ?? '/var/lib/house-relay/automations.json';
+// { at, items, fired: { <id>: <key of its last run> } }; `fired` survives restarts, so nothing runs twice
+let auto = { at: null, items: [], fired: {} };
+try {
+  const saved = JSON.parse(readFileSync(STATE_FILE, 'utf8'));
+  auto = { ...parseAutomations({ type: 'automations', at: saved.at, items: saved.items }), fired: saved.fired ?? {} };
+  log(`automations: ${auto.items.length} from disk`);
+} catch (e) {
+  if (e.code !== 'ENOENT') log('automations: none kept on disk', e.message);
+}
+function saveAutomations() {
+  try {
+    writeFileSync(`${STATE_FILE}.tmp`, JSON.stringify(auto));
+    renameSync(`${STATE_FILE}.tmp`, STATE_FILE);
+  } catch (e) {
+    log('automations: couldn’t save', e.message);
+  }
+}
+
+function takeAutomations(m) {
+  let got;
+  try {
+    got = parseAutomations(m);
+  } catch (e) {
+    return log('aws: ignored automations', e.message);
+  }
+  if (auto.at && Date.parse(got.at) < Date.parse(auto.at)) return; // an older set, sent before the one we have
+  const ids = new Set(got.items.map((a) => a.id));
+  auto = { ...got, fired: Object.fromEntries(Object.entries(auto.fired).filter(([id]) => ids.has(id))) };
+  saveAutomations();
+}
+
+const unsent = []; // run reports waiting for AWS
+function flushRan() {
+  while (unsent.length && aws?.readyState === WebSocket.OPEN) send(unsent.shift());
+}
+
+let running = false;
+async function runDue() {
+  if (running || !ha || !timeZone) return; // without Home Assistant nothing can run; it may still in time
+  running = true;
+  try {
+    const now = new Date();
+    const sun = states.get('sun.sun')?.attributes;
+    for (const a of auto.items) {
+      const key = dueKey(a, now, timeZone, sun);
+      if (!key || auto.fired[a.id] === key) continue;
+      auto.fired[a.id] = key;
+      saveAutomations();
+      const results = [];
+      for (const x of a.actions) {
+        const why = refuseCommand(ceiling, x, registry.areaOf.get(x.entity_id) ?? null);
+        if (why) {
+          results.push({ entity_id: x.entity_id, action: x.action, ok: false, error: `refused: ${why}` });
+          continue;
+        }
+        try {
+          await haCall({ type: 'call_service', domain: x.entity_id.split('.')[0], service: x.action, service_data: x.data, target: { entity_id: x.entity_id } });
+          results.push({ entity_id: x.entity_id, action: x.action, ok: true });
+        } catch (e) {
+          results.push({ entity_id: x.entity_id, action: x.action, ok: false, error: e.message.slice(0, 200) });
+        }
+      }
+      log(`automation ${a.id} "${a.name}" ${key}: ${results.map((r) => (r.ok ? 'done' : r.error)).join(', ')}`);
+      unsent.push({ type: 'ran', id: a.id, key, at: now.toISOString(), results });
+      if (unsent.length > 50) unsent.shift();
+      flushRan();
+    }
+  } finally {
+    running = false;
+  }
+}
+
 connectHa();
 connectAws();
+setInterval(() => runDue().catch((e) => log('automations:', e.message)), 15_000);
 setInterval(sendFull, FULL_EVERY_MS); // also keeps the connection inside API Gateway's 10-minute idle limit
 setInterval(() => {
   const now = Date.now();

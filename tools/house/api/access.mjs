@@ -5,7 +5,7 @@
 //                             family's (platform/api/people.mjs), edited there, granted here by id
 //   PUT    /grants/{id}    { who, where, level, rev? } -> the grant      no rev: new; rev: replace that
 //   DELETE /grants/{id}                                                   version (409 + current if it changed)
-//   GET    /log            -> the last 7 days of commands, newest first (at most 200)
+//   GET    /log            -> the last 7 days of commands (and automations' actions), newest first (at most 200)
 //
 // Rows: GRANT / <id>    { who, where, level, rev, changedBy, changedAt }
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
@@ -86,7 +86,7 @@ export function makeAccess({ db, table, all, members, people, now }) {
       return json(200, rows
         .sort((a, b) => (a.sk < b.sk ? 1 : -1))
         .slice(0, LOG_MAX)
-        .map((r) => ({ at: r.sk.split('#')[0], who: r.who, username: r.username, via: r.via, entity_id: r.entity_id, name: r.name, action: r.action, data: r.data ?? {}, outcome: r.outcome, error: r.error ?? null })));
+        .map((r) => ({ at: r.sk.split('#')[0], who: r.who, username: r.username, via: r.via, entity_id: r.entity_id, name: r.name, action: r.action, data: r.data ?? {}, outcome: r.outcome, error: r.error ?? null, ...(r.via === 'automation' ? { automation: r.automationName ?? null } : {}) })));
     },
   };
 }

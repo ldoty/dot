@@ -194,6 +194,6 @@ test('the routes in infra/api.tf match the handler', async () => {
   assert.deepEqual([...block.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort(), [...ROUTES].sort());
   const relayTf = await readFile(new URL('../infra/relay.tf', import.meta.url), 'utf8');
   assert.match(relayTf, /protocol_type\s+= "WEBSOCKET"/);
-  assert.match(relayTf, /relay_routes\s+= \["\$connect", "\$disconnect", "sync", "result", "\$default"\]/);
+  assert.match(relayTf, /relay_routes\s+= \["\$connect", "\$disconnect", "sync", "result", "ran", "\$default"\]/);
   assert.doesNotMatch(relayTf, /authorization_type/, 'the relay has no token; the Lambda checks its key');
 });

@@ -16,6 +16,7 @@ const { createRelayWs } = await import('../../api/relay-ws.mjs');
 export const ROUTES = [
   'GET /home', 'GET /dot', 'POST /commands',
   'GET /access', 'PUT /grants/{id}', 'DELETE /grants/{id}', 'GET /log',
+  'GET /automations', 'POST /automations', 'PUT /automations/{id}', 'DELETE /automations/{id}',
 ];
 export const LUKE = '22222222-2222-2222-2222-222222222222';
 export const KID = '11111111-1111-1111-1111-111111111111';
@@ -25,10 +26,12 @@ export const relay = {
   sent: [],
   mode: 'answer', // 'answer' | 'silent' | 'gone'
   error: null,    // set to make Home Assistant fail
+  automations: null, // the last automation set AWS sent it
 };
 const relayWs = createRelayWs({ table: 'family-house', relayKey: async () => 'k' });
 async function toRelay(connectionId, msg) {
   if (relay.mode === 'gone') throw Object.assign(new Error('gone'), { name: 'GoneException' });
+  if (msg.type === 'automations') { relay.automations = msg; return; }
   relay.sent.push(msg);
   if (relay.mode === 'silent') return;
   const area = table.get('ENTITY', msg.entity_id)?.area ?? null;
@@ -38,11 +41,15 @@ async function toRelay(connectionId, msg) {
   setTimeout(() => relayWs({ requestContext: { routeKey: 'result', connectionId }, body: JSON.stringify(result) }), 5);
 }
 
+// Who's in family_house and family_house:admin (Cognito), changeable by a test
+export const people = { members: [], admins: [] };
+
 export const handler = createApi({
   table: 'family-house', group: 'family_house', issuer: ISSUER,
   clientIds: ['house-client', 'house-via-dot'], dotClientId: 'house-via-dot',
   toRelay, now: () => new Date(), sleep: (ms) => new Promise((r) => setTimeout(r, ms / 50)),
-  members: async () => [{ sub: LUKE, name: 'Luke' }, { sub: KID, name: 'kid@x.test' }],
+  members: async () => people.members,
+  admins: async () => people.admins,
   // The family's groups and names (platform/family) on the same fake table, never cached here
   people: makePeople({ db: DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' })), table: 'family-people', ttlMs: 0 }),
 });
@@ -64,6 +71,9 @@ export function seed() {
   relay.sent = [];
   relay.mode = 'answer';
   relay.error = null;
+  relay.automations = null;
+  people.members = [{ sub: LUKE, name: 'Luke' }, { sub: KID, name: 'kid@x.test' }];
+  people.admins = [{ sub: LUKE, name: 'Luke' }];
   table.put({ pk: 'AREA', sk: 'kitchen', name: 'Kitchen' });
   table.put({ pk: 'AREA', sk: 'master_bedroom', name: 'Master Bedroom' });
   table.put({ pk: 'AREA', sk: 'dining_room', name: 'Dining Room' });

@@ -6,12 +6,13 @@
 #   aws ssm put-parameter --profile ldoty --type SecureString \
 #     --name /family/house/relay-key --value "$(openssl rand -hex 32)"
 #
-# Its role can read that key and write what the house reports and how commands went: nothing else.
+# Its role can read that key and write what the house reports and how commands and automations went:
+# nothing else.
 
 locals {
   relay_key_param = "/family/house/relay-key"
   relay_key_arn   = "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter${local.relay_key_param}"
-  relay_routes    = ["$connect", "$disconnect", "sync", "result", "$default"]
+  relay_routes    = ["$connect", "$disconnect", "sync", "result", "ran", "$default"]
 }
 
 data "aws_caller_identity" "current" {}
@@ -26,6 +27,10 @@ data "archive_file" "relay" {
   source {
     content  = file("${path.module}/../relay/protocol.mjs")
     filename = "protocol.mjs"
+  }
+  source {
+    content  = file("${path.module}/../relay/automation.mjs")
+    filename = "automation.mjs"
   }
 }
 
@@ -53,6 +58,20 @@ resource "aws_iam_role_policy" "relay" {
         Action    = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:Query"]
         Resource  = aws_dynamodb_table.main.arn
         Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = ["RELAY", "AREA", "ENTITY", "RESULT"] } }
+      },
+      {
+        # How automations ran: their last run and the audit trail (adding rows only)
+        Effect    = "Allow"
+        Action    = "dynamodb:PutItem"
+        Resource  = aws_dynamodb_table.main.arn
+        Condition = { "ForAllValues:StringLike" = { "dynamodb:LeadingKeys" = ["RAN", "CMD#*"] } }
+      },
+      {
+        # Whose automation it was, for the audit row
+        Effect    = "Allow"
+        Action    = "dynamodb:GetItem"
+        Resource  = aws_dynamodb_table.main.arn
+        Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = ["AUTO"] } }
       },
       { Effect = "Allow", Action = "ssm:GetParameter", Resource = local.relay_key_arn },
     ]

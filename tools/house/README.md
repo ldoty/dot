@@ -27,13 +27,16 @@ Page ┘          (grants)                                (dials out)     (ceili
 |---|---|---|
 | `GET /home[?area=]` | members, Dot | Rooms and devices the caller may read, each with their level; how fresh the picture is |
 | `POST /commands` | members, Dot | `{ entity_id, action, data?, confirm_id? }`: 200 done, 202 confirm first, 403 not theirs, 502 refused/failed, 504 offline. Never queued |
-| `GET /dot` | Dot | The manifest: `house_state` |
+| `GET /dot` | Dot | The manifest: `house_state`, `house_automations` |
+| `GET /automations` | members, Dot | The automations they may see (their own, or all of whose devices they can see; admins all): what each says, on / paused / stopped and why, the last run |
+| `POST /automations`, `PUT`/`DELETE /automations/{id}` | members, Dot | Needs `control` on every device in it (pausing doesn't); only its owner or an admin changes it; `rev`-checked. From Dot: 202 `{ confirm_id, prompt }` first, then again with `?confirm_id=` |
 | `GET /access` | admins, not Dot | Grants, the family's groups, the people in `family_house` (named as dot-y.co/family names them), rooms and devices to pick from |
 | `PUT`/`DELETE /grants/{id}` | admins, not Dot | `rev`-checked (409 + current) |
 | `GET /log` | admins, not Dot | The last 7 days of commands, newest first |
 | WebSocket `$connect` | the relay, `x-house-key` | Checked against SSM `/family/house/relay-key` |
 | WebSocket `sync` | the relay | A full snapshot (on connect, every 5 min) or changes |
 | WebSocket `result` | the relay | How a command went |
+| WebSocket `ran` | the relay | How an automation's run went |
 
 A command: the API checks the person's grant and the device's actions, sends it to the relay's
 connection (it must run within 5 s), and waits for the `result`. The relay checks it against its
@@ -50,6 +53,8 @@ own ceiling again, calls Home Assistant, and answers.
 | `PENDING` / `<confirm id>` | A command waiting for its confirmation: same person, same command, 2 minutes, once |
 | `CMD#<UTC day>` / `<ISO>#<id>` | Audit: who, via (page/dot), device, action, data, outcome (done, denied, failed, offline, timeout). Kept a year |
 | `GRANT` / `<id>` | `{ who, where, level }` (see `api/grants.mjs`), `rev`, `changedBy`, `changedAt` |
+| `AUTO` / `<id>` | An automation (`relay/automation.mjs`): `name`, `when`, `days`, `actions`, `enabled`, `owner` (whoever last saved it), `rev` |
+| `RAN` / `<automation id>` | Its last run, from the relay: `at`, `ok`, `results` (each run's actions also get `CMD#` audit rows, `via: automation`) |
 
 ## Access
 
@@ -60,6 +65,17 @@ Two independent checks: the **ceiling** (`relay/ceiling.json`, enforced by the r
 change it) decides what exists at all, and **grants** (in the table) decide who may read or control
 what inside it. No grant, no access; admins have control everywhere. Dot reads with the asker’s
 own grants, and sends commands the same way: `POST /commands` is the one change it may make.
+
+## Automations
+
+“Every weekday at 6:00, turn on the kitchen lights”: at a time or around sunrise/sunset (± up to 3 hours),
+on chosen days, switching or dimming what the person controls. Made and changed through Dot (it asks
+first, every time); shown, paused and deleted on the page. They run **on the relay**, from its own clock
+and a copy on disk (`/var/lib/house-relay/automations.json`), so they work with the internet down; not as
+Home Assistant automations, which would need an admin HA token. AWS sends the relay the set that may run
+(`family-house-publish`, every 5 minutes, and at once after any change to automations or grants),
+leaving out any whose owner left House or lost `control` of a device in it. Each runs once, within
+5 minutes of its time or not at all, and every action is checked against the ceiling as it runs.
 
 ## The relay
 

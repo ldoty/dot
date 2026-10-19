@@ -11,13 +11,16 @@
 //                                 404 unknown device, 502 the house refused or failed, 504 the house is offline
 //                                 or didn't answer. Never queued: a command runs now or not at all.
 //   GET  /dot               -> this tool's description for Dot (platform/api/dot-manifest.mjs)
+//   GET /automations, POST /automations, PUT|DELETE /automations/{id}
+//                           -> what runs by itself, and when: see automations.mjs (from Dot, changes
+//                              need the person's OK first)
 //   GET /access, PUT|DELETE /grants/{id}, GET /log
 //                           -> admins only (family_house:admin), never via Dot: see access.mjs
 // Groups are the family's (dot-y.co/family, platform/api/people.mjs); a grant names one by id.
 // What the house reports comes from the relay (api/relay-ws.mjs), already cut to the ceiling;
 // grants (api/grants.mjs) narrow it per person, and the relay checks every command against its own
 // ceiling again. Dot's tokens are read-only here except POST /commands, where the asker's grants
-// apply exactly as on the page. Every command, allowed or not, leaves an audit row.
+// apply exactly as on the page, and the automation routes, the same way. Every command, allowed or not, leaves an audit row.
 // The token is re-verified here (signature, issuer, client, expiry, group); API Gateway's
 // authorizer is not trusted on its own.
 //
@@ -32,6 +35,7 @@ import { atLeast, grantsFor, levelFor } from './grants.mjs';
 import { ID, KEY, parseData } from './protocol.mjs';
 import { makeAccess } from './access.mjs';
 import { makePeople } from './people.mjs';
+import { makeAutomations } from './automations.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 // The relay sends everything every 5 minutes; past this its picture of the house may be old
@@ -60,10 +64,18 @@ export const MANIFEST = validateManifest({
       properties: { area: { type: 'string', pattern: '^[a-z0-9_]+$', description: 'Optional room id (from an earlier answer) to see just that room' } },
       additionalProperties: false,
     },
+  }, {
+    name: 'automations',
+    description: 'What the house does by itself, and when (e.g. every weekday at 6:00 AM, turn on the kitchen lights): each automation’s id, name, '
+      + 'what it does in words (says), its days, time or sunrise/sunset offset, devices and actions, whether it’s on, paused or stopped (and why), '
+      + 'whose it is, whether this person may change it (can_change), and how its last run went. Only the ones this person may see. '
+      + 'Times are the house’s local time. To make or change one, use house_automation.',
+    path: '/automations',
+    input: { type: 'object', properties: {}, additionalProperties: false },
   }],
 });
 
-/** deps: table, group, issuer, clientIds, dotClientId, toRelay(connectionId, message), members(), people, now(), sleep(ms) */
+/** deps: table, group, issuer, clientIds, dotClientId, toRelay(connectionId, message), members(), admins(), people, now(), sleep(ms) */
 export function createApi(deps) {
   const { table } = deps;
   const get = async (pk, sk) => (await db.send(new GetCommand({ TableName: table, Key: { pk, sk } }))).Item;
@@ -80,6 +92,7 @@ export function createApi(deps) {
     return items;
   }
   const access = makeAccess({ db, table, all, members: deps.members, people: deps.people, now: deps.now });
+  const automations = makeAutomations({ db, table, get, all, members: deps.members, admins: deps.admins, people: deps.people, toRelay: deps.toRelay, now: deps.now });
   const personFor = async (claims, admin) => {
     const [grants, groups] = await Promise.all([all('GRANT'), deps.people.groups()]);
     // Grants name a family group by id
@@ -162,7 +175,16 @@ export function createApi(deps) {
     return json(504, { error: 'The house didn’t answer' });
   }
 
-  return async (event) => {
+  const AUTOMATION_WRITES = ['POST /automations', 'PUT /automations/{id}', 'DELETE /automations/{id}'];
+  const bodyOf = (event) => {
+    try {
+      return JSON.parse(event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString() : event.body || '');
+    } catch {
+      return undefined;
+    }
+  };
+
+  const handler = async (event) => {
     let claims;
     try {
       claims = await verifyAccessToken(event.headers, { issuer: deps.issuer, clientId: deps.clientIds, group: deps.group });
@@ -172,7 +194,7 @@ export function createApi(deps) {
       return json(e.status, { error: e.status === 403 ? 'forbidden' : 'unauthorized' });
     }
     const viaDot = claims.via === 'dot' || (!!deps.dotClientId && claims.client_id === deps.dotClientId);
-    if (viaDot && !event.routeKey?.startsWith('GET ') && event.routeKey !== 'POST /commands') {
+    if (viaDot && !event.routeKey?.startsWith('GET ') && event.routeKey !== 'POST /commands' && !AUTOMATION_WRITES.includes(event.routeKey)) {
       console.warn('denied: Dot is read-only here', event.routeKey, claims.username);
       return json(403, { error: 'read-only' });
     }
@@ -195,10 +217,23 @@ export function createApi(deps) {
       const by = claims.username;
       switch (event.routeKey) {
         case 'GET /access': return access.read();
-        case 'PUT /grants/{id}': return access.putGrant(p.id, body, by);
-        case 'DELETE /grants/{id}': return access.deleteGrant(p.id, by);
-        default: return access.log();
+        case 'GET /log': return access.log();
+        default: {
+          const r = event.routeKey === 'PUT /grants/{id}' ? await access.putGrant(p.id, body, by) : await access.deleteGrant(p.id, by);
+          // A grant gone may stop someone's automation: tell the relay now, not in 5 minutes
+          if (r.statusCode === 200) await automations.publish();
+          return r;
+        }
       }
+    }
+
+    if (event.routeKey === 'GET /automations') return automations.list(claims.sub, admin);
+    if (AUTOMATION_WRITES.includes(event.routeKey)) {
+      const body = event.routeKey.startsWith('DELETE') ? {} : bodyOf(event);
+      if (!body || typeof body !== 'object') return json(400, { error: 'bad json' });
+      const op = event.routeKey.startsWith('POST') ? 'create' : event.routeKey.startsWith('PUT') ? 'replace' : 'delete';
+      const who = { sub: claims.sub, username: claims.username, isAdmin: admin, via: viaDot ? 'dot' : 'page' };
+      return automations.change(op, who, event.pathParameters?.id, body, event.queryStringParameters?.confirm_id);
     }
 
     switch (event.routeKey) {
@@ -245,16 +280,20 @@ export function createApi(deps) {
         return json(404, { error: 'no route' });
     }
   };
+  // The house-publish Lambda (every 5 minutes): the relay's set catches up with anyone who left House
+  handler.publish = automations.publish;
+  return handler;
 }
 
-// The people in the tool's group, for the access pickers (only in Lambda). Usernames are subs.
-async function members() {
+// The people in a Cognito group (only in Lambda): the tool's, for the access pickers, and its admins'.
+// Usernames are subs.
+async function inGroup(GroupName) {
   const { CognitoIdentityProviderClient, ListUsersInGroupCommand } = await import('@aws-sdk/client-cognito-identity-provider');
   const idp = new CognitoIdentityProviderClient({});
   const out = [];
   let NextToken;
   do {
-    const r = await idp.send(new ListUsersInGroupCommand({ UserPoolId: process.env.USER_POOL_ID, GroupName: process.env.GROUP, NextToken }));
+    const r = await idp.send(new ListUsersInGroupCommand({ UserPoolId: process.env.USER_POOL_ID, GroupName, NextToken }));
     for (const u of r.Users) {
       const attr = (n) => u.Attributes?.find((a) => a.Name === n)?.Value;
       out.push({ sub: attr('sub') ?? u.Username, name: attr('name') || attr('given_name') || attr('email') || u.Username });
@@ -276,5 +315,8 @@ const env = process.env;
 export const handler = createApi({
   table: env.TABLE, group: env.GROUP, issuer: env.ISSUER,
   clientIds: [env.CLIENT_ID, env.DOT_CLIENT_ID].filter(Boolean), dotClientId: env.DOT_CLIENT_ID,
-  toRelay, members, people: makePeople({ db, table: env.PEOPLE_TABLE }), now: () => new Date(), sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  toRelay, members: () => inGroup(env.GROUP), admins: () => inGroup(`${env.GROUP}:admin`), people: makePeople({ db, table: env.PEOPLE_TABLE }), now: () => new Date(), sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 });
+
+// The house-publish Lambda's entry (infra/api.tf: every 5 minutes)
+export const publish = () => handler.publish();

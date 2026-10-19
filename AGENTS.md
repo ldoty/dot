@@ -28,7 +28,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/cheer-research` | cheer-research.dot-y.co | `lukes_research` | Market research for a youth activities SaaS (cheer and dance first): guide, players, money flows + calculator, flashcards; the guide lives in gitignored `private/` |
 | `tools/house-hunt` | house-hunt.dot-y.co | `family_house_hunt` | Neighborhoods on a map, ranked listings; listing emails to househunt@dot-y.co are filed by Claude |
 | `tools/chamber` | chamber.dot-y.co | `lukes_chamber` | Mushroom chamber: Arduino firmware + build notes; the board posts telemetry to `POST /ingest` (device key), the page shows it and sets the board’s settings |
-| `tools/house` | house.dot-y.co | `family_house` | Home Assistant by room, per-person grants; a relay at home dials out (WebSocket, device key) and reports only what `relay/ceiling.json` exposes. Notes in `tools/house/AGENTS.md` |
+| `tools/house` | house.dot-y.co | `family_house` | Home Assistant by room, per-person grants; a relay at home dials out (WebSocket, device key) and reports only what `relay/ceiling.json` exposes; automations (made through Dot) run on the relay. Notes in `tools/house/AGENTS.md` |
 | `tools/sms` | (API only) | | Dot-y texting program: opt-in consent records, and Twilio’s webhook that hands members’ texts to Dot |
 | `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail; dot@dot-y.co: the gate that hands members’ mail to Dot |
 | `platform/billing` | | | Account-wide $75/mo budget + cost anomaly alerts |
@@ -60,7 +60,7 @@ person* from the other tool's **delegated client** (`platform/api/delegation.mjs
 - The target tool opts in with family-app `delegated = true` and lists who may read it in
   `delegates` (default `["dot"]`). It publishes `{api_url, client_id}` at SSM `/family/delegation/<group>`.
 - Cognito still applies the group gate; tokens come out marked `via: "dot"`; **the target refuses
-  every non-GET from them** (403 `read-only`); the exceptions are House's `POST /commands` (Dot's `house_control`), editing lists the person can edit (Dot's `lists_change`), never sharing, and events on calendars they may change (Dot's calendar tools). Reads are audited by the reader.
+  every non-GET from them** (403 `read-only`); the exceptions are House's `POST /commands` (Dot's `house_control`) and automations (`house_automation`, each change after the person's own reply), editing lists the person can edit (Dot's `lists_change`), never sharing, and events on calendars they may change (Dot's calendar tools). Reads are audited by the reader.
 
 Current links: Dot → any tool with a manifest (today the three finances tools, House and Lists); finances tools → Budget (as their person);
 Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`).
@@ -68,7 +68,7 @@ Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`)
 ### Dot (the assistant) and tool discovery
 
 Dot (`tools/assistant`; internals in `tools/assistant/AGENTS.md`) acts as whoever is signed in. Apart
-from its built-ins (calendar tools, through `tools/calendars`; `read_budget`, `house_control`, `lists_change`, memory), **every tool is discovered** (`api/discovery.mjs`): Dot lists `/family/delegation/*`, borrows a token for the
+from its built-ins (calendar tools, through `tools/calendars`; `read_budget`, `house_control`, `house_automation`, `lists_change`, memory), **every tool is discovered** (`api/discovery.mjs`): Dot lists `/family/delegation/*`, borrows a token for the
 asker, reads each tool's `GET /dot` manifest (`platform/api/dot-manifest.mjs`) and offers its
 operations as `<name>_<operation>` tools, GET only. Dot **remembers** what people tell it that's likely to come up again (`api/memory.mjs`: household and
 personal notes, shown on its page under “What Dot knows”). Members can also **text** Dot: the SMS webhook maps a

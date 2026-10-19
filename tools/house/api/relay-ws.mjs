@@ -5,6 +5,8 @@
 //   $disconnect  forget the connection, if it's still the current one
 //   sync         what the house reports (relay/protocol.mjs). Only the current connection may sync
 //   result       how a command went, for the API Lambda waiting on it (api.mjs)
+//   ran          how an automation's run went (automation.mjs): kept as its last run, and an audit
+//                row per action, like a command's
 //   $default     anything else is refused
 // The relay has already cut everything to the ceiling; this stores it as given, checked field by
 // field. Its role can only read that key and write these rows, so a leaked key can paint a false
@@ -14,6 +16,8 @@
 //       AREA / <area id>          { name }
 //       ENTITY / <entity id>      { name, area, domain, state, attrs, updated, actions }
 //       RESULT / <command id>     { ok, error, at }   read once by the waiting API Lambda; expires in a day
+//       RAN / <automation id>     { at, key, ok, results }   its last run
+//       CMD#<UTC day> / <ISO>#<id>  audit, via 'automation', as the automation's owner (read from AUTO)
 // Change messages for one entity are a second or more apart (the relay batches), and a full sync
 // every 5 minutes rewrites everything, so an out-of-order write heals on its own.
 import { createHash, timingSafeEqual } from 'node:crypto';
@@ -21,6 +25,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { parseResult, parseSync } from './protocol.mjs';
+import { parseRan } from './automation.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const ssm = new SSMClient({});
@@ -86,6 +91,33 @@ export function createRelayWs({ table, relayKey, now = () => new Date() }) {
         }
         const expires = Math.floor(now().getTime() / 1000) + 86_400;
         await db.send(new PutCommand({ TableName: table, Item: { pk: 'RESULT', sk: r.id, ok: r.ok, error: r.error, at: now().toISOString(), expires } }));
+        return reply(200);
+      }
+      case 'ran': {
+        if ((await current())?.connectionId !== connectionId) {
+          console.warn('refused: ran from an old connection', connectionId);
+          return reply(403);
+        }
+        let r;
+        try {
+          r = parseRan(JSON.parse(event.body || ''));
+        } catch (e) {
+          console.warn('refused:', e.message, String(event.body).slice(0, 200));
+          return reply(400);
+        }
+        const item = async (pk, sk) => (await db.send(new GetCommand({ TableName: table, Key: { pk, sk } }))).Item;
+        const [auto, names] = await Promise.all([item('AUTO', r.id), Promise.all(r.results.map(async (x) => (await item('ENTITY', x.entity_id))?.name ?? null))]);
+        const ok = r.results.every((x) => x.ok);
+        await db.send(new PutCommand({ TableName: table, Item: { pk: 'RAN', sk: r.id, at: r.at, key: r.key, ok, results: r.results } }));
+        const expires = Math.floor(now().getTime() / 1000) + 365 * 86_400;
+        await Promise.all(r.results.map((x, i) => db.send(new PutCommand({
+          TableName: table,
+          Item: {
+            pk: `CMD#${r.at.slice(0, 10)}`, sk: `${r.at}#${r.id}${i}`, who: auto?.owner ?? null, via: 'automation', automation: r.id, automationName: auto?.name ?? null,
+            entity_id: x.entity_id, name: names[i], action: x.action, data: auto?.actions?.find((y) => y.entity_id === x.entity_id && y.action === x.action)?.data ?? {},
+            outcome: x.ok ? 'done' : 'failed', error: x.error ?? null, expires,
+          },
+        }))));
         return reply(200);
       }
       case 'sync': {
