@@ -27,10 +27,9 @@ variable "people" {
     "44f8c468-4011-70b8-76aa-ec2b68b0b004" = {
       name = "Luke"
       calendars = {
-        luke   = "luke.doty@gmail.com"
-        shared = "19ktvn2rmaupk99h546rtjhh54@group.calendar.google.com"
-        amber  = "amber.n.brackett@gmail.com"                                                                   # "Amber Master Calendar", shared read-only
-        kids   = "c_f537b84b64316f087a7eaccd63171d16078c755c3075041292daf050708b1fa8@group.calendar.google.com" # "L&A Kids"
+        luke  = "luke.doty@gmail.com"
+        amber = "amber.n.brackett@gmail.com"                                                                   # "Amber Master Calendar", shared read-only
+        kids  = "c_f537b84b64316f087a7eaccd63171d16078c755c3075041292daf050708b1fa8@group.calendar.google.com" # "L&A Kids"
       }
     }
     "74c8b418-e0b1-7075-7ae5-ca791980dd07" = {
