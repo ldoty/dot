@@ -68,7 +68,7 @@ export const MANIFEST = validateManifest({
   }, {
     name: 'automations',
     description: 'What the house does by itself, and when (e.g. every weekday at 6:00 AM, turn on the kitchen lights): each automation’s id, name, '
-      + 'what it does in words (says), its days, time or sunrise/sunset offset, devices and actions, whether it’s on, paused or stopped (and why), '
+      + 'what it does in words (says), its days (repeat: an RRULE and its start), time or sunrise/sunset offset, devices and actions, whether it’s on, paused or stopped (and why), when it runs next (next_at, for a clock time), '
       + 'whose it is, whether this person may change it (can_change), and how its last run went. Only the ones this person may see. '
       + 'Times are the house’s local time. To make or change one, use house_automation.',
     path: '/automations',
@@ -76,7 +76,7 @@ export const MANIFEST = validateManifest({
   }],
 });
 
-/** deps: table, group, issuer, clientIds, dotClientId, toRelay(connectionId, message), members(), admins(), people, now(), sleep(ms) */
+/** deps: table, group, issuer, clientIds, dotClientId, toRelay(connectionId, message), members(), admins(), people, now(), sleep(ms), timeZone (the house's) */
 export function createApi(deps) {
   const { table } = deps;
   const get = async (pk, sk) => (await db.send(new GetCommand({ TableName: table, Key: { pk, sk } }))).Item;
@@ -93,7 +93,7 @@ export function createApi(deps) {
     return items;
   }
   const access = makeAccess({ db, table, all, members: deps.members, people: deps.people, now: deps.now });
-  const automations = makeAutomations({ db, table, get, all, members: deps.members, admins: deps.admins, people: deps.people, toRelay: deps.toRelay, now: deps.now });
+  const automations = makeAutomations({ db, table, get, all, members: deps.members, admins: deps.admins, people: deps.people, toRelay: deps.toRelay, now: deps.now, timeZone: deps.timeZone });
   const personFor = async (claims, admin) => {
     const [grants, groups] = await Promise.all([all('GRANT'), deps.people.groups()]);
     // Grants name a family group by id
@@ -317,7 +317,7 @@ const env = process.env;
 export const handler = createApi({
   table: env.TABLE, group: env.GROUP, issuer: env.ISSUER,
   clientIds: [env.CLIENT_ID, env.DOT_CLIENT_ID].filter(Boolean), dotClientId: env.DOT_CLIENT_ID,
-  toRelay, members: () => inGroup(env.GROUP), admins: () => inGroup(`${env.GROUP}:admin`), people: makePeople({ db, table: env.PEOPLE_TABLE }), now: () => new Date(), sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  toRelay, members: () => inGroup(env.GROUP), admins: () => inGroup(`${env.GROUP}:admin`), people: makePeople({ db, table: env.PEOPLE_TABLE }), now: () => new Date(), timeZone: env.TIME_ZONE, sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 });
 
 // The house-publish Lambda's entry (infra/api.tf: every 5 minutes)

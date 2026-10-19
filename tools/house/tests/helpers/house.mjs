@@ -47,7 +47,7 @@ export const people = { members: [], admins: [] };
 export const handler = createApi({
   table: 'family-house', group: 'family_house', issuer: ISSUER,
   clientIds: ['house-client', 'house-via-dot'], dotClientId: 'house-via-dot',
-  toRelay, now: () => new Date(), sleep: (ms) => new Promise((r) => setTimeout(r, ms / 50)),
+  toRelay, now: () => new Date(), timeZone: 'America/New_York', sleep: (ms) => new Promise((r) => setTimeout(r, ms / 50)),
   members: async () => people.members,
   admins: async () => people.admins,
   // The family's groups and names (platform/family) on the same fake table, never cached here

@@ -93,6 +93,13 @@ function occurs(r, s, d) {
   return months % (12 * r.interval) === 0 && date === Math.min(sd.getUTCDate(), last);
 }
 
+/** Is local date `ymd` an occurrence of the repeat: on or after its start, not past its UNTIL? (House automations) */
+export function occursOn(repeat, ymd) {
+  const r = parseRule(repeat.rule);
+  const d = toDay(ymd), s = toDay(repeat.start);
+  return d >= s && (!r.until || ymd <= r.until) && occurs(r, s, d);
+}
+
 /** The first occurrence after local date `after`, or null when the series has ended */
 export function nextAfter(repeat, after) {
   const r = parseRule(repeat.rule);

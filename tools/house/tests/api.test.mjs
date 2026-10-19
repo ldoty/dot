@@ -197,3 +197,24 @@ test('the routes in infra/api.tf match the handler', async () => {
   assert.match(relayTf, /relay_routes\s+= \["\$connect", "\$disconnect", "sync", "result", "ran", "\$default"\]/);
   assert.doesNotMatch(relayTf, /authorization_type/, 'the relay has no token; the Lambda checks its key');
 });
+
+test('every file a zipped Lambda imports is in its zip (deploy-relay.sh likewise)', async () => {
+  for (const [tf, from] of [['api.tf', 'api.mjs'], ['relay.tf', 'relay-ws.mjs']]) {
+    const text = await readFile(new URL(`../infra/${tf}`, import.meta.url), 'utf8');
+    const zipped = new Set([...text.matchAll(/filename = "([^"]+)"/g)].map((m) => m[1]));
+    const seen = new Set();
+    const walk = async (file) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      assert.ok(zipped.has(file), `${tf} zips ${file}`);
+      const dir = ['automation.mjs', 'protocol.mjs', 'repeat.mjs'].includes(file) ? 'relay' : 'api';
+      const src = await readFile(new URL(`../${dir}/${file}`, import.meta.url), 'utf8');
+      for (const [, dep] of src.matchAll(/from '\.\/([\w-]+\.mjs)'/g)) await walk(dep);
+      for (const [, dep] of src.matchAll(/import\('\.\/([\w-]+\.mjs)'\)/g)) await walk(dep);
+    };
+    await walk(from);
+  }
+  const script = await readFile(new URL('../scripts/deploy-relay.sh', import.meta.url), 'utf8');
+  const copied = /files=\(([^)]*)\)/.exec(script)[1].split(/\s+/);
+  for (const f of ['automation.mjs', 'repeat.mjs', 'protocol.mjs', 'ceiling.mjs']) assert.ok(copied.includes(f), `deploy-relay.sh copies ${f}`);
+});

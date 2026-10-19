@@ -53,7 +53,7 @@ own ceiling again, calls Home Assistant, and answers.
 | `PENDING` / `<confirm id>` | A command waiting for its confirmation: same person, same command, 2 minutes, once |
 | `CMD#<UTC day>` / `<ISO>#<id>` | Audit: who, via (page/dot), device, action, data, outcome (done, denied, failed, offline, timeout). Kept a year |
 | `GRANT` / `<id>` | `{ who, where, level }` (see `api/grants.mjs`), `rev`, `changedBy`, `changedAt` |
-| `AUTO` / `<id>` | An automation (`relay/automation.mjs`): `name`, `when`, `days`, `actions`, `enabled`, `owner` (whoever last saved it), `rev` |
+| `AUTO` / `<id>` | An automation (`relay/automation.mjs`): `name`, `when`, `repeat` (`{ rule, start }`, an RRULE like Lists'), `actions`, `notify`, `enabled`, `owner` (whoever last saved it), `rev` |
 | `RAN` / `<automation id>` | Its last run, from the relay: `at`, `ok`, `results` (each run's actions also get `CMD#` audit rows, `via: automation`) |
 
 ## Access
@@ -69,7 +69,7 @@ own grants, and sends commands the same way: `POST /commands` is the one change 
 ## Automations
 
 “Every weekday at 6:00, turn on the kitchen lights”: at a time or around sunrise/sunset (± up to 3 hours),
-on chosen days, switching or dimming what the person controls. Made and changed through Dot (it asks
+on the days of a repeat rule (every day, weekdays, every other Monday: the same RRULE as Lists and Dot's scheduled asks), switching or dimming what the person controls. Made and changed through Dot (it asks
 first, every time); shown, paused and deleted on the page. They run **on the relay**, from its own clock
 and a copy on disk (`/var/lib/house-relay/automations.json`), so they work with the internet down; not as
 Home Assistant automations, which would need an admin HA token. AWS sends the relay the set that may run

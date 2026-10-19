@@ -222,7 +222,7 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
     var a = findAuto(li.dataset.auto); if (!a) return;
     if (ev.target.closest("[data-pause]")) {
       changeAuto("PUT", "/automations/" + encodeURIComponent(a.id), {
-        name: a.name, when: a.when, days: a.days, enabled: !a.enabled, rev: a.rev,
+        name: a.name, when: a.when, repeat: a.repeat, notify: a.notify, enabled: !a.enabled, rev: a.rev,
         actions: a.actions.map(function (x) { return { entity_id: x.entity_id, action: x.action, data: x.data }; }),
       });
     } else if (ev.target.closest("[data-del-auto]")) {

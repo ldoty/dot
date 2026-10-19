@@ -35,6 +35,10 @@ data "archive_file" "api" {
     filename = "notify.mjs"
   }
   source {
+    content  = file("${path.module}/../relay/repeat.mjs")
+    filename = "repeat.mjs"
+  }
+  source {
     content  = file("${path.module}/../../../platform/api/twilio.mjs")
     filename = "twilio.mjs"
   }
@@ -136,7 +140,9 @@ resource "aws_lambda_function" "api" {
       CLIENT_ID     = module.app.client_id
       DOT_CLIENT_ID = module.app.delegated_client_id
       USER_POOL_ID  = local.pool_id
-      PEOPLE_TABLE  = element(split("/", nonsensitive(data.aws_ssm_parameter.people_table_arn.value)), 1)
+      # The house's time zone (Home Assistant's): an automation's days and its next run
+      TIME_ZONE    = "America/New_York"
+      PEOPLE_TABLE = element(split("/", nonsensitive(data.aws_ssm_parameter.people_table_arn.value)), 1)
       # API Gateway's management endpoint for the relay's connection (https, not wss)
       RELAY_ENDPOINT = "https://${aws_apigatewayv2_api.relay.id}.execute-api.${data.aws_region.current.region}.amazonaws.com/${aws_apigatewayv2_stage.relay.name}"
     }

@@ -174,7 +174,7 @@ test('recent activity says who did what, and what wasn’t allowed', async () =>
 // ---- automations ----
 
 const auto = (sk, over = {}) => table.put({
-  pk: 'AUTO', sk, name: 'Kitchen mornings', when: { at: '06:00' }, days: ['mon', 'tue', 'wed', 'thu', 'fri'],
+  pk: 'AUTO', sk, name: 'Kitchen mornings', when: { at: '06:00' }, repeat: { rule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', start: '2026-10-01' },
   actions: [{ entity_id: 'light.kitchen_main', action: 'turn_on', data: { brightness_pct: 80 } }], enabled: true, owner: LUKE, rev: 1, ...over,
 });
 
@@ -195,6 +195,16 @@ test('automations: what each does, whether it runs, pause and delete', async () 
   assert.equal(p.w.asked, 'Delete “<b>Porch</b>”? It stops running.');
   assert.equal(table.get('AUTO', 'auto000002'), undefined);
   assert.deepEqual(p.text('.autos strong'), ['Kitchen mornings']);
+});
+
+test('automations: pausing one that texts keeps its text and its days', async () => {
+  auto('auto000001', { when: { changes: 'person.luke_doty', to: 'not_home' }, actions: [], notify: { message: 'Check the garage.' } });
+  const p = await open({ sub: LUKE });
+  p.d.querySelector('li[data-auto="auto000001"] [data-pause]').click();
+  await wait(120);
+  const row = table.get('AUTO', 'auto000001');
+  assert.deepEqual([row.enabled, row.notify, row.repeat.rule], [false, { message: 'Check the garage.' }, 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR']);
+  p.close();
 });
 
 test('automations: someone else’s shows whose it is and can’t be changed; one that can’t run says why', async () => {

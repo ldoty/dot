@@ -34,7 +34,6 @@ export const definition = {
   },
 };
 
-const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 export const AUTOMATION_OPS = ['create', 'update', 'pause', 'resume', 'delete'];
 
 export const automationDefinition = {
@@ -57,7 +56,13 @@ export const automationDefinition = {
       to: { type: 'string', enum: ['home', 'not_home', 'on', 'off'], description: 'With when_changes: not_home is leaving home, home is coming home' },
       notify: { type: 'string', description: 'Text this to the person making it (only them) each time it runs: plain words, no links, up to 160 characters' },
       offset_minutes: { type: 'integer', description: 'With sun: minutes before (negative) or after, -180 to 180' },
-      days: { type: 'array', items: { type: 'string' }, description: 'Some of sun, mon, tue, wed, thu, fri, sat; leave out for every day' },
+      repeat: {
+        type: 'string',
+        description: 'Which days, as a calendar RRULE (no "RRULE:"), the same as for lists and scheduled asks; leave out for every day. '
+          + 'Weekdays: FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR. Weekends: FREQ=WEEKLY;BYDAY=SA,SU. Every other Monday: FREQ=WEEKLY;INTERVAL=2;BYDAY=MO. '
+          + 'First Saturday of the month: FREQ=MONTHLY;BYDAY=1SA. UNTIL=YYYYMMDD to end it (no COUNT).',
+      },
+      start: { type: 'string', description: 'YYYY-MM-DD: the first day it may run (default today); it also sets which weeks “every other” means' },
       actions: {
         type: 'array',
         maxItems: 20,
@@ -91,10 +96,8 @@ function automationFields(i) {
   if (i.sun !== undefined) out.when = { sun: i.sun, offset: i.offset_minutes ?? 0 };
   if (i.when_changes !== undefined) out.when = { changes: i.when_changes, to: i.to };
   if (i.notify !== undefined) out.notify = i.notify ? { message: i.notify } : null;
-  if (i.days !== undefined) {
-    if (!i.days.length || i.days.some((d) => !DAYS.includes(d))) throw new Error(`days: some of ${DAYS.join(', ')}`);
-    out.days = i.days;
-  }
+  if (i.start !== undefined && i.repeat === undefined) throw new Error('start goes with repeat.');
+  if (i.repeat !== undefined) out.repeat = { rule: i.repeat, ...(i.start !== undefined ? { start: i.start } : {}) };
   if (i.actions !== undefined) {
     out.actions = i.actions.map((x) => {
       if (x.brightness_pct !== undefined && (x.action !== 'turn_on' || !(x.brightness_pct >= 1 && x.brightness_pct <= 100))) throw new Error('brightness_pct is 1–100, and only with turn_on');
@@ -141,7 +144,7 @@ export function makeHouse({ tokenFor, apiUrl, clientId, user, channel = 'web', a
         const fields = automationFields(input);
         if (op === 'create') {
           if (!fields.name || !fields.when || !(fields.actions?.length || fields.notify)) throw new Error('create needs name, time, sun or when_changes, and actions or notify.');
-          req = { method: 'POST', path: '/automations', body: { days: DAYS, ...fields } };
+          req = { method: 'POST', path: '/automations', body: fields };
         } else {
           if (!/^[a-z0-9]{8,24}$/.test(id ?? '')) throw new Error('automation_id: from house_automations');
           if (op === 'delete') req = { method: 'DELETE', path: `/automations/${id}` };
@@ -150,7 +153,7 @@ export function makeHouse({ tokenFor, apiUrl, clientId, user, channel = 'web', a
             if (!res.ok) throw new Error(`House answered ${res.status}${out.error ? `: ${out.error}` : ''}`);
             const cur = out.find((a) => a.id === id);
             if (!cur) throw new Error('No automation with that id that this person can see.');
-            const base = { name: cur.name, when: cur.when, days: cur.days, actions: cur.actions.map(({ entity_id, action, data }) => ({ entity_id, action, data })), notify: cur.notify ?? null, enabled: cur.enabled, rev: cur.rev };
+            const base = { name: cur.name, when: cur.when, repeat: cur.repeat, actions: cur.actions.map(({ entity_id, action, data }) => ({ entity_id, action, data })), notify: cur.notify ?? null, enabled: cur.enabled, rev: cur.rev };
             const next = op === 'update' ? { ...base, ...fields } : { ...base, enabled: op === 'resume' };
             req = { method: 'PUT', path: `/automations/${id}`, body: next };
           }

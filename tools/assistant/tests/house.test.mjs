@@ -152,7 +152,7 @@ test('confirm with nothing asked is refused before anything is sent', async () =
 // ---- automations ----
 
 const MORNING = {
-  op: 'create', name: 'Kitchen mornings', time: '06:00', days: ['mon', 'tue', 'wed', 'thu', 'fri'],
+  op: 'create', name: 'Kitchen mornings', time: '06:00', repeat: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
   actions: [{ entity_id: 'light.kitchen_main', action: 'turn_on', brightness_pct: 80, transition_s: 30 }],
 };
 const autos = () => table.dump().filter(([k]) => k.startsWith('AUTO')).map(([, v]) => v);
@@ -212,17 +212,20 @@ test('only devices they control: refused before anything is asked', async () => 
 
 test('changing one keeps what wasn’t mentioned; pausing and deleting ask too', async () => {
   const { house } = dotFor(LUKE, ADMIN);
-  const r = await call('POST', '/automations', { name: 'Porch', when: { sun: 'sunset', offset: -15 }, days: ['sat', 'sun'], actions: [{ entity_id: 'light.dining_room_main', action: 'turn_on' }] });
+  const r = await call('POST', '/automations', { name: 'Porch', when: { sun: 'sunset', offset: -15 }, repeat: { rule: 'FREQ=WEEKLY;BYDAY=SA,SU', start: '2026-10-03' }, actions: [{ entity_id: 'light.dining_room_main', action: 'turn_on' }] });
   const id = r.body.id;
   const asked = JSON.parse(await house.automation({ op: 'update', automation_id: id, time: '19:30' }));
-  assert.equal(asked.ask_them, 'Change “Porch” to: Every weekend day at 7:30 PM: turn on dining room main?');
-  assert.deepEqual(asked.body.days, ['sun', 'sat']);
+  assert.equal(asked.ask_them, 'Change “Porch” to: Every Saturday, Sunday at 7:30 PM: turn on dining room main?');
+  assert.deepEqual(asked.body.repeat, { rule: 'FREQ=WEEKLY;BYDAY=SA,SU', start: '2026-10-03' }, 'its days and start, kept');
+  const fortnight = JSON.parse(await house.automation({ op: 'update', automation_id: id, repeat: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=SA', start: '2026-10-24' }));
+  assert.equal(fortnight.ask_them, 'Change “Porch” to: Every other Saturday 15 minutes before sunset: turn on dining room main?');
   assert.equal(JSON.parse(await house.automation({ op: 'pause', automation_id: id })).ask_them, 'Pause “Porch”?');
   assert.equal(JSON.parse(await house.automation({ op: 'delete', automation_id: id })).ask_them, 'Delete the automation “Porch”?');
   assert.equal(table.get('AUTO', id).when.sun, 'sunset', 'nothing changed without a yes');
   await assert.rejects(house.automation({ op: 'update', automation_id: 'nosuchone1', time: '07:00' }), /No automation with that id/);
   await assert.rejects(house.automation({ op: 'create', name: 'x', time: '06:00', sun: 'sunrise', actions: MORNING.actions }), /one of time, sun or when_changes/);
-  await assert.rejects(house.automation({ ...MORNING, days: ['monday'] }), /days/);
+  await assert.rejects(house.automation({ ...MORNING, repeat: 'FREQ=HOURLY' }), /FREQ/);
+  await assert.rejects(house.automation({ ...MORNING, repeat: undefined, start: '2026-10-20' }), /start goes with repeat/);
 });
 
 test('a confirmation fits only the automation it asked about', async () => {

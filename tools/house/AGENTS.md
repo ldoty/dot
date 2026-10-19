@@ -39,7 +39,8 @@ Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
 3. Dot's built-in `house_control` (`tools/assistant/api/house.mjs`), with confirmation enforced in Dot's code (only after a new message from the person). Done.
 4. Grants editor (People & access, admins only, never via Dot), `GET /log`. Done. Groups moved to
    the family's (`platform/family`); grants name them by id.
-5. Automations: at a time or around sunrise/sunset, on chosen days; made through Dot
+5. Automations: at a time or around sunrise/sunset, on the days of a repeat rule (the RRULE subset Lists and
+   Dot's scheduled asks use: `repeat.mjs` is Lists', symlinked into `relay/`); made through Dot
    (`house_automation`), paused or deleted on the page, run by the relay. Done.
 6. Who's home: `person.*` in the ceiling (state only: home / not_home; never the phone trackers
    behind them, which carry IP, MAC and access point). Automations set off by a change ("when Luke

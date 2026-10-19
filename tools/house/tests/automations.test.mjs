@@ -2,15 +2,21 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeTable } from '../../../platform/tests/helpers/fake-table.mjs';
 import { KID, LUKE, audit, call, familyGroup, people, relay, seed, table, token } from './helpers/house.mjs';
+import { localParts } from '../relay/automation.mjs';
 
 const { createRelayWs } = await import('../api/relay-ws.mjs');
 const grant = (sk, who, where, level) => table.put({ pk: 'GRANT', sk, who, where, level });
 const kid = (over) => token({ sub: KID, ...over });
 const dot = (sub = KID) => token({ sub, clientId: 'house-via-dot', via: 'dot' });
+const WEEKDAYS = 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR';
+// As sent: the API starts its repeat today, in the house's time zone
 const MORNING = {
-  name: 'Kitchen mornings', when: { at: '06:00' }, days: ['mon', 'tue', 'wed', 'thu', 'fri'],
+  name: 'Kitchen mornings', when: { at: '06:00' }, repeat: { rule: WEEKDAYS },
   actions: [{ entity_id: 'light.kitchen_main', action: 'turn_on', data: { brightness_pct: 80 } }, { entity_id: 'light.kitchen_island_pendants', action: 'turn_on' }],
 };
+const today = () => localParts(new Date(), 'America/New_York').date;
+// As stored
+const SAVED = { ...MORNING, repeat: { rule: WEEKDAYS, start: '2026-10-01' } };
 const ids = () => relay.automations.items.map((a) => a.id);
 const runnable = () => relay.automations.items.map((a) => a.name);
 
@@ -23,7 +29,43 @@ test('an admin makes one: stored, described, and sent to the relay at once', asy
   assert.deepEqual([r.body.status, r.body.owner.sub, r.body.mine, r.body.can_change, r.body.enabled], ['on', LUKE, true, true, true]);
   const row = table.get('AUTO', r.body.id);
   assert.deepEqual([row.owner, row.rev, row.when], [LUKE, 1, { at: '06:00' }]);
-  assert.deepEqual(relay.automations.items, [{ id: r.body.id, name: MORNING.name, when: MORNING.when, days: MORNING.days, actions: [{ ...MORNING.actions[0] }, { ...MORNING.actions[1], data: {} }], notify: null, enabled: true }]);
+  assert.deepEqual(relay.automations.items, [{ id: r.body.id, name: MORNING.name, when: MORNING.when, repeat: { rule: WEEKDAYS, start: today() }, actions: [{ ...MORNING.actions[0] }, { ...MORNING.actions[1], data: {} }], notify: null, enabled: true }]);
+});
+
+test('in the shape every tool’s automations share: kind, status, last run, next time', async () => {
+  const r = await call('POST', '/automations', { ...MORNING, repeat: { rule: 'FREQ=DAILY' } });
+  assert.deepEqual([r.body.kind, r.body.status, r.body.last_run], ['house', 'on', null]);
+  assert.ok(r.body.next_at > new Date().toISOString() && Date.parse(r.body.next_at) - Date.now() <= 86_400_000, 'within a day');
+  await createRelayWs({ table: 'family-house', relayKey: async () => 'k' })({
+    requestContext: { routeKey: 'ran', connectionId: 'c1' },
+    body: JSON.stringify({ type: 'ran', id: r.body.id, key: `${today()}@360`, at: new Date().toISOString(), results: [{ entity_id: 'light.kitchen_main', action: 'turn_on', ok: false, error: 'x' }] }),
+  });
+  const [a] = (await call('GET', '/automations')).body;
+  assert.equal(a.last_run.outcome, 'failed');
+  const paused = await call('PUT', `/automations/${a.id}`, { ...MORNING, repeat: a.repeat, enabled: false, rev: a.rev });
+  assert.deepEqual([paused.body.status, paused.body.next_at], ['paused', null]);
+});
+
+test('its days: every day unless said; the start stays while the rule does; the old days field is refused', async () => {
+  const daily = (await call('POST', '/automations', { ...MORNING, repeat: undefined })).body;
+  assert.deepEqual(daily.repeat, { rule: 'FREQ=DAILY', start: today() });
+  table.put({ ...table.get('AUTO', daily.id), repeat: { rule: 'FREQ=DAILY', start: '2026-01-05' } });
+  let r = await call('PUT', `/automations/${daily.id}`, { ...MORNING, repeat: { rule: 'freq=daily' }, when: { at: '07:00' }, rev: 1 });
+  assert.deepEqual(r.body.repeat, { rule: 'FREQ=DAILY', start: '2026-01-05' }, 'same rule: same start');
+  r = await call('PUT', `/automations/${daily.id}`, { ...MORNING, repeat: { rule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO' }, rev: 2 });
+  assert.deepEqual(r.body.repeat, { rule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO', start: today() }, 'a new rule starts now');
+  assert.equal(r.body.says, 'Every other Monday at 6:00 AM: turn on kitchen main (80%) and turn on kitchen island pendants');
+  r = await call('POST', '/automations', { ...MORNING, repeat: undefined, days: ['mon'] });
+  assert.deepEqual([r.status, r.body.error], [400, 'bad days: use repeat { rule, start }']);
+  assert.equal((await call('POST', '/automations', { ...MORNING, repeat: { rule: 'FREQ=DAILY;COUNT=2' } })).status, 400);
+});
+
+test('one whose UNTIL has passed is stopped, and says so', async () => {
+  table.put({ pk: 'AUTO', sk: 'auto000001', ...SAVED, repeat: { rule: 'FREQ=DAILY;UNTIL=20261001', start: '2026-09-01' }, enabled: true, owner: LUKE, rev: 1 });
+  const [a] = (await call('GET', '/automations')).body;
+  assert.deepEqual([a.status, a.why, a.next_at], ['stopped', 'its last day has passed', null]);
+  await call('PUT', `/automations/${a.id}`, { ...MORNING, repeat: a.repeat, rev: 1 });
+  assert.deepEqual(ids(), [], 'and isn’t sent to the relay');
 });
 
 test('making one needs control of every device in it, not just ask-first or read', async () => {
@@ -141,9 +183,9 @@ test('publishing never fails a change, with the relay offline or gone', async ()
 });
 
 test('limits: per person and for the house', async () => {
-  for (let i = 0; i < 25; i++) table.put({ pk: 'AUTO', sk: `auto${String(i).padStart(6, '0')}`, ...MORNING, enabled: true, owner: LUKE, rev: 1 });
+  for (let i = 0; i < 25; i++) table.put({ pk: 'AUTO', sk: `auto${String(i).padStart(6, '0')}`, ...SAVED, enabled: true, owner: LUKE, rev: 1 });
   assert.match((await call('POST', '/automations', MORNING)).body.error, /most automations one person can \(25\)/);
-  for (let i = 25; i < 40; i++) table.put({ pk: 'AUTO', sk: `auto${String(i).padStart(6, '0')}`, ...MORNING, enabled: true, owner: KID, rev: 1 });
+  for (let i = 25; i < 40; i++) table.put({ pk: 'AUTO', sk: `auto${String(i).padStart(6, '0')}`, ...SAVED, enabled: true, owner: KID, rev: 1 });
   grant('g1', `sub:${KID}`, '*', 'control');
   assert.match((await call('POST', '/automations', MORNING, kid())).body.error, /most automations it can \(40\)/);
 });

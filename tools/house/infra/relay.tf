@@ -32,6 +32,10 @@ data "archive_file" "relay" {
     content  = file("${path.module}/../relay/automation.mjs")
     filename = "automation.mjs"
   }
+  source {
+    content  = file("${path.module}/../relay/repeat.mjs")
+    filename = "repeat.mjs"
+  }
 }
 
 resource "aws_iam_role" "relay" {

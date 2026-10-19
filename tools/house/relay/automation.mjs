@@ -4,13 +4,16 @@
 // is a symlink here), so both sides check the same shape and agree on what one says.
 //
 // An automation:
-//   { name, when, days, actions, enabled }
+//   { name, when, repeat, actions, notify, enabled }
 //   when     { at: 'HH:MM' }  or  { sun: 'sunrise' | 'sunset', offset: minutes, -180…180 }
 //            in the house's own time zone (Home Assistant's), so 6:00 stays 6:00 across DST;
 //            or { changes: entity_id, to: state }: when that device (or person) changes to that state,
 //            e.g. person.luke_doty to not_home. Never from unavailable or unknown, so a restart of Home
 //            Assistant isn't "leaving home"
-//   days     which days it runs: some of DAYS
+//   repeat   { rule, start }: which days it runs, as the same calendar rule (RRULE subset) Lists' repeating
+//            items and Dot's scheduled asks use (repeat.mjs, shared): FREQ=DAILY, FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,
+//            FREQ=MONTHLY;BYDAY=1SA, …, UNTIL to end it (no COUNT: the relay doesn't count runs). start is the
+//            first local date it may run, and anchors INTERVAL ("every other Monday")
 //   actions  0–MAX_ACTIONS commands, each { entity_id, action, data } as POST /commands takes them
 //   notify   { message } or null: text the automation's owner (and only them) this, from AWS
 //            (api/notify.mjs); no links, ever (the texting campaign is registered without them)
@@ -18,8 +21,8 @@
 // Who may make one and whether it's allowed to run is decided in AWS (api/automations.mjs); the relay
 // runs only what AWS last sent it, and checks every action against its own ceiling again when it runs.
 import { ID, KEY, parseData } from './protocol.mjs';
+import { describe as describeRule, nextAfter, occursOn, parseRule, zonedToIso, YMD } from './repeat.mjs';
 
-export const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 export const MAX_ACTIONS = 20;
 export const MAX_NAME = 60;
 // An automation runs at its time or, if the relay or Home Assistant was down then, within this
@@ -51,8 +54,17 @@ export function parseAutomation(a) {
     if (!ID.test(w.changes) || !STATE.test(w.to ?? '')) bad('when: { changes: entity id, to: state }');
     when = { changes: w.changes, to: w.to };
   } else bad('when: { at }, { sun, offset } or { changes, to }');
-  const days = a.days ?? DAYS;
-  if (!Array.isArray(days) || !days.length || days.some((d) => !DAYS.includes(d)) || new Set(days).size !== days.length) bad('days');
+  // `days` was how this said it before repeat; refused, so an old caller never silently gets every day
+  if (a.days !== undefined) bad('days: use repeat { rule, start }');
+  const rp = a.repeat;
+  if (!rp || typeof rp !== 'object' || typeof rp.rule !== 'string') bad('repeat: { rule, start }');
+  const rule = rp.rule.replace(/^RRULE:/i, '').toUpperCase();
+  try {
+    if (parseRule(rule).count !== null) bad('repeat: end it with UNTIL, not COUNT');
+  } catch (e) {
+    bad(e.message);
+  }
+  if (!YMD.test(rp.start ?? '') || Number.isNaN(Date.parse(rp.start))) bad('repeat.start: YYYY-MM-DD');
   const list = a.actions ?? [];
   if (!Array.isArray(list) || list.length > MAX_ACTIONS) bad(`actions: up to ${MAX_ACTIONS}`);
   const actions = list.map((x, i) => {
@@ -72,11 +84,11 @@ export function parseAutomation(a) {
   }
   if (!actions.length && !notify) bad('actions: it must do something (an action, or notify)');
   if (a.enabled !== undefined && typeof a.enabled !== 'boolean') bad('enabled');
-  return { name, when, days: DAYS.filter((d) => days.includes(d)), actions, notify, enabled: a.enabled ?? true };
+  return { name, when, repeat: { rule, start: rp.start }, actions, notify, enabled: a.enabled ?? true };
 }
 
 /** The same automation, as stable text: two are the same when this is */
-export const canonical = (a) => JSON.stringify([a.name, a.when, a.days, a.actions.map((x) => [x.entity_id, x.action, Object.entries(x.data).sort()]), a.notify ?? null, a.enabled]);
+export const canonical = (a) => JSON.stringify([a.name, a.when, [a.repeat.rule, a.repeat.start], a.actions.map((x) => [x.entity_id, x.action, Object.entries(x.data).sort()]), a.notify ?? null, a.enabled]);
 
 // ---- in words ----
 
@@ -84,20 +96,18 @@ function clock(hhmm) {
   const [h, m] = hhmm.split(':').map(Number);
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
-const DAY_NAMES = { sun: 'Sunday', mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday' };
 
 // A person's states read as coming and going; anything else as what it changes to
 const CHANGE = { not_home: 'leaves home', home: 'comes home', on: 'turns on', off: 'turns off' };
 
-export function describeWhen({ when, days }, nameOf = (id) => id) {
-  const set = days.join(',');
+/** "Every weekday at 6:00 AM", "When Luke Doty leaves home, every weekday": the days in the repeat rule's own words */
+export function describeWhen({ when, repeat }, nameOf = (id) => id) {
+  const days = describeRule(repeat.rule);
   if (when.changes) {
-    const only = set === DAYS.join(',') ? '' : set === 'mon,tue,wed,thu,fri' ? ' on a weekday' : set === 'sun,sat' ? ' on a weekend'
-      : ` on ${days.length > 1 ? `${days.slice(0, -1).map((d) => DAY_NAMES[d]).join(', ')} or ${DAY_NAMES[days.at(-1)]}` : DAY_NAMES[days[0]]}`;
+    const only = repeat.rule === 'FREQ=DAILY' ? '' : `, ${days}`;
     return `When ${nameOf(when.changes)} ${CHANGE[when.to] ?? `changes to ${when.to.replace(/_/g, ' ')}`}${only}`;
   }
-  const which = set === DAYS.join(',') ? 'Every day' : set === 'mon,tue,wed,thu,fri' ? 'Every weekday' : set === 'sun,sat' ? 'Every weekend day'
-    : `Every ${days.length > 1 ? `${days.slice(0, -1).map((d) => DAY_NAMES[d]).join(', ')} and ${DAY_NAMES[days.at(-1)]}` : DAY_NAMES[days[0]]}`;
+  const which = `${days[0].toUpperCase()}${days.slice(1)}`;
   if (when.at) return `${which} at ${clock(when.at)}`;
   const off = when.offset;
   return `${which} ${off ? `${Math.abs(off)} minutes ${off < 0 ? 'before' : 'after'}` : 'at'} ${when.sun}`;
@@ -154,7 +164,7 @@ export function minuteToday(a, today, timeZone, sun) {
 export function dueKey(a, now, timeZone, sun) {
   if (!a.enabled) return null;
   const local = localParts(now, timeZone);
-  if (!a.days.includes(local.day)) return null;
+  if (!occursOn(a.repeat, local.date)) return null;
   const minute = minuteToday(a, local.date, timeZone, sun);
   if (minute === null || local.minutes < minute || local.minutes >= minute + LATE_MIN) return null;
   return `${local.date}@${minute}`;
@@ -168,8 +178,25 @@ export function changeKey(a, { entityId, from, to, now, timeZone }) {
   if (!a.enabled || a.when.changes !== entityId || to !== a.when.to || from === to) return null;
   if (!from || from === 'unavailable' || from === 'unknown') return null;
   const local = localParts(now, timeZone);
-  if (!a.days.includes(local.day)) return null;
+  if (!occursOn(a.repeat, local.date)) return null;
   return `${local.date}@${local.minutes}`;
+}
+
+const dayBefore = (ymd) => new Date(Date.parse(`${ymd}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+
+/** Whether it has any day left to run on, from local date `today` (its UNTIL may have passed) */
+export const hasDaysLeft = (a, today) => nextAfter({ ...a.repeat, n: 0 }, dayBefore(today)) !== null;
+
+/**
+ * When an automation at a clock time runs next (ISO), or null: paused, set off by a change or the sun
+ * (the sun's times are only known at home), or no days left
+ */
+export function nextTime(a, now, timeZone) {
+  if (!a.enabled || !a.when.at) return null;
+  const local = localParts(now, timeZone);
+  const [h, m] = a.when.at.split(':').map(Number);
+  const day = occursOn(a.repeat, local.date) && h * 60 + m > local.minutes ? local.date : nextAfter({ ...a.repeat, n: 0 }, local.date);
+  return day && zonedToIso(day, a.when.at, timeZone);
 }
 
 // ---- messages ----

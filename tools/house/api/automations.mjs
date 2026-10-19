@@ -2,7 +2,9 @@
 //   GET    /automations          -> [automation…] the ones this person may see: their own, and any whose
 //                                   devices they may all see (admins: all). Each says whether it's on,
 //                                   paused or stopped (and why), and how its last run went
-//   POST   /automations          { name, when, days?, actions, enabled? } -> 201 the automation
+//   POST   /automations          { name, when, repeat?, actions, notify?, enabled? } -> 201 the automation
+//                                   repeat { rule, start? } (automation.mjs): every day if left out; start is today
+//                                   (the house's time zone) unless given, and kept on a change that keeps the rule
 //   PUT    /automations/{id}     { …the same, rev }  -> the automation   rev-checked (409 + current)
 //   DELETE /automations/{id}                         -> { id }
 // Who may: making or changing one needs `control` (not just ask-first) on every device in it, now:
@@ -18,12 +20,16 @@
 // control all of its devices, or who left House, left out. The relay checks each action against its
 // own ceiling again when it runs.
 //
-// Rows: AUTO / <id>      { name, when, days, actions, enabled, owner, rev, changedBy, changedAt }
+// Each also comes in the shape every tool's automations share (platform/api/dot-manifest.mjs, role
+// "automations"), so Dot can show the house's next to scheduled asks and reminders: kind, says, status,
+// last_run { at, outcome }, next_at.
+//
+// Rows: AUTO / <id>      { name, when, repeat, actions, notify, enabled, owner, rev, changedBy, changedAt }
 //       RAN / <id>       the last run, from the relay (api/relay-ws.mjs)
 //       PENDING / <id>   a change from Dot waiting for the person's OK
 import { randomBytes } from 'node:crypto';
 import { DeleteCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { AUTO_ID, MAX_AUTOMATIONS, canonical, describe, parseAutomation } from './automation.mjs';
+import { AUTO_ID, MAX_AUTOMATIONS, canonical, describe, hasDaysLeft, localParts, nextTime, parseAutomation } from './automation.mjs';
 import { atLeast, grantsFor, levelFor } from './grants.mjs';
 
 export const PER_PERSON = 25;
@@ -35,9 +41,20 @@ const json = (statusCode, body) => ({
 
 /**
  * deps: db, table, get(pk, sk), all(pk), members() and admins() -> [{ sub, name }] (Cognito),
- * people (platform/api/people.mjs), toRelay(connectionId, message), now()
+ * people (platform/api/people.mjs), toRelay(connectionId, message), now(), timeZone (the house's)
  */
-export function makeAutomations({ db, table, get, all, members, admins, people, toRelay, now }) {
+export function makeAutomations({ db, table, get, all, members, admins, people, toRelay, now, timeZone }) {
+  const today = () => localParts(now(), timeZone).date;
+
+  /** The body with its repeat filled in: every day from today unless said, the old start while the rule stays */
+  function withRepeat(body, row) {
+    const given = body.repeat === undefined ? { rule: 'FREQ=DAILY' } : body.repeat;
+    if (!given || typeof given !== 'object' || typeof given.rule !== 'string') return body; // parseAutomation says why
+    const rule = given.rule.replace(/^RRULE:/i, '').toUpperCase();
+    const start = given.start ?? (row?.repeat?.rule === rule ? row.repeat.start : today());
+    return { ...body, repeat: { rule, start } };
+  }
+
   /** Everything a check needs, read once */
   async function world() {
     const [rows, entities, grants, groups, ran, inHouse, admin, names] = await Promise.all([
@@ -59,6 +76,7 @@ export function makeAutomations({ db, table, get, all, members, admins, people, 
   /** Why this saved automation can't run now, or null */
   function stopped(w, a) {
     if (!w.members.has(a.owner)) return `${w.nameOf(a.owner)} no longer uses House`;
+    if (!hasDaysLeft(a, today())) return 'its last day has passed';
     const isAdmin = w.admins.has(a.owner);
     const on = a.when?.changes;
     if (on && !w.entities.has(on)) return `${on} isn’t in the house anymore`;
@@ -77,13 +95,15 @@ export function makeAutomations({ db, table, get, all, members, admins, people, 
     const a = shape(row);
     const why = a.enabled ? stopped(w, row) : null;
     const last = w.ran.get(row.sk);
+    const status = !a.enabled ? 'paused' : why ? 'stopped' : 'on';
     return {
-      id: row.sk, ...a,
+      id: row.sk, kind: 'house', ...a,
       actions: a.actions.map((x) => ({ ...x, name: w.entities.get(x.entity_id)?.name ?? x.entity_id })),
       says: describe(a, nameIn(w)),
-      status: !a.enabled ? 'paused' : why ? 'stopped' : 'on', ...(why ? { why } : {}),
+      status, ...(why ? { why } : {}),
       owner: { sub: row.owner, name: w.nameOf(row.owner) }, mine: row.owner === sub, can_change: isAdmin || row.owner === sub,
-      last_run: last ? { at: last.at, ok: last.ok, results: last.results } : null,
+      last_run: last ? { at: last.at, outcome: last.ok ? 'done' : 'failed', ok: last.ok, results: last.results } : null,
+      next_at: status === 'on' ? nextTime(a, now(), timeZone) : null,
       rev: row.rev,
     };
   }
@@ -199,7 +219,7 @@ export function makeAutomations({ db, table, get, all, members, admins, people, 
 
       let a;
       try {
-        a = parseAutomation(body);
+        a = parseAutomation(withRepeat(body, row));
       } catch (e) {
         return json(400, { error: `bad ${e.message}` });
       }
