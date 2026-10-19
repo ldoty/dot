@@ -72,3 +72,38 @@ test('deleting an event: Dot asks, can’t approve itself, and deletes after the
   await say('yes');
   assert.equal(google.events['kids@group.calendar.google.com'].length, 0);
 });
+
+test('a plan with two deletes: asked about together, one yes deletes both', async () => {
+  const { calendar } = dotFor(LUKE);
+  const mom = await calendar.createEvent({ calendar: 'kids', title: 'Mom Days', start: '2026-10-19', all_day: true, end: '2026-10-20' });
+  const dad = await calendar.createEvent({ calendar: 'kids', title: 'Dad Days', start: '2026-10-21', all_day: true, end: '2026-10-22' });
+  const claude = fakeClaude([
+    toolUse('delete_event', { calendar: 'kids', event_id: dad.id }, 't2', toolUse('delete_event', { calendar: 'kids', event_id: mom.id }, 't1').content),
+    text('Delete Mom Days (Mon–Tue) and Dad Days (Wed–Thu), then add the new ones?'),
+    toolUse('delete_event', { calendar: 'kids', event_id: dad.id, confirm: true }, 't4', toolUse('delete_event', { calendar: 'kids', event_id: mom.id, confirm: true }, 't3').content),
+    text('Done.'),
+  ]);
+  const convs = new Map();
+  const store = {
+    async getConversation(u, id) { return convs.get(id)?.conv ?? null; },
+    async createConversation(u, { id, title, channel }) { const conv = { id, title, channel }; convs.set(id, { conv, msgs: [] }); return conv; },
+    async loadMessages(u, id) { return structuredClone(convs.get(id).msgs); },
+    async appendMessage(u, id, i, m) { convs.get(id).msgs.push(structuredClone(m)); },
+  };
+  const { tools } = await toolsFor(LUKE);
+  let id;
+  const say = async (words) => { id = (await runTurn({ client: claude.client, store, model: 'm', timeZone: 'America/New_York', tools, userId: LUKE, conversationId: id, text: words, channel: 'sms' })).conversationId; };
+  await say('swap this week’s mom and dad days');
+  assert.equal(google.events['kids@group.calendar.google.com'].length, 2);
+  await say('Yep!');
+  const results = claude.calls.flatMap((c) => c.params.messages.at(-1).content).filter((b) => b.type === 'tool_result');
+  assert.deepEqual(results.slice(-2).map((r) => r.is_error ?? false), [false, false], JSON.stringify(results.slice(-2)));
+  assert.equal(google.events['kids@group.calendar.google.com'].length, 0, 'both, from one reply');
+});
+
+test('the prompt says to ask once: call the tools that need an OK first, then one question', async () => {
+  const { systemPrompt } = await import('../api/agent.mjs');
+  const p = systemPrompt({ calendars: true });
+  assert.match(p, /Don't ask in your own words first and then again for the tool: call the tool first/);
+  assert.match(p, /one yes covers everything you asked about/);
+});

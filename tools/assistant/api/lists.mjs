@@ -182,8 +182,8 @@ export function makeLists({ tokenFor, apiUrl, clientId, user, channel = 'web', a
             need('list_id');
             let path = `/lists/${listId}`;
             if (input.confirm) {
-              const p = pendingIn(history, 'lists');
-              if (!p || p.list_id !== listId) throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
+              const p = pendingIn(history, 'lists', (x) => x.list_id === listId);
+              if (!p) throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
               if (!p.answered) throw new Error('Wait for the person’s reply before confirming.');
               path += `?confirm_id=${encodeURIComponent(p.confirm_id)}`;
             }

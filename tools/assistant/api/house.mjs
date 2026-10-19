@@ -40,8 +40,8 @@ export function makeHouse({ tokenFor, apiUrl, clientId, user, channel = 'web', a
       const data = pct === undefined ? {} : { brightness_pct: pct };
       const body = { entity_id: entityId, action, data };
       if (confirm) {
-        const p = pendingIn(history, 'house');
-        if (!p || p.entity_id !== entityId || p.action !== action || JSON.stringify(p.data) !== JSON.stringify(data)) {
+        const p = pendingIn(history, 'house', (x) => x.entity_id === entityId && x.action === action && JSON.stringify(x.data) === JSON.stringify(data));
+        if (!p) {
           throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
         }
         if (!p.answered) throw new Error('Wait for the person’s reply before confirming.');

@@ -85,11 +85,11 @@ export function makeDiscovery({ listApps, tokenFor, fetch = globalThis.fetch, no
           let req;
           if (method !== 'GET' && confirm) {
             // Exactly what they were asked about: the request recorded when the tool asked
-            const p = pendingIn(history, name);
-            // A confirming call that names something else (another id) isn't a yes to what was asked
+            // The ask for what this call names (its ids); with none given, the latest
             let named = null;
-            try { named = requestPath(op, input); } catch { /* no ids given: it's the one asked about */ }
-            if (!p || (named && named !== p.path)) throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
+            try { named = requestPath(op, input); } catch { /* no ids given */ }
+            const p = pendingIn(history, name, (x) => !named || x.path === named);
+            if (!p) throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
             if (!p.answered) throw new Error('Wait for the person’s reply before confirming.');
             req = { path: `${p.path}?confirm_id=${encodeURIComponent(p.confirm_id)}`, body: p.body };
           } else {

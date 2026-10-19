@@ -239,8 +239,8 @@ export function makeScheduleTool({ schedules, userId, channel, timeZone, contact
     }
     /** The confirmation they were asked for, for this op (and id): exactly that, never a new version from this call */
     const confirmed = () => {
-      const p = pendingIn(history, 'schedule');
-      if (!p || p.op !== op || (op !== 'create' && p.id !== input.id)) throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
+      const p = pendingIn(history, 'schedule', (x) => x.op === op && (op === 'create' || x.id === input.id));
+      if (!p) throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
       if (!p.answered) throw new Error('Wait for the person’s reply before confirming.');
       return p;
     };

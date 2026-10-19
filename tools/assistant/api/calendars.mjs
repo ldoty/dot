@@ -37,8 +37,8 @@ export function makeCalendars({ tokenFor, apiUrl, clientId, user, channel = 'web
     async deleteEvent({ calendar, event_id: id, confirm }, { history = [] } = {}) {
       let path = `/events/${encodeURIComponent(calendar)}/${encodeURIComponent(id)}`;
       if (confirm) {
-        const p = pendingIn(history, 'calendar');
-        if (!p || p.calendar !== calendar || p.event_id !== id) throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
+        const p = pendingIn(history, 'calendar', (x) => x.calendar === calendar && x.event_id === id);
+        if (!p) throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
         if (!p.answered) throw new Error('Wait for the person’s reply before confirming.');
         path += `?confirm_id=${encodeURIComponent(p.confirm_id)}`;
       }
