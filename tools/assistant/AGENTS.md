@@ -8,13 +8,14 @@ Opus 4.7+ needs AWS account approval). It acts as whoever is signed in (`var.peo
 
 Built-in tools are defined in `api/tools.mjs`: Google Calendar (implemented in `calendar.mjs`),
 `read_budget` (`budget.mjs`; Budget has no manifest, and discovery skips its 404) and
-`house_control` (`house.mjs`, offered to people discovery found can use House). Everything else
+`house_control` (`house.mjs`, offered to people discovery found can use House), `lists_change`
+(`lists.mjs`, likewise for Lists). Everything else
 is discovered (`api/discovery.mjs`), as the root guide describes.
 
-`house_control` is Dot's one way to change another tool, and House's `POST /commands` is the one
-route that accepts it. Confirmation (a `confirm` grant) is enforced in `house.mjs`, not by the
-prompt: the tool has no confirm_id field, and `confirm: true` is sent only if the person has written
-a new message since House asked. Keep it that way: tool results never count as their reply.
+`house_control` and `lists_change` are Dot's only ways to change another tool. Confirmations (a
+House `confirm` grant, deleting a list) are enforced in `confirm.mjs`, not by the prompt: the tools
+have no confirm_id field, and `confirm: true` is sent only if the person has written a new message
+since that tool asked. Keep it that way: tool results never count as their reply.
 
 **Memory** (`api/memory.mjs`): Dot keeps notes (`remember`, `forget`, `recall`), household (every
 member's Dot reads them; admins edit them on the page) or personal (only that person's Dot; only they

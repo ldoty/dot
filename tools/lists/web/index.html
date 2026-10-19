@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#fbf9f3">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lists">
+<title>Lists</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="family.css">
+<style>
+/* Layout: one column. Home is a card per list; a list shows its items in its layout (checklist,
+   Eisenhower matrix, or board), with one item opened for editing at a time, inline. */
+.wrap { max-width: 860px; margin: 0 auto; padding: 20px 16px 64px; display: grid; gap: 20px }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+.top a, .back { color: var(--muted); text-decoration: none; font-size: 14px; background: none; border: 0; cursor: pointer; padding: 0 }
+h1 { font-size: clamp(30px, 6vw, 44px) }
+.status { color: var(--muted); font-size: 14px; min-height: 1.4em; margin: 0 }
+.status.warn { color: var(--ember) }
+.lists { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px }
+.lists a { color: inherit; text-decoration: none; display: grid; gap: 4px }
+.lists a:hover { border-color: var(--pool) }
+.lists small, .meta { color: var(--muted); font-size: 13px }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+.row > input[type=text], .row > select { flex: 1 1 160px; min-width: 0 }
+input[type=text], input[type=date], input[type=datetime-local], select, textarea {
+  background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 9px 10px; color: var(--ink); font: inherit; box-sizing: border-box; max-width: 100% }
+input:focus, select:focus, textarea:focus { border-color: var(--pool); outline: none }
+.layouts { display: inline-flex; border: 1.5px solid var(--line); border-radius: var(--r-pill); overflow: hidden }
+.layouts button { border: 0; background: none; padding: 6px 14px; cursor: pointer; font: inherit; font-size: 14px; color: var(--muted) }
+.layouts button[aria-pressed="true"] { background: var(--pool); color: var(--on-accent) }
+.items { list-style: none; margin: 0; padding: 0 }
+.items li { border-top: 1px solid var(--line); padding: 8px 0 }
+.items li:first-child { border-top: 0 }
+.item { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; align-items: start }
+.item input[type=checkbox] { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--leaf) }
+.item .open { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; color: inherit; font: inherit; display: grid; gap: 2px }
+.item.done .open > span:first-child { color: var(--muted); text-decoration: line-through }
+.flag { font-size: 12px; font-weight: 600; color: var(--ember) }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px }
+.board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 4px }
+@media (max-width: 640px) { .grid { grid-template-columns: 1fr } .board { grid-auto-flow: row; grid-auto-columns: auto } }
+.quad h3, .col h3 { font-size: 16px; margin: 0 0 4px }
+.quad > p { color: var(--muted); font-size: 13px; margin: 0 0 6px }
+.edit { display: grid; gap: 8px; margin: 8px 0 4px 34px; padding: 12px; background: var(--raised); border-radius: var(--r-md) }
+.edit input[type=text], .edit textarea, .edit select, .edit input[type=date], .edit input[type=datetime-local] { background: var(--surface) }
+.edit label { display: grid; gap: 4px; font-size: 13px; color: var(--muted) }
+.edit .checks { display: flex; gap: 16px; font-size: 15px; color: var(--ink) }
+.edit .checks label { display: flex; align-items: center; gap: 6px; font-size: 15px; color: var(--ink) }
+.x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 14px }
+.x:hover { color: var(--ember) }
+details summary { cursor: pointer; color: var(--muted); font-size: 14px }
+.shares { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px }
+.shares li { display: flex; gap: 8px; align-items: center; justify-content: space-between }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
+  <div id="main"><p class="status">Loading…</p></div>
+</div>
+<script src="family-auth.js"></script>
+<script>
+(function () {
+  var cfg, lists = [], current = null, editing = null, msg = "", options = null, prefs = null;
+  var main = document.getElementById("main");
+  var LAYOUT = { checklist: "Checklist", matrix: "Matrix", board: "Board" };
+  var QUADS = [
+    { key: "do", title: "Do now", hint: "Urgent and important", u: true, i: true },
+    { key: "schedule", title: "Schedule", hint: "Important, not urgent", u: false, i: true },
+    { key: "delegate", title: "Delegate", hint: "Urgent, not important", u: true, i: false },
+    { key: "drop", title: "Drop", hint: "Neither", u: false, i: false },
+  ];
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
+  function quadOf(i) { return i.urgent ? (i.important ? "do" : "delegate") : (i.important ? "schedule" : "drop"); }
+  function canEdit() { return current && (current.list.level === "edit" || current.list.level === "owner"); }
+
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method,
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    });
+  }
+  function apiJson(method, path, body) {
+    return api(method, path, body).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (out) {
+        if (!res.ok) { var e = new Error(out.error || "HTTP " + res.status); e.status = res.status; throw e; }
+        return out;
+      });
+    });
+  }
+  function fail(e) {
+    msg = e.status === 409 ? "Someone else changed that just now. Here’s the latest." : "Didn’t work: " + e.message + ".";
+    return current ? openList(current.list.id) : loadHome();
+  }
+
+  // ---- home: every list you can see ----
+  function renderHome() {
+    main.innerHTML = "<h1>Lists</h1>" + (msg ? '<p class="status warn">' + esc(msg) + "</p>" : "") +
+      '<div class="lists">' + (lists.length ? lists.map(function (l) {
+        return '<a class="card" href="#l=' + esc(l.id) + '"><strong>' + esc(l.name) + "</strong><small>" + esc(LAYOUT[l.layout]) + " · " + l.open + " open" +
+          (l.level !== "owner" ? " · shared with you" + (l.level === "read" ? " to see" : "") : "") + "</small></a>";
+      }).join("") : '<p class="status">No lists yet. Start one below.</p>') + "</div>" +
+      '<form class="row" id="new-list"><input type="text" id="new-name" maxlength="80" placeholder="New list, like Groceries" aria-label="List name">' +
+      '<select id="new-layout" aria-label="Layout"><option value="checklist">Checklist</option><option value="matrix">Matrix (urgent × important)</option><option value="board">Board (columns)</option></select>' +
+      '<button class="btn primary">Start</button></form>' +
+      '<p class="status">Reminders come by <select id="pref" aria-label="How reminders come"><option value="sms"' + (prefs === "sms" ? " selected" : "") + '>text</option><option value="email"' + (prefs === "email" ? " selected" : "") + ">email</option></select>, unless a reminder says otherwise.</p>";
+  }
+  function loadHome() {
+    current = null; editing = null;
+    return Promise.all([apiJson("GET", "/lists"), prefs ? Promise.resolve({ channel: prefs }) : apiJson("GET", "/prefs")]).then(function (r) {
+      lists = r[0]; prefs = r[1].channel; renderHome(); msg = "";
+    });
+  }
+
+  // ---- one list ----
+  function itemRow(i) {
+    var bits = [];
+    if (i.due) bits.push("Due " + new Date(i.due + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric" }));
+    if (i.remind && !i.remind.sentAt) bits.push("🔔 " + new Date(i.remind.at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }));
+    if (i.notes) bits.push("Notes");
+    var html = '<li data-item="' + esc(i.id) + '"><div class="item' + (i.done ? " done" : "") + '"><input type="checkbox" data-done aria-label="Done: ' + esc(i.text) + '"' + (i.done ? " checked" : "") + (canEdit() ? "" : " disabled") + ">" +
+      '<button class="open" data-open><span>' + esc(i.text) + "</span>" + (bits.length ? '<span class="meta">' + esc(bits.join(" · ")) + "</span>" : "") + "</button></div>";
+    if (editing === i.id) html += editor(i);
+    return html + "</li>";
+  }
+  function editor(i) {
+    var ro = canEdit() ? "" : " disabled";
+    var local = function (iso) { if (!iso) return ""; var d = new Date(iso); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+    var cols = current.list.columns.map(function (c) { return '<option' + (i.column === c ? " selected" : "") + ">" + esc(c) + "</option>"; }).join("");
+    return '<form class="edit" data-save><label>What<input type="text" name="text" maxlength="300" value="' + esc(i.text) + '"' + ro + "></label>" +
+      '<label>Notes<textarea name="notes" rows="2" maxlength="2000"' + ro + ">" + esc(i.notes || "") + "</textarea></label>" +
+      '<div class="checks"><label><input type="checkbox" name="urgent"' + (i.urgent ? " checked" : "") + ro + "> Urgent</label><label><input type=\"checkbox\" name=\"important\"" + (i.important ? " checked" : "") + ro + "> Important</label></div>" +
+      '<div class="row"><label>Due<input type="date" name="due" value="' + esc(i.due || "") + '"' + ro + "></label>" +
+      (current.list.layout === "board" ? '<label>Column<select name="column"' + ro + ">" + cols + "</select></label>" : "") + "</div>" +
+      '<div class="row"><label>Remind me<input type="datetime-local" name="remind" value="' + esc(local(i.remind && i.remind.at)) + '"' + ro + "></label>" +
+      '<label>By<select name="channel"' + ro + '><option value="">my usual</option><option value="sms"' + (i.remind && i.remind.channel === "sms" ? " selected" : "") + '>text</option><option value="email"' + (i.remind && i.remind.channel === "email" ? " selected" : "") + ">email</option></select></label></div>" +
+      (i.remind && i.remind.sentAt ? '<p class="meta">Reminded ' + esc(new Date(i.remind.sentAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })) + ". Pick a new time to be reminded again.</p>" : "") +
+      (canEdit() ? '<div class="row"><button class="btn primary">Save</button><button type="button" class="btn ghost" data-close>Close</button><button type="button" class="x" data-delete>Delete</button></div>' : '<button type="button" class="btn ghost" data-close>Close</button>') + "</form>";
+  }
+  function addForm(where) {
+    if (!canEdit()) return "";
+    return '<form class="row" data-add="' + esc(where || "") + '"><input type="text" maxlength="300" placeholder="Add an item" aria-label="New item"><button class="btn ghost">Add</button></form>';
+  }
+  function renderList() {
+    var l = current.list, items = current.items;
+    var open = function (pred) { return items.filter(function (i) { return !i.done && pred(i); }); };
+    var body;
+    if (l.layout === "matrix") {
+      body = '<div class="grid">' + QUADS.map(function (q) {
+        var mine = open(function (i) { return quadOf(i) === q.key; });
+        return '<section class="card quad"><h3>' + q.title + "</h3><p>" + q.hint + '</p><ul class="items">' + mine.map(itemRow).join("") + "</ul>" + addForm(q.key) + "</section>";
+      }).join("") + "</div>";
+    } else if (l.layout === "board") {
+      body = '<div class="board">' + l.columns.map(function (c, n) {
+        var mine = open(function (i) { return i.column === c || (n === 0 && l.columns.indexOf(i.column) < 0); });
+        return '<section class="card col"><h3>' + esc(c) + '</h3><ul class="items">' + mine.map(itemRow).join("") + "</ul>" + addForm(c) + "</section>";
+      }).join("") + "</div>";
+    } else {
+      body = '<section class="card"><ul class="items">' + open(function () { return true; }).map(itemRow).join("") + "</ul>" + addForm("") + "</section>";
+    }
+    var done = items.filter(function (i) { return i.done; });
+    main.innerHTML = '<button class="back" data-home>← All lists</button><h1>' + esc(l.name) + "</h1>" +
+      (msg ? '<p class="status warn">' + esc(msg) + "</p>" : "") +
+      '<div class="row"><div class="layouts" role="group" aria-label="Layout">' + Object.keys(LAYOUT).map(function (k) {
+        return '<button data-layout="' + k + '" aria-pressed="' + (l.layout === k) + '"' + (canEdit() ? "" : " disabled") + ">" + LAYOUT[k] + "</button>";
+      }).join("") + "</div>" + (l.level === "read" ? '<span class="meta">Shared with you to see</span>' : "") + "</div>" + body +
+      (done.length ? '<details class="card"><summary>Done (' + done.length + ')</summary><ul class="items">' + done.map(itemRow).join("") + "</ul></details>" : "") +
+      settings();
+    msg = "";
+  }
+  function settings() {
+    var l = current.list;
+    if (!canEdit()) return "";
+    var html = '<details class="card" id="settings"><summary>List settings</summary><form class="edit" data-settings style="margin-left:0">' +
+      '<label>Name<input type="text" name="name" maxlength="80" value="' + esc(l.name) + '"></label>' +
+      (l.layout === "board" ? '<label>Columns, separated by commas<input type="text" name="columns" value="' + esc(l.columns.join(", ")) + '"></label>' : "") +
+      '<div class="row"><button class="btn primary">Save</button>' + (l.level === "owner" ? '<button type="button" class="x" data-delete-list>Delete this list</button>' : "") + "</div></form>";
+    if (l.level === "owner" && options) {
+      var name = function (who) {
+        var id = who.slice(who.indexOf(":") + 1), src = who.indexOf("group:") === 0 ? options.groups : options.people, k = who.indexOf("group:") === 0 ? "id" : "sub";
+        for (var n = 0; n < src.length; n++) if (src[n][k] === id) return (k === "id" ? "Group “" + src[n].name + "”" : src[n].name);
+        return who.indexOf("group:") === 0 ? "A removed group" : "Someone no longer in Lists";
+      };
+      html += "<h3>Shared with</h3><ul class=\"shares\">" + (l.share.length ? l.share.map(function (s, n) {
+        return '<li><span>' + esc(name(s.who)) + " · " + (s.level === "edit" ? "can edit" : "can see") + '</span><button class="x" data-unshare="' + n + '">Remove</button></li>';
+      }).join("") : '<li class="meta">Just you.</li>') + "</ul>" +
+        '<form class="row" data-share><select name="who" aria-label="Share with">' +
+        options.people.map(function (p) { return '<option value="sub:' + esc(p.sub) + '">' + esc(p.name) + "</option>"; }).join("") +
+        options.groups.map(function (g) { return '<option value="group:' + esc(g.id) + '">Group “' + esc(g.name) + "”</option>"; }).join("") +
+        '</select><select name="level" aria-label="Level"><option value="edit">can edit</option><option value="read">can see</option></select><button class="btn ghost">Share</button></form>';
+    }
+    return html + "</details>";
+  }
+  function openList(id) {
+    return apiJson("GET", "/lists/" + id).then(function (r) {
+      current = r;
+      if (r.list.level === "owner" && !options) return apiJson("GET", "/share-options").then(function (o) { options = o; renderList(); });
+      renderList();
+    }).catch(function (e) {
+      if (e.status === 404) { msg = "That list isn’t there, or isn’t shared with you."; location.hash = ""; return loadHome(); }
+      throw e;
+    });
+  }
+  function find(el) {
+    var id = el.closest("[data-item]").dataset.item;
+    for (var n = 0; n < current.items.length; n++) if (current.items[n].id === id) return current.items[n];
+    return null;
+  }
+  // Items are saved whole, with their rev; a conflict reloads the list
+  function fields(i) { return { text: i.text, done: i.done, notes: i.notes, due: i.due, urgent: i.urgent, important: i.important, column: i.column, order: i.order, assignee: i.assignee, remind: i.remind ? { at: i.remind.at, channel: i.remind.channel } : null }; }
+  function saveItem(i, changes) {
+    var body = fields(i);
+    for (var k in changes) body[k] = changes[k];
+    body.rev = i.rev;
+    return apiJson("PUT", "/lists/" + current.list.id + "/items/" + i.id, body).then(function () { return openList(current.list.id); }).catch(fail);
+  }
+  function saveList(changes) {
+    var l = current.list, body = { name: l.name, layout: l.layout, columns: l.columns, share: l.share, rev: l.rev };
+    for (var k in changes) body[k] = changes[k];
+    return apiJson("PUT", "/lists/" + l.id, body).then(function () { return openList(l.id); }).catch(fail);
+  }
+
+  main.addEventListener("click", function (e) {
+    var t = e.target, i;
+    if (t.closest("[data-home]")) { location.hash = ""; return; }
+    if (t.closest("[data-layout]") && canEdit()) return saveList({ layout: t.closest("[data-layout]").dataset.layout });
+    if (t.closest("[data-open]")) { i = find(t); editing = editing === i.id ? null : i.id; return renderList(); }
+    if (t.closest("[data-close]")) { editing = null; return renderList(); }
+    if (t.closest("[data-delete]") && (i = find(t))) {
+      editing = null;
+      return apiJson("DELETE", "/lists/" + current.list.id + "/items/" + i.id).then(function () { return openList(current.list.id); }).catch(fail);
+    }
+    if (t.closest("[data-delete-list]") && window.confirm("Delete “" + current.list.name + "” and everything on it?")) {
+      return apiJson("DELETE", "/lists/" + current.list.id).then(function () { location.hash = ""; }).catch(fail);
+    }
+    if (t.closest("[data-unshare]")) {
+      var n = Number(t.closest("[data-unshare]").dataset.unshare);
+      return saveList({ share: current.list.share.filter(function (_, k) { return k !== n; }) });
+    }
+  });
+  main.addEventListener("change", function (e) {
+    var t = e.target, i;
+    if (t.matches("[data-done]") && (i = find(t))) return saveItem(i, { done: t.checked });
+    if (t.id === "pref") return apiJson("PUT", "/prefs", { channel: t.value }).then(function (r) { prefs = r.channel; }).catch(fail);
+  });
+  main.addEventListener("submit", function (e) {
+    var f = e.target;
+    e.preventDefault();
+    if (f.id === "new-list") {
+      var name = document.getElementById("new-name").value.trim();
+      if (!name) return;
+      return apiJson("POST", "/lists", { name: name, layout: document.getElementById("new-layout").value }).then(function (l) { location.hash = "#l=" + l.id; }).catch(fail);
+    }
+    if (f.matches("[data-add]")) {
+      var text = f.querySelector("input").value.trim(), where = f.dataset.add, l = current.list;
+      if (!text) return;
+      var item = { text: text, order: current.items.length ? Math.max.apply(null, current.items.map(function (x) { return x.order || 0; })) + 1 : 1 };
+      if (l.layout === "matrix") { var q = QUADS.filter(function (x) { return x.key === where; })[0]; item.urgent = q.u; item.important = q.i; }
+      if (l.layout === "board") item.column = where;
+      return apiJson("PUT", "/lists/" + l.id + "/items/" + uid(), item).then(function () {
+        return openList(l.id).then(function () { var again = main.querySelector('[data-add="' + where + '"] input'); if (again) again.focus(); });
+      }).catch(fail);
+    }
+    if (f.matches("[data-save]")) {
+      var i = find(f), get = function (n) { return f.querySelector('[name="' + n + '"]'); };
+      var when = get("remind").value;
+      editing = null;
+      return saveItem(i, {
+        text: get("text").value.trim(), notes: get("notes").value.trim() || null, urgent: get("urgent").checked, important: get("important").checked,
+        due: get("due").value || null, column: get("column") ? get("column").value : i.column,
+        remind: when ? { at: new Date(when).toISOString(), channel: get("channel").value || null } : null,
+      });
+    }
+    if (f.matches("[data-settings]")) {
+      var cols = f.querySelector('[name="columns"]');
+      return saveList({ name: f.querySelector('[name="name"]').value.trim(), columns: cols ? cols.value.split(",").map(function (c) { return c.trim(); }).filter(Boolean) : current.list.columns });
+    }
+    if (f.matches("[data-share]")) {
+      var who = f.querySelector('[name="who"]').value, level = f.querySelector('[name="level"]').value;
+      if (!who) return;
+      return saveList({ share: current.list.share.filter(function (s) { return s.who !== who; }).concat([{ who: who, level: level }]) });
+    }
+  });
+
+  function route() {
+    var m = /#l=([a-z0-9]+)/.exec(location.hash);
+    editing = null;
+    return (m ? openList(m[1]) : loadHome()).catch(function (e) { main.innerHTML = '<p class="status warn">Couldn’t load (' + esc(e.message) + "). Reload to try again.</p>"; });
+  }
+  window.addEventListener("hashchange", route);
+  // Keep it current while open, but never under someone typing
+  setInterval(function () {
+    if (document.hidden || editing || (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) return;
+    (current ? openList(current.list.id) : loadHome()).catch(function () {});
+  }, 20000);
+
+  function gate(text) {
+    main.innerHTML = '<p class="status">' + esc(text) + '</p><button class="btn primary" id="signin">Sign in</button>';
+    document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
+  }
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
+    document.getElementById("signout").hidden = false;
+    document.getElementById("signout").onclick = function () { FamilyAuth.logout(); };
+    return route();
+  }).catch(function (e) { gate(e.message === "forbidden" ? "Your account doesn’t have access to Lists yet." : e.message); });
+})();
+</script>
+</body>
+</html>

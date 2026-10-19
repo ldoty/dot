@@ -3,11 +3,10 @@
 // tools are GET only. House decides everything: the person's grants, then the relay's ceiling.
 // Each call borrows a short-lived token for the asker (delegation.mjs) and is audited.
 //
-// Confirmation is enforced here, in code, not left to the model. When House answers 202 (the
-// person's grant is `confirm`), the tool result says so and records House's confirm_id; Claude
-// never gets a field to pass it back. A later call with confirm: true is sent with that id only if
-// the person has written a new message since: a hidden instruction in an email, invite or tool
-// answer can't approve its own command within the turn it arrived in.
+// Confirmation is enforced in code (confirm.mjs), not left to the model: when House answers 202
+// (the person's grant is `confirm`), Dot sends House's confirm_id back only after their own reply.
+
+import { asking, pendingIn } from './confirm.mjs';
 
 export const ACTIONS = ['turn_on', 'turn_off'];
 
@@ -29,26 +28,6 @@ export const definition = {
   },
 };
 
-const MARK = 'needs_confirmation';
-
-/** The latest pending confirmation in the history, and whether the person has written since */
-function pendingIn(history) {
-  for (let i = history.length - 1; i >= 0; i--) {
-    const m = history[i];
-    if (m.role !== 'user') continue;
-    for (const b of m.content) {
-      if (b.type !== 'tool_result' || typeof b.content !== 'string' || !b.content.includes(MARK)) continue;
-      let p;
-      try { p = JSON.parse(b.content); } catch { continue; }
-      if (!p[MARK]) continue;
-      // The person's own words come in a user message that isn't only tool results
-      const answered = history.slice(i + 1).some((n) => n.role === 'user' && n.content.some((c) => c.type === 'text' || c.type === 'image'));
-      return { ...p, answered };
-    }
-  }
-  return null;
-}
-
 export function makeHouse({ tokenFor, apiUrl, clientId, user, channel = 'web', audit = async () => {}, fetch = globalThis.fetch }) {
   return {
     async control(input, { history = [] } = {}) {
@@ -57,7 +36,7 @@ export function makeHouse({ tokenFor, apiUrl, clientId, user, channel = 'web', a
       const data = pct === undefined ? {} : { brightness_pct: pct };
       const body = { entity_id: entityId, action, data };
       if (confirm) {
-        const p = pendingIn(history);
+        const p = pendingIn(history, 'house');
         if (!p || p.entity_id !== entityId || p.action !== action || JSON.stringify(p.data) !== JSON.stringify(data)) {
           throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
         }
@@ -81,7 +60,7 @@ export function makeHouse({ tokenFor, apiUrl, clientId, user, channel = 'web', a
       try { out = await res.json(); } catch { /* not JSON */ }
       if (res.status === 202) {
         await record('asked', out.prompt);
-        return JSON.stringify({ [MARK]: true, ask_them: out.prompt, confirm_id: out.confirm_id, entity_id: entityId, action, data });
+        return asking('house', { ask_them: out.prompt, confirm_id: out.confirm_id, entity_id: entityId, action, data });
       }
       if (res.ok) {
         await record('ok');

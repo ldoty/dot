@@ -12,7 +12,7 @@
 //          personal notes are only ever your own; household notes are for admins to edit
 // Every request needs a family_assistant access token, verified here. Dot then acts as that
 // person: their name and calendars (PEOPLE), and their own access to other tools (delegation):
-// Budget through read_budget, House's lights through house_control, and any family tool that
+// Budget through read_budget, House's lights through house_control, Lists through lists_change, and any family tool that
 // describes itself (discovery.mjs).
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -26,6 +26,7 @@ import { makeStore } from './store.mjs';
 import { makeDelegation } from './delegation.mjs';
 import { makeBudget } from './budget.mjs';
 import { makeHouse } from './house.mjs';
+import { makeLists } from './lists.mjs';
 import { makeMemoryTools, makeNotes, NOTE_ID } from './memory.mjs';
 import { makeDiscovery } from './discovery.mjs';
 import { makeGoogleAuth } from './google.mjs';
@@ -115,6 +116,7 @@ export function liveDeps(env = process.env) {
       const discovered = await discovery.forUser({ user, channel, audit });
       // House is discovered for reading; control is built in, only for people who can use House
       const houseApp = discovered.apps?.family_house;
+      const listsApp = discovered.apps?.family_lists;
       return {
         person: { name: me.name },
         notes: await notes.forPerson(userId),
@@ -127,6 +129,7 @@ export function liveDeps(env = process.env) {
             user: { sub: claims.sub, username: claims.username }, channel, audit,
           }),
           house: houseApp && makeHouse({ tokenFor, apiUrl: houseApp.api_url, clientId: houseApp.client_id, user, channel, audit }),
+          lists: listsApp && makeLists({ tokenFor, apiUrl: listsApp.api_url, clientId: listsApp.client_id, user, channel, audit, timeZone: env.TIME_ZONE }),
           memory: makeMemoryTools({ notes, userId, name: me.name, channel, audit }),
           discovered,
         }),

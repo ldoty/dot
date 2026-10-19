@@ -19,6 +19,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/amber-finances` | amber-finances.dot-y.co | `amber_finances` | Amber’s, the same way |
 | `tools/shared-finances` | shared-finances.dot-y.co | `shared_finances` | The joint accounts from both, against the Shared budget |
 | `tools/assistant` | assistant.dot-y.co | `family_assistant` | **Dot**: chat with Claude (Bedrock) + calendars + any tool that describes itself |
+| `tools/lists` | lists.dot-y.co | `family_lists` | To-dos and checklists (checklist, Eisenhower matrix, board), private until shared with people or family groups; reminders by text or email from an every-minute sweep. Notes in `tools/lists/AGENTS.md` |
 | `tools/links` | links.dot-y.co | `family_links` | Family bookmarks |
 | `tools/biomap` | biomap.dot-y.co | `lukes_biomap` | Field-guide flashcards from a private photo collection |
 | `tools/tempi` | tempi.dot-y.co | `family_tempi` | An OT course, served to members only |
@@ -58,15 +59,15 @@ person* from the other tool's **delegated client** (`platform/api/delegation.mjs
 - The target tool opts in with family-app `delegated = true` and lists who may read it in
   `delegates` (default `["dot"]`). It publishes `{api_url, client_id}` at SSM `/family/delegation/<group>`.
 - Cognito still applies the group gate; tokens come out marked `via: "dot"`; **the target refuses
-  every non-GET from them** (403 `read-only`); the one exception is House's `POST /commands`, within the person's grants (Dot's `house_control`). Reads are audited by the reader.
+  every non-GET from them** (403 `read-only`); the exceptions are House's `POST /commands` (Dot's `house_control`) and editing lists the person can edit (Dot's `lists_change`), never sharing. Reads are audited by the reader.
 
-Current links: Dot → any tool with a manifest (today the three finances tools and House); finances tools → Budget (as their person);
+Current links: Dot → any tool with a manifest (today the three finances tools, House and Lists); finances tools → Budget (as their person);
 Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`).
 
 ### Dot (the assistant) and tool discovery
 
 Dot (`tools/assistant`; internals in `tools/assistant/AGENTS.md`) acts as whoever is signed in. Apart
-from its built-ins (calendar, `read_budget`, `house_control`), **every tool is discovered** (`api/discovery.mjs`): Dot lists `/family/delegation/*`, borrows a token for the
+from its built-ins (calendar, `read_budget`, `house_control`, `lists_change`, memory), **every tool is discovered** (`api/discovery.mjs`): Dot lists `/family/delegation/*`, borrows a token for the
 asker, reads each tool's `GET /dot` manifest (`platform/api/dot-manifest.mjs`) and offers its
 operations as `<name>_<operation>` tools, GET only. Dot **remembers** what people tell it that's likely to come up again (`api/memory.mjs`: household and
 personal notes, shown on its page under “What Dot knows”). Members can also **text** Dot: the SMS webhook maps a

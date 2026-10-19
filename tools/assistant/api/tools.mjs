@@ -1,11 +1,12 @@
 // The tools Claude can call for one person: calendar tools for their calendars (if they have any),
 // read_budget (if Budget is set up for Dot; it reads with their own access), house_control (if they
-// can use House; house.mjs), memory (remember, forget, recall; memory.mjs), and whatever family tools discovery found for them
+// can use House; house.mjs), lists_change (if they can use Lists; lists.mjs), memory (remember, forget, recall; memory.mjs), and whatever family tools discovery found for them
 // (discovery.mjs: { definitions, connected, handlers }). Each tool's input
 // is checked here before anything runs, and a failure comes back to Claude as an error result.
 
 import { COLORS } from './calendar.mjs';
 import { definition as houseControl } from './house.mjs';
+import { definition as listsChange } from './lists.mjs';
 import { definitions as memoryTools } from './memory.mjs';
 
 const dateTime = 'Date "YYYY-MM-DD" or local time "YYYY-MM-DDTHH:MM" (the calendar’s time zone unless an offset is given)';
@@ -27,7 +28,7 @@ const people = {
     + 'for reference, not invited: Google won’t send them anything.',
 };
 
-export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = [], budget, house, memory, discovered = { definitions: [], connected: [], handlers: {} } }) {
+export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = [], budget, house, lists, memory, discovered = { definitions: [], connected: [], handlers: {} } }) {
   const cal = { type: 'string', enum: calendarNames, description: 'Which calendar' };
   // Changes are offered only on calendars this person may change (calendar.mjs refuses the rest too)
   const writable = calendarNames.filter((c) => !readOnlyCalendars.includes(c));
@@ -129,11 +130,12 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
   }] : [];
   const writeTools = ['create_event', 'update_event', 'delete_event'];
   const offered = calendarTools.filter((t) => writable.length || !writeTools.includes(t.name));
-  const definitions = [...(calendarNames.length ? offered : []), ...budgetTools, ...(house ? [houseControl] : []), ...(memory ? memoryTools : []), ...discovered.definitions];
+  const definitions = [...(calendarNames.length ? offered : []), ...budgetTools, ...(house ? [houseControl] : []), ...(lists ? [listsChange] : []), ...(memory ? memoryTools : []), ...discovered.definitions];
 
   const handlers = {
     read_budget: (i) => budget.read(i),
     house_control: (i, ctx) => house.control(i, ctx),
+    lists_change: (i, ctx) => lists.change(i, ctx),
     remember: (i, ctx) => memory.remember(i, ctx),
     forget: (i) => memory.forget(i),
     recall: (i) => memory.recall(i),
