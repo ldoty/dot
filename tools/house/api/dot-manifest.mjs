@@ -1,0 +1,1 @@
+../../../platform/api/dot-manifest.mjs

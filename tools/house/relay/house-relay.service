@@ -1,0 +1,24 @@
+# The house relay (relay.mjs), installed by scripts/deploy-relay.sh into the relay container.
+# The token and key files are readable only by the relay user; see tools/house/README.md.
+[Unit]
+Description=House relay: Home Assistant to house.dot-y.co
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=relay
+WorkingDirectory=/opt/house-relay
+ExecStart=/usr/local/bin/node /opt/house-relay/relay.mjs
+Environment=HA_URL=ws://192.168.0.165/api/websocket
+Environment=HA_TOKEN_FILE=/etc/house-relay/ha-token
+Environment=HOUSE_KEY_FILE=/etc/house-relay/house-key
+EnvironmentFile=/etc/house-relay/env
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

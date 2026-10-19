@@ -26,6 +26,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/cheer-research` | cheer-research.dot-y.co | `lukes_research` | Market research for a youth activities SaaS (cheer and dance first): guide, players, money flows + calculator, flashcards; the guide lives in gitignored `private/` |
 | `tools/house-hunt` | house-hunt.dot-y.co | `family_house_hunt` | Neighborhoods on a map, ranked listings; listing emails to househunt@dot-y.co are filed by Claude |
 | `tools/chamber` | chamber.dot-y.co | `lukes_chamber` | Mushroom chamber: Arduino firmware + build notes; the board posts telemetry to `POST /ingest` (device key), the page shows it and sets the board’s settings |
+| `tools/house` | house.dot-y.co | `family_house` | Home Assistant by room, per-person grants; a relay at home dials out (WebSocket, device key) and reports only what `relay/ceiling.json` exposes. Notes in `tools/house/AGENTS.md` |
 | `tools/sms` | (API only) | | Dot-y texting program: opt-in consent records, and Twilio’s webhook that hands members’ texts to Dot |
 | `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail; dot@dot-y.co: the gate that hands members’ mail to Dot |
 | `platform/billing` | | | Account-wide $75/mo budget + cost anomaly alerts |
@@ -58,7 +59,7 @@ person* from the other tool's **delegated client** (`platform/api/delegation.mjs
 - Cognito still applies the group gate; tokens come out marked `via: "dot"`; **the target refuses
   every non-GET from them** (403 `read-only`). Reads are audited by the reader.
 
-Current links: Dot → any tool with a manifest (today the three finances tools); finances tools → Budget (as their person);
+Current links: Dot → any tool with a manifest (today the three finances tools and House); finances tools → Budget (as their person);
 Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`).
 
 ### Dot (the assistant) and tool discovery
@@ -140,6 +141,7 @@ npm run test:live
 | `/family/<tool>/simplefin` | SecureString: a finances tool's SimpleFIN setup token or access URL |
 | `/family/calendar/google-key` | SecureString: Dot's Google service-account key |
 | `/family/chamber/device-key` | SecureString, set by hand: the chamber board's key for `POST /ingest` (also in its gitignored `arduino_secrets.h`) |
+| `/family/house/relay-key` | SecureString, set by hand: the house relay's key for its WebSocket `$connect` (also in the relay container's `/etc/house-relay/house-key`) |
 | `/family/sms/optin-url` | The SMS opt-in endpoint, for the public page |
 | `/family/sms/twilio` | SecureString, set by hand: Twilio API key for sending `{accountSid, apiKeySid, apiKeySecret, messagingServiceSid}` |
 | `/family/sms/twilio-webhook` | SecureString, set by hand: `{accountSid, authToken}`, only for the webhook's signature checks |

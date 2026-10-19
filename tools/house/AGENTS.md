@@ -1,0 +1,31 @@
+# Agent notes: House
+
+Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
+
+## Rules
+
+- **Home Assistant never faces the internet.** No port forwards, no Nabu Casa, no HA token in AWS.
+  The relay dials out; everything AWS knows came from it.
+- **The ceiling only changes in git.** `relay/ceiling.json` is the most AWS can ever see or touch.
+  Nothing in AWS may widen it, and the relay re-checks it on everything, even what AWS approved.
+  Adding a domain (lock, cover, camera…) is an access change: ask Luke.
+- **Grants only narrow.** No grant, no access; the highest matching level wins; admins have control.
+  Areas are matched as they are now, so moving a device in Home Assistant moves its grants.
+- **Dot is read-only here until stage 2**, and then only `POST /commands`, within the person's grants.
+  Everything else from a `via: dot` token stays 403.
+- The relay's HA user is **non-admin**: its token can't change Home Assistant's setup.
+  If the relay needs an admin-only HA command, find another way.
+- Commands are never queued for later (stage 2): if the relay is offline, the answer is 504.
+
+## Stages
+
+1. Relay + read-only (this): the page, `GET /home`, `GET /dot`.
+2. `POST /commands`: grants checked in the Lambda, ceiling re-checked by the relay, an audit row each.
+3. Dot's built-in `house_control`, with confirmation enforced in Dot's code (only after a new message from the person).
+4. Grants and groups editor, `GET /log`.
+
+## The home server
+
+Proxmox at `192.168.0.235` (`ssh root@…`); Home Assistant OS is VM 100 at `192.168.0.165`, serving
+on **port 80**; the relay is its own container. From Proxmox, `pct exec <ctid> -- …` runs commands in
+the relay container.

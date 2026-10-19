@@ -1,0 +1,17 @@
+{
+  "expose": {
+    "areas": ["kitchen", "living_room", "dining_room", "office", "lukes_office", "master_bedroom", "flex_room_bedroom"],
+    "entities": ["switch.lutron_smart_away"],
+    "exclude": []
+  },
+  "domains": {
+    "light": {
+      "attributes": ["brightness"],
+      "actions": { "turn_on": ["brightness_pct", "transition"], "turn_off": ["transition"] }
+    },
+    "switch": {
+      "attributes": [],
+      "actions": { "turn_on": [], "turn_off": [] }
+    }
+  }
+}
