@@ -4,21 +4,23 @@
 //                stage 2 can send it commands; a newer connection replaces an older one.
 //   $disconnect  forget the connection, if it's still the current one
 //   sync         what the house reports (relay/protocol.mjs). Only the current connection may sync
+//   result       how a command went, for the API Lambda waiting on it (api.mjs)
 //   $default     anything else is refused
 // The relay has already cut everything to the ceiling; this stores it as given, checked field by
-// field. Its role can only read that key and write this table, so a leaked key can paint a false
+// field. Its role can only read that key and write these rows, so a leaked key can paint a false
 // picture of the house but can't read anything back or send a command.
 //
 // Rows: RELAY / CONN               { connectionId, connectedAt, lastSync }
 //       AREA / <area id>          { name }
-//       ENTITY / <entity id>      { name, area, domain, state, attrs, updated }
+//       ENTITY / <entity id>      { name, area, domain, state, attrs, updated, actions }
+//       RESULT / <command id>     { ok, error, at }   read once by the waiting API Lambda; expires in a day
 // Change messages for one entity are a second or more apart (the relay batches), and a full sync
 // every 5 minutes rewrites everything, so an out-of-order write heals on its own.
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
-import { parseSync } from './protocol.mjs';
+import { parseResult, parseSync } from './protocol.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const ssm = new SSMClient({});
@@ -68,6 +70,22 @@ export function createRelayWs({ table, relayKey, now = () => new Date() }) {
         if (conn?.connectionId === connectionId) {
           await db.send(new UpdateCommand({ TableName: table, Key: { pk: 'RELAY', sk: 'CONN' }, UpdateExpression: 'SET connectionId = :n', ExpressionAttributeValues: { ':n': null } }));
         }
+        return reply(200);
+      }
+      case 'result': {
+        if ((await current())?.connectionId !== connectionId) {
+          console.warn('refused: result from an old connection', connectionId);
+          return reply(403);
+        }
+        let r;
+        try {
+          r = parseResult(JSON.parse(event.body || ''));
+        } catch (e) {
+          console.warn('refused:', e.message, String(event.body).slice(0, 200));
+          return reply(400);
+        }
+        const expires = Math.floor(now().getTime() / 1000) + 86_400;
+        await db.send(new PutCommand({ TableName: table, Item: { pk: 'RESULT', sk: r.id, ok: r.ok, error: r.error, at: now().toISOString(), expires } }));
         return reply(200);
       }
       case 'sync': {

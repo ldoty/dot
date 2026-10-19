@@ -9,7 +9,7 @@ const ws = createRelayWs({ table: 'family-house', relayKey: async () => 'right-k
 
 const connect = (connectionId, key = 'right-key') => ws({ requestContext: { routeKey: '$connect', connectionId }, headers: key ? { 'x-house-key': key } : {} });
 const message = (connectionId, body) => ws({ requestContext: { routeKey: 'sync', connectionId }, body: JSON.stringify(body) });
-const e = (id, area, state = 'on') => ({ id, name: id, area, domain: id.split('.')[0], state, attrs: {}, updated: '2026-10-18T19:59:00Z' });
+const e = (id, area, state = 'on') => ({ id, name: id, area, domain: id.split('.')[0], state, attrs: {}, updated: '2026-10-18T19:59:00Z', actions: { turn_on: [], turn_off: [] } });
 const full = (entities, areas = [{ id: 'kitchen', name: 'Kitchen' }]) => ({ type: 'sync', full: true, areas, entities });
 
 beforeEach(() => table.clear());
@@ -29,7 +29,7 @@ test('a full sync stores areas and entities, and removes what’s gone', async (
   const entities = [e('light.a', 'kitchen'), e('light.b', 'kitchen'), e('light.c', 'kitchen'), e('switch.away', null, 'off')];
   assert.equal((await message('c1', full(entities))).statusCode, 200);
   assert.deepEqual(table.keys().filter((k) => k !== 'CONN'), ['kitchen', 'light.a', 'light.b', 'light.c', 'switch.away']);
-  assert.deepEqual(table.get('ENTITY', 'switch.away'), { pk: 'ENTITY', sk: 'switch.away', name: 'switch.away', area: null, domain: 'switch', state: 'off', attrs: {}, updated: '2026-10-18T19:59:00Z' });
+  assert.deepEqual(table.get('ENTITY', 'switch.away'), { pk: 'ENTITY', sk: 'switch.away', name: 'switch.away', area: null, domain: 'switch', state: 'off', attrs: {}, updated: '2026-10-18T19:59:00Z', actions: { turn_on: [], turn_off: [] } });
   assert.equal(table.get('RELAY', 'CONN').lastSync, NOW.toISOString());
 });
 
@@ -65,4 +65,19 @@ test('refuses malformed or oversized messages, and other routes', async () => {
   assert.equal((await ws({ requestContext: { routeKey: 'sync', connectionId: 'c1' }, body: 'x'.repeat(129 * 1024) })).statusCode, 413);
   assert.equal((await ws({ requestContext: { routeKey: '$default', connectionId: 'c1' }, body: '{}' })).statusCode, 400);
   assert.deepEqual(table.keys(), ['CONN']);
+});
+
+const result = (connectionId, body) => ws({ requestContext: { routeKey: 'result', connectionId }, body: JSON.stringify(body) });
+const ID = 'b'.repeat(24);
+
+test('results are stored for the waiting API, from the current connection only', async () => {
+  await connect('c1');
+  await connect('c2');
+  assert.equal((await result('c1', { type: 'result', id: ID, ok: true })).statusCode, 403);
+  assert.equal(table.get('RESULT', ID), undefined);
+  assert.equal((await result('c2', { type: 'result', id: ID, ok: false, error: 'refused: not exposed' })).statusCode, 200);
+  const r = table.get('RESULT', ID);
+  assert.deepEqual([r.ok, r.error], [false, 'refused: not exposed']);
+  assert.equal(r.expires, Math.floor(NOW.getTime() / 1000) + 86_400, 'gone in a day');
+  assert.equal((await result('c2', { type: 'result', id: 'nope', ok: true })).statusCode, 400);
 });

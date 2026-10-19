@@ -8,7 +8,7 @@
 // stays hidden until its domain is added here on purpose.
 //
 //   domains.<domain>.attributes   the only state attributes reported (no GPS, tokens, etc.)
-//   domains.<domain>.actions      service -> the only data keys a command may carry (stage 2)
+//   domains.<domain>.actions      service -> the only data keys a command may carry
 
 const ID = /^[a-z_]+\.[a-z0-9_]+$/;
 const AREA = /^[a-z0-9_]+$/;
@@ -48,5 +48,14 @@ export function reportState(c, s, { name, area }) {
   for (const k of c.domains[domain].attributes) {
     if (s.attributes?.[k] !== undefined && s.attributes[k] !== null) attrs[k] = s.attributes[k];
   }
-  return { id: s.entity_id, name, area: area ?? null, domain, state: String(s.state), attrs, updated: s.last_updated };
+  return { id: s.entity_id, name, area: area ?? null, domain, state: String(s.state), attrs, updated: s.last_updated, actions: c.domains[domain].actions };
+}
+
+/** Why the ceiling refuses this command (entity id, its area now), or null if it may run */
+export function refuseCommand(c, { entity_id, action, data }, area) {
+  if (!exposed(c, entity_id, area)) return 'not exposed';
+  const allowed = c.domains[entity_id.split('.')[0]].actions[action];
+  if (!allowed) return `${action} not allowed`;
+  const extra = Object.keys(data).filter((k) => !allowed.includes(k));
+  return extra.length ? `${extra.join(', ')} not allowed for ${action}` : null;
 }

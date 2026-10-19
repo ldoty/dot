@@ -8,7 +8,7 @@ const SITE = 'https://house.dot-y.co';
 const config = await (await fetch(`${SITE}/config.json`)).json();
 
 test('every API route refuses requests without a token', async () => {
-  for (const [method, path] of [['GET', '/home'], ['GET', '/dot']]) {
+  for (const [method, path] of [['GET', '/home'], ['GET', '/dot'], ['POST', '/commands']]) {
     assert.equal((await fetch(config.apiUrl + path, { method })).status, 401, `${method} ${path}`);
   }
 });

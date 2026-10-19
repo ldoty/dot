@@ -7,7 +7,8 @@
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="family.css">
 <style>
-/* Layout: one narrow column. Header, a line on how fresh the picture is, then a card per room. */
+/* Layout: one narrow column. Header, a line on how fresh the picture is, then a card per room.
+   A device you may control gets a switch, and a dimmer also a brightness slider under its name. */
 .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 24px }
 .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
 .top a { color: var(--muted); text-decoration: none; font-size: 14px }
@@ -17,12 +18,23 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
 .rooms { display: grid; gap: 16px }
 .room h2 { font-size: 20px; margin: 0 0 8px }
 .room ul { list-style: none; margin: 0; padding: 0 }
-.room li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line) }
+.room li { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--line) }
 .room li:first-child { border-top: 0 }
+.name { min-width: 0 }
 .state { font-size: 14px; color: var(--muted); white-space: nowrap }
 .state.on { color: var(--leaf); font-weight: 600 }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--line); margin-right: 8px; vertical-align: 1px }
 .on .dot { background: var(--sun) }
+.switch { width: 48px; height: 28px; border-radius: var(--r-pill); border: 0; background: var(--line); position: relative; cursor: pointer; padding: 0 }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--surface); transition: left .15s }
+.switch[aria-checked="true"] { background: var(--leaf) }
+.switch[aria-checked="true"]::after { left: 23px }
+.switch:disabled { opacity: .5; cursor: wait }
+.dim { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted) }
+.dim input { flex: 1; min-width: 0; accent-color: var(--sun) }
+.dim output { width: 3.5em; text-align: right }
+.err { grid-column: 1 / -1; color: var(--ember); font-size: 14px; margin: 0 }
+@media (prefers-reduced-motion: reduce) { .switch::after { transition: none } }
 </style>
 </head>
 <body>
@@ -34,7 +46,7 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
 <script src="family-auth.js"></script>
 <script>
 (function () {
-  var cfg;
+  var cfg, home, busy = {}, errors = {}, refreshTimer = null;
   var main = document.getElementById("main");
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
 
@@ -57,30 +69,91 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
     return Math.round(s / 3600) + " hours ago";
   }
 
+  var pct = function (e) { return typeof e.attrs.brightness === "number" ? Math.max(1, Math.round(e.attrs.brightness / 2.55)) : null; };
+
   function stateText(e) {
     if (e.state === "unavailable" || e.state === "unknown") return "Not responding";
     if (e.state !== "on") return e.state === "off" ? "Off" : e.state;
-    if (typeof e.attrs.brightness === "number") return "On · " + Math.round(e.attrs.brightness / 2.55) + "%";
-    return "On";
+    return pct(e) !== null ? "On · " + pct(e) + "%" : "On";
   }
 
-  function render(home) {
+  function find(id) {
+    for (var i = 0; i < home.areas.length; i++) {
+      for (var j = 0; j < home.areas[i].entities.length; j++) if (home.areas[i].entities[j].id === id) return home.areas[i].entities[j];
+    }
+    return null;
+  }
+
+  function row(e) {
+    var on = e.state === "on", can = e.actions || {}, dead = e.state === "unavailable" || e.state === "unknown";
+    var html = '<li data-id="' + esc(e.id) + '"><span class="name' + (on ? " on" : "") + '"><span class="dot"></span>' + esc(e.name) + "</span>";
+    if (can.turn_on && can.turn_off && !dead) {
+      html += '<button class="switch" role="switch" aria-checked="' + on + '" aria-label="' + esc(e.name) + '" data-toggle' + (busy[e.id] ? " disabled" : "") + "></button>";
+    } else {
+      html += '<span class="state' + (on ? " on" : "") + '">' + esc(stateText(e)) + "</span>";
+    }
+    if (can.turn_on && can.turn_on.indexOf("brightness_pct") >= 0 && on && pct(e) !== null) {
+      html += '<label class="dim">Brightness <input type="range" min="1" max="100" value="' + pct(e) + '" data-dim aria-label="' + esc(e.name) + ' brightness"' + (busy[e.id] ? " disabled" : "") + "><output>" + pct(e) + "%</output></label>";
+    }
+    if (errors[e.id]) html += '<p class="err">' + esc(errors[e.id]) + "</p>";
+    return html + "</li>";
+  }
+
+  function render() {
     var r = home.relay, fresh;
     if (!r.lastSync) fresh = '<p class="status warn">The house hasn’t reported yet.</p>';
-    else if (r.stale || !r.connected) fresh = '<p class="status warn">The house last reported ' + esc(ago(r.lastSync)) + ', so this may be out of date.</p>';
+    else if (r.stale || !r.connected) fresh = '<p class="status warn">The house last reported ' + esc(ago(r.lastSync)) + ", so this may be out of date.</p>";
     else fresh = '<p class="status">Live from the house.</p>';
     if (!home.areas.length) {
       main.innerHTML = fresh + '<p class="status">Nothing here is shared with you yet. Ask Luke.</p>';
       return;
     }
     main.innerHTML = fresh + '<div class="rooms">' + home.areas.map(function (a) {
-      return '<section class="card room"><h2>' + esc(a.name) + "</h2><ul>" + a.entities.map(function (e) {
-        var on = e.state === "on";
-        return '<li data-id="' + esc(e.id) + '"><span' + (on ? ' class="on"' : "") + '><span class="dot"></span>' + esc(e.name) + '</span>' +
-          '<span class="state' + (on ? " on" : "") + '">' + esc(stateText(e)) + "</span></li>";
-      }).join("") + "</ul></section>";
+      return '<section class="card room"><h2>' + esc(a.name) + "</h2><ul>" + a.entities.map(row).join("") + "</ul></section>";
     }).join("") + "</div>";
   }
+
+  // Sends a command; a `confirm` grant answers 202 with a question first
+  function send(e, action, data, confirmId) {
+    busy[e.id] = true; delete errors[e.id]; render();
+    var body = { entity_id: e.id, action: action, data: data };
+    if (confirmId) body.confirm_id = confirmId;
+    return api("POST", "/commands", body).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (out) {
+        if (res.status === 202) {
+          busy[e.id] = false; render();
+          return window.confirm(out.prompt) ? send(e, action, data, out.confirm_id) : null;
+        }
+        busy[e.id] = false;
+        if (res.ok) {
+          // Show it now; the house's own report follows within a few seconds
+          e.state = action === "turn_off" ? "off" : "on";
+          if (data.brightness_pct) e.attrs.brightness = Math.round(data.brightness_pct * 2.55);
+          render();
+          clearTimeout(refreshTimer);
+          refreshTimer = setTimeout(function () { load().catch(function () {}); }, 2500);
+          return;
+        }
+        errors[e.id] = res.status === 403 ? "You can’t change this one." : res.status === 504 ? (out.error || "The house is offline.") + ". Try again." : "Didn’t work: " + (out.error || res.status) + ".";
+        render();
+      });
+    }).catch(function () { busy[e.id] = false; errors[e.id] = "Couldn’t reach the house. Try again."; render(); });
+  }
+
+  main.addEventListener("click", function (ev) {
+    var b = ev.target.closest("[data-toggle]"); if (!b || b.disabled) return;
+    var e = find(b.closest("li").dataset.id); if (!e) return;
+    send(e, e.state === "on" ? "turn_off" : "turn_on", {});
+  });
+  main.addEventListener("input", function (ev) {
+    if (!ev.target.matches("[data-dim]")) return;
+    ev.target.nextElementSibling.textContent = ev.target.value + "%";
+  });
+  main.addEventListener("change", function (ev) {
+    if (!ev.target.matches("[data-dim]")) return;
+    var e = find(ev.target.closest("li").dataset.id); if (!e) return;
+    send(e, "turn_on", { brightness_pct: Number(ev.target.value) });
+  });
 
   function gate(msg) {
     main.innerHTML = '<p class="status">' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button>';
@@ -91,7 +164,12 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
     return api("GET", "/home").then(function (res) {
       if (res.status === 403) return gate("Your account doesn’t have access to House yet.");
       if (!res.ok) throw new Error("Couldn’t load (" + res.status + "). Reload to try again.");
-      return res.json().then(render);
+      return res.json().then(function (h) {
+        // Don't redraw under someone mid-command or mid-drag
+        for (var id in busy) if (busy[id]) return;
+        if (document.activeElement && document.activeElement.matches && document.activeElement.matches("[data-dim]")) return;
+        home = h; render();
+      });
     });
   }
 

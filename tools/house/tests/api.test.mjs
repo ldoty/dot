@@ -1,77 +1,60 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { ISSUER, accessToken, forgedToken } from '../../../platform/tests/helpers/tokens.mjs';
-import { fakeTable } from '../../../platform/tests/helpers/fake-table.mjs';
-import { caller } from '../../../platform/tests/helpers/http.mjs';
+import { forgedToken } from '../../../platform/tests/helpers/tokens.mjs';
+import { KID, LUKE, ROUTES, audit, call, relay, seed, table, token } from './helpers/house.mjs';
 
-Object.assign(process.env, { TABLE: 'family-house', GROUP: 'family_house', ISSUER, CLIENT_ID: 'house-client', DOT_CLIENT_ID: 'house-via-dot' });
-const table = fakeTable({ pageSize: 2 }); // the API must follow pages
-const { handler, MANIFEST } = await import('../api/api.mjs');
+const { MANIFEST } = await import('../api/api.mjs');
+const grant = (sk, who, where, level) => table.put({ pk: 'GRANT', sk, who, where, level });
+const kid = (over) => token({ sub: KID, ...over });
+const dot = (sub = KID) => token({ sub, clientId: 'house-via-dot', via: 'dot' });
+const turn = (entity_id, action, extra = {}) => ({ entity_id, action, ...extra });
 
-const ROUTES = ['GET /home', 'GET /dot'];
-const KID = '11111111-1111-1111-1111-111111111111';
-const LUKE = '22222222-2222-2222-2222-222222222222';
-const token = ({ sub = LUKE, groups = ['family_house'], clientId = 'house-client', ...over } = {}) =>
-  accessToken({ clientId, sub, 'cognito:groups': groups, ...over });
-const admin = () => token({ groups: ['family_house', 'family_house:admin'] });
-const callApi = caller(handler, [...ROUTES, 'POST /home']); // POST only to prove Dot is refused
-const call = (m, p, b, t = admin()) => callApi(m, p, b, t);
-
-const light = (id, area, state = 'on') => ({ pk: 'ENTITY', sk: id, name: id, area, domain: 'light', state, attrs: { brightness: 255 }, updated: '2026-10-18T20:00:00Z' });
-
-beforeEach(() => {
-  table.clear();
-  table.put({ pk: 'AREA', sk: 'kitchen', name: 'Kitchen' });
-  table.put({ pk: 'AREA', sk: 'master_bedroom', name: 'Master Bedroom' });
-  table.put({ pk: 'AREA', sk: 'dining_room', name: 'Dining Room' });
-  table.put(light('light.kitchen_main', 'kitchen'));
-  table.put(light('light.kitchen_island_pendants', 'kitchen'));
-  table.put(light('light.master_bedroom_main', 'master_bedroom'));
-  table.put(light('light.dining_room_main', 'dining_room', 'off'));
-  table.put({ ...light('switch.lutron_smart_away', null, 'off'), domain: 'switch', attrs: {} });
-  table.put({ pk: 'RELAY', sk: 'CONN', connectionId: 'c1', lastSync: new Date().toISOString() });
-});
+beforeEach(seed);
 
 test('refuses missing, forged, wrong-group and other-tool tokens', async () => {
   assert.equal((await call('GET', '/home', undefined, null)).status, 401);
   assert.equal((await call('GET', '/home', undefined, forgedToken({ clientId: 'house-client', group: 'family_house' }))).status, 401);
   assert.equal((await call('GET', '/home', undefined, token({ groups: ['someone_else'] }))).status, 403);
   assert.equal((await call('GET', '/home', undefined, token({ clientId: 'other-tool' }))).status, 401);
+  assert.equal((await call('POST', '/commands', turn('light.kitchen_main', 'turn_off'), null)).status, 401);
+  assert.deepEqual(relay.sent, []);
 });
 
-test('an admin sees every room, by name, with Other last, all at control', async () => {
+// ---- reading ----
+
+test('an admin sees every room, by name, with Other last, all at control with their actions', async () => {
   const r = await call('GET', '/home');
   assert.equal(r.status, 200);
   assert.deepEqual(r.body.you, { admin: true });
   assert.deepEqual(r.body.areas.map((a) => a.name), ['Dining Room', 'Kitchen', 'Master Bedroom', 'Other']);
   assert.deepEqual(r.body.areas[1].entities.map((e) => e.id), ['light.kitchen_island_pendants', 'light.kitchen_main']);
-  assert.ok(r.body.areas.flatMap((a) => a.entities).every((e) => e.level === 'control'));
-  assert.deepEqual(r.body.relay.connected, true);
+  const all = r.body.areas.flatMap((a) => a.entities);
+  assert.ok(all.every((e) => e.level === 'control' && e.actions.turn_off));
+  assert.equal(r.body.relay.connected, true);
   assert.equal(r.body.relay.stale, false);
 });
 
-test('a member sees only what their grants allow', async () => {
+test('a member sees only what their grants allow, and actions only where they may control', async () => {
   table.put({ pk: 'GROUP', sk: 'kids', name: 'kids', members: [KID] });
-  table.put({ pk: 'GRANT', sk: 'g1', who: 'group:kids', where: 'area:kitchen', level: 'control' });
-  table.put({ pk: 'GRANT', sk: 'g2', who: `sub:${KID}`, where: 'entity:light.dining_room_main', level: 'read' });
-  const r = await call('GET', '/home', undefined, token({ sub: KID }));
+  grant('g1', 'group:kids', 'area:kitchen', 'control');
+  grant('g2', `sub:${KID}`, 'entity:light.dining_room_main', 'read');
+  const r = await call('GET', '/home', undefined, kid());
   assert.deepEqual(r.body.you, { admin: false });
-  assert.deepEqual(r.body.areas.map((a) => [a.name, a.entities.map((e) => `${e.id}:${e.level}`)]), [
-    ['Dining Room', ['light.dining_room_main:read']],
-    ['Kitchen', ['light.kitchen_island_pendants:control', 'light.kitchen_main:control']],
+  assert.deepEqual(r.body.areas.map((a) => [a.name, a.entities.map((e) => `${e.id}:${e.level}:${!!e.actions}`)]), [
+    ['Dining Room', ['light.dining_room_main:read:false']],
+    ['Kitchen', ['light.kitchen_island_pendants:control:true', 'light.kitchen_main:control:true']],
   ], 'no master bedroom, no Other');
 });
 
 test('a member with no grants sees nothing', async () => {
-  const r = await call('GET', '/home', undefined, token({ sub: KID }));
+  const r = await call('GET', '/home', undefined, kid());
   assert.equal(r.status, 200);
   assert.deepEqual(r.body.areas, []);
 });
 
 test('one room by id', async () => {
-  const r = await call('GET', '/home?area=kitchen');
-  assert.deepEqual(r.body.areas.map((a) => a.id), ['kitchen']);
+  assert.deepEqual((await call('GET', '/home?area=kitchen')).body.areas.map((a) => a.id), ['kitchen']);
   assert.equal((await call('GET', '/home?area=Kitchen!')).status, 400);
 });
 
@@ -84,17 +67,124 @@ test('says when the house hasn’t reported lately', async () => {
   assert.equal((await call('GET', '/home')).body.relay.stale, true, 'never synced');
 });
 
-test('Dot reads as the person asking, with their grants', async () => {
-  table.put({ pk: 'GRANT', sk: 'g1', who: `sub:${KID}`, where: 'area:kitchen', level: 'read' });
-  const dot = token({ sub: KID, clientId: 'house-via-dot', via: 'dot' });
-  const r = await call('GET', '/home', undefined, dot);
-  assert.equal(r.status, 200);
-  assert.deepEqual(r.body.areas.map((a) => a.id), ['kitchen']);
-  assert.deepEqual((await call('GET', '/dot', undefined, dot)).body, MANIFEST);
+// ---- commands ----
+
+test('an admin turns a light off: the relay gets it, it’s done, and it’s audited', async () => {
+  const r = await call('POST', '/commands', turn('light.kitchen_main', 'turn_off'));
+  assert.deepEqual([r.status, r.body], [200, { ok: true }]);
+  assert.equal(relay.sent.length, 1);
+  const sent = relay.sent[0];
+  assert.deepEqual({ ...sent, id: 'x', expires: 'x' }, { type: 'command', id: 'x', entity_id: 'light.kitchen_main', action: 'turn_off', data: {}, expires: 'x' });
+  assert.ok(sent.expires > Date.now() && sent.expires <= Date.now() + 5000, 'the relay drops it after five seconds');
+  const [row] = audit();
+  assert.deepEqual([row.who, row.via, row.entity_id, row.action, row.outcome], [LUKE, 'page', 'light.kitchen_main', 'turn_off', 'done']);
+  assert.ok(row.expires > Date.now() / 1000 + 364 * 86_400, 'kept a year');
 });
 
-test('Dot can’t change anything (yet)', async () => {
-  const r = await call('POST', '/home', {}, token({ clientId: 'house-via-dot', via: 'dot' }));
+test('brightness goes through as data', async () => {
+  assert.equal((await call('POST', '/commands', turn('light.kitchen_main', 'turn_on', { data: { brightness_pct: 40 } }))).status, 200);
+  assert.deepEqual(relay.sent[0].data, { brightness_pct: 40 });
+});
+
+test('a member controls only where granted: the kitchen, not the master bedroom', async () => {
+  grant('g1', `sub:${KID}`, 'area:kitchen', 'control');
+  grant('g2', `sub:${KID}`, '*', 'read');
+  assert.equal((await call('POST', '/commands', turn('light.kitchen_main', 'turn_off'), kid())).status, 200);
+  const r = await call('POST', '/commands', turn('light.master_bedroom_main', 'turn_off'), kid());
+  assert.deepEqual([r.status, r.body.error], [403, 'not allowed']);
+  assert.deepEqual(relay.sent.map((c) => c.entity_id), ['light.kitchen_main'], 'the denied one never reached the house');
+  assert.deepEqual(audit().map((a) => a.outcome).sort(), ['denied', 'done']);
+});
+
+test('read access isn’t control', async () => {
+  grant('g1', `sub:${KID}`, '*', 'read');
+  assert.equal((await call('POST', '/commands', turn('light.kitchen_main', 'turn_off'), kid())).status, 403);
+  assert.deepEqual(relay.sent, []);
+});
+
+test('only actions and data the device takes', async () => {
+  assert.equal((await call('POST', '/commands', turn('light.kitchen_main', 'toggle'))).status, 400);
+  assert.equal((await call('POST', '/commands', turn('switch.lutron_smart_away', 'turn_on', { data: { brightness_pct: 5 } }))).status, 400);
+  assert.equal((await call('POST', '/commands', turn('light.kitchen_main', 'turn_on', { data: { brightness_pct: { a: 1 } } }))).status, 400);
+  assert.equal((await call('POST', '/commands', turn('light.kitchen_main', 'turn_on', { data: { 'Bad-Key': 1 } }))).status, 400);
+  assert.equal((await call('POST', '/commands', turn('Light.Kitchen', 'turn_on'))).status, 400);
+  assert.equal((await call('POST', '/commands', turn('light.garage', 'turn_on'))).status, 404);
+  assert.deepEqual(relay.sent, []);
+});
+
+test('the relay’s ceiling has the last word, even over AWS', async () => {
+  // AWS believes the device takes `toggle`, but the ceiling on the relay doesn't list it
+  table.put({ ...table.get('ENTITY', 'light.kitchen_main'), actions: { toggle: [] } });
+  const r = await call('POST', '/commands', turn('light.kitchen_main', 'toggle'));
+  assert.deepEqual([r.status, r.body.error], [502, 'refused: toggle not allowed']);
+  assert.equal(audit()[0].outcome, 'failed');
+});
+
+test('Home Assistant failing is reported', async () => {
+  relay.error = 'Entity is unavailable';
+  const r = await call('POST', '/commands', turn('light.kitchen_main', 'turn_on'));
+  assert.deepEqual([r.status, r.body.error], [502, 'Entity is unavailable']);
+});
+
+test('offline or silent: 504, never queued', async () => {
+  table.put({ pk: 'RELAY', sk: 'CONN', connectionId: null, lastSync: null });
+  assert.deepEqual((await call('POST', '/commands', turn('light.kitchen_main', 'turn_off'))).status, 504);
+  table.put({ pk: 'RELAY', sk: 'CONN', connectionId: 'c1', lastSync: null });
+  relay.mode = 'gone';
+  assert.deepEqual((await call('POST', '/commands', turn('light.kitchen_main', 'turn_off'))).status, 504);
+  relay.mode = 'silent';
+  const r = await call('POST', '/commands', turn('light.kitchen_main', 'turn_off'));
+  assert.deepEqual([r.status, r.body.error], [504, 'The house didn’t answer']);
+  assert.deepEqual(audit().map((a) => a.outcome).sort(), ['offline', 'offline', 'timeout']);
+});
+
+test('confirm level: asks first, then runs with the confirmation, once', async () => {
+  grant('g1', `sub:${KID}`, 'area:kitchen', 'confirm');
+  const ask = await call('POST', '/commands', turn('light.kitchen_main', 'turn_off'), kid());
+  assert.equal(ask.status, 202);
+  assert.equal(ask.body.prompt, 'Turn off kitchen main?');
+  assert.deepEqual(relay.sent, [], 'nothing runs until confirmed');
+  const go = turn('light.kitchen_main', 'turn_off', { confirm_id: ask.body.confirm_id });
+  assert.equal((await call('POST', '/commands', go, kid())).status, 200);
+  assert.equal((await call('POST', '/commands', go, kid())).status, 400, 'single use');
+  assert.equal(relay.sent.length, 1);
+});
+
+test('a confirmation only fits the same person, the same command, within two minutes', async () => {
+  grant('g1', `sub:${KID}`, 'area:kitchen', 'confirm');
+  grant('g2', `sub:${LUKE}`, 'area:kitchen', 'confirm');
+  const ask = async () => (await call('POST', '/commands', turn('light.kitchen_main', 'turn_on', { data: { brightness_pct: 50 } }), kid())).body.confirm_id;
+  let id = await ask();
+  assert.equal((await call('POST', '/commands', turn('light.kitchen_main', 'turn_on', { data: { brightness_pct: 50 }, confirm_id: id }), token())).status, 400, 'someone else');
+  id = await ask();
+  assert.equal((await call('POST', '/commands', turn('light.kitchen_main', 'turn_on', { data: { brightness_pct: 100 }, confirm_id: id }), kid())).status, 400, 'other data');
+  id = await ask();
+  assert.equal((await call('POST', '/commands', turn('light.kitchen_island_pendants', 'turn_on', { data: { brightness_pct: 50 }, confirm_id: id }), kid())).status, 400, 'other device');
+  id = await ask();
+  table.put({ ...table.get('PENDING', id), until: Date.now() - 1 });
+  assert.equal((await call('POST', '/commands', turn('light.kitchen_main', 'turn_on', { data: { brightness_pct: 50 }, confirm_id: id }), kid())).status, 400, 'expired');
+  assert.deepEqual(relay.sent, []);
+});
+
+// ---- Dot ----
+
+test('Dot reads as the person asking, with their grants', async () => {
+  grant('g1', `sub:${KID}`, 'area:kitchen', 'read');
+  const r = await call('GET', '/home', undefined, dot());
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.areas.map((a) => a.id), ['kitchen']);
+  assert.deepEqual((await call('GET', '/dot', undefined, dot())).body, MANIFEST);
+});
+
+test('Dot sends commands as the person asking, within their grants, audited as Dot', async () => {
+  grant('g1', `sub:${KID}`, 'area:kitchen', 'control');
+  assert.equal((await call('POST', '/commands', turn('light.kitchen_main', 'turn_off'), dot())).status, 200);
+  assert.equal((await call('POST', '/commands', turn('light.master_bedroom_main', 'turn_off'), dot())).status, 403);
+  assert.deepEqual(audit().map((a) => [a.via, a.outcome]).sort(), [['dot', 'denied'], ['dot', 'done']]);
+});
+
+test('Dot can’t change anything else', async () => {
+  const r = await call('POST', '/home', {}, dot());
   assert.deepEqual([r.status, r.body.error], [403, 'read-only']);
 });
 
@@ -102,7 +192,8 @@ test('the routes in infra/api.tf match the handler', async () => {
   const tf = await readFile(new URL('../infra/api.tf', import.meta.url), 'utf8');
   const block = /routes = \[([\s\S]*?)\]/.exec(tf)[1];
   assert.deepEqual([...block.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort(), [...ROUTES].sort());
-  const relay = await readFile(new URL('../infra/relay.tf', import.meta.url), 'utf8');
-  assert.match(relay, /protocol_type\s+= "WEBSOCKET"/);
-  assert.doesNotMatch(relay, /authorization_type/, 'the relay has no token; the Lambda checks its key');
+  const relayTf = await readFile(new URL('../infra/relay.tf', import.meta.url), 'utf8');
+  assert.match(relayTf, /protocol_type\s+= "WEBSOCKET"/);
+  assert.match(relayTf, /relay_routes\s+= \["\$connect", "\$disconnect", "sync", "result", "\$default"\]/);
+  assert.doesNotMatch(relayTf, /authorization_type/, 'the relay has no token; the Lambda checks its key');
 });

@@ -1,5 +1,5 @@
 locals {
-  routes = ["GET /home", "GET /dot"]
+  routes = ["GET /home", "GET /dot", "POST /commands"]
 }
 
 # The tool's handler plus the platform's shared token check
@@ -13,6 +13,10 @@ data "archive_file" "api" {
   source {
     content  = file("${path.module}/../api/grants.mjs")
     filename = "grants.mjs"
+  }
+  source {
+    content  = file("${path.module}/../relay/protocol.mjs")
+    filename = "protocol.mjs"
   }
   source {
     content  = file("${path.module}/../../../platform/api/verify-token.mjs")
@@ -45,11 +49,26 @@ resource "aws_iam_role_policy" "api_table" {
   role = aws_iam_role.api.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["dynamodb:GetItem", "dynamodb:Query"] # stage 1 only reads
-      Resource = aws_dynamodb_table.main.arn
-    }]
+    Statement = [
+      {
+        # Reads everything; writes only confirmations (PENDING) and the audit trail (CMD#…)
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem", "dynamodb:Query"]
+        Resource = aws_dynamodb_table.main.arn
+      },
+      {
+        Effect    = "Allow"
+        Action    = ["dynamodb:PutItem", "dynamodb:DeleteItem"]
+        Resource  = aws_dynamodb_table.main.arn
+        Condition = { "ForAllValues:StringLike" = { "dynamodb:LeadingKeys" = ["PENDING", "CMD#*"] } }
+      },
+      {
+        # Hand a command to the relay's connection; nothing else on that API
+        Effect   = "Allow"
+        Action   = "execute-api:ManageConnections"
+        Resource = "${aws_apigatewayv2_api.relay.execution_arn}/${aws_apigatewayv2_stage.relay.name}/POST/@connections/*"
+      },
+    ]
   })
 }
 
@@ -70,6 +89,8 @@ resource "aws_lambda_function" "api" {
       ISSUER        = local.issuer
       CLIENT_ID     = module.app.client_id
       DOT_CLIENT_ID = module.app.delegated_client_id
+      # API Gateway's management endpoint for the relay's connection (https, not wss)
+      RELAY_ENDPOINT = "https://${aws_apigatewayv2_api.relay.id}.execute-api.${data.aws_region.current.region}.amazonaws.com/${aws_apigatewayv2_stage.relay.name}"
     }
   }
 }
@@ -84,7 +105,7 @@ resource "aws_apigatewayv2_api" "api" {
   protocol_type = "HTTP"
   cors_configuration {
     allow_origins = [trimsuffix(local.app_url, "/"), trimsuffix(local.dev_url, "/")]
-    allow_methods = ["GET"]
+    allow_methods = ["GET", "POST"]
     allow_headers = ["authorization", "content-type"]
     max_age       = 600
   }

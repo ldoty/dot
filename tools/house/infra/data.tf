@@ -16,6 +16,12 @@ resource "aws_dynamodb_table" "main" {
     type = "S"
   }
 
+  # Audit rows, confirmations and command results carry `expires` (epoch seconds)
+  ttl {
+    attribute_name = "expires"
+    enabled        = true
+  }
+
   point_in_time_recovery {
     enabled = true
   }

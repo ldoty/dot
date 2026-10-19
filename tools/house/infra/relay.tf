@@ -6,12 +6,12 @@
 #   aws ssm put-parameter --profile ldoty --type SecureString \
 #     --name /family/house/relay-key --value "$(openssl rand -hex 32)"
 #
-# Its role can read that key and write what the house reports: nothing else.
+# Its role can read that key and write what the house reports and how commands went: nothing else.
 
 locals {
   relay_key_param = "/family/house/relay-key"
   relay_key_arn   = "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter${local.relay_key_param}"
-  relay_routes    = ["$connect", "$disconnect", "sync", "$default"]
+  relay_routes    = ["$connect", "$disconnect", "sync", "result", "$default"]
 }
 
 data "aws_caller_identity" "current" {}
@@ -48,11 +48,11 @@ resource "aws_iam_role_policy" "relay" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Only the rows the house reports, and its connection (RELAY, AREA, ENTITY)
+        # Only the rows the house reports, its connection, and command results
         Effect    = "Allow"
         Action    = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:Query"]
         Resource  = aws_dynamodb_table.main.arn
-        Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = ["RELAY", "AREA", "ENTITY"] } }
+        Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = ["RELAY", "AREA", "ENTITY", "RESULT"] } }
       },
       { Effect = "Allow", Action = "ssm:GetParameter", Resource = local.relay_key_arn },
     ]

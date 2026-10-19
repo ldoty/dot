@@ -15,7 +15,7 @@ Page ┘          (grants)                                (dials out)     (ceili
 | Folder | What |
 |---|---|
 | `web/` | The page: a card per room, refreshed every 15 s while visible |
-| `api/` | `api.mjs` (signed in: `/home`, `/dot`), `relay-ws.mjs` (the relay’s WebSocket routes), `grants.mjs` (who may do what). `verify-token.mjs`, `dot-manifest.mjs` link to `platform/api/`; `protocol.mjs` links to `relay/` |
+| `api/` | `api.mjs` (signed in: `/home`, `/commands`, `/dot`), `relay-ws.mjs` (the relay’s WebSocket routes), `grants.mjs` (who may do what). `verify-token.mjs`, `dot-manifest.mjs` link to `platform/api/`; `protocol.mjs` links to `relay/` |
 | `relay/` | Runs at home, not in AWS: `relay.mjs`, `ceiling.json` (what’s exposed at all) and its check `ceiling.mjs`, `protocol.mjs` (messages, shared with the Lambda), `house-relay.service` |
 | `infra/` | OpenTofu root (state key `tools/house/terraform.tfstate`); `relay.tf` is the WebSocket API |
 | `scripts/` | `deploy-relay.sh`: copy `relay/` to the container and restart it |
@@ -26,9 +26,15 @@ Page ┘          (grants)                                (dials out)     (ceili
 | Route | Who | What |
 |---|---|---|
 | `GET /home[?area=]` | members, Dot | Rooms and devices the caller may read, each with their level; how fresh the picture is |
+| `POST /commands` | members, Dot | `{ entity_id, action, data?, confirm_id? }`: 200 done, 202 confirm first, 403 not theirs, 502 refused/failed, 504 offline. Never queued |
 | `GET /dot` | Dot | The manifest: `house_state` |
 | WebSocket `$connect` | the relay, `x-house-key` | Checked against SSM `/family/house/relay-key` |
 | WebSocket `sync` | the relay | A full snapshot (on connect, every 5 min) or changes |
+| WebSocket `result` | the relay | How a command went |
+
+A command: the API checks the person's grant and the device's actions, sends it to the relay's
+connection (it must run within 5 s), and waits for the `result`. The relay checks it against its
+own ceiling again, calls Home Assistant, and answers.
 
 ## Rows
 
@@ -36,7 +42,10 @@ Page ┘          (grants)                                (dials out)     (ceili
 |---|---|
 | `RELAY` / `CONN` | The relay’s connection id, `connectedAt`, `lastSync` |
 | `AREA` / `<area id>` | Room name, as Home Assistant has it |
-| `ENTITY` / `<entity id>` | `name`, `area`, `domain`, `state`, `attrs` (only the ceiling’s), `updated` |
+| `ENTITY` / `<entity id>` | `name`, `area`, `domain`, `state`, `attrs` (only the ceiling’s), `updated`, `actions` (from the ceiling) |
+| `RESULT` / `<command id>` | `ok`, `error`: the relay’s answer, read by the waiting API (expires in a day) |
+| `PENDING` / `<confirm id>` | A command waiting for its confirmation: same person, same command, 2 minutes, once |
+| `CMD#<UTC day>` / `<ISO>#<id>` | Audit: who, via (page/dot), device, action, data, outcome (done, denied, failed, offline, timeout). Kept a year |
 | `GRANT` / `<id>` | `{ who, where, level }` (see `api/grants.mjs`) |
 | `GROUP` / `<name>` | `members`: Cognito subs |
 
@@ -45,7 +54,7 @@ Page ┘          (grants)                                (dials out)     (ceili
 Two independent checks: the **ceiling** (`relay/ceiling.json`, enforced by the relay; AWS can’t
 change it) decides what exists at all, and **grants** (in the table) decide who may read or control
 what inside it. No grant, no access; admins have control everywhere. Dot reads with the asker’s
-own grants and, for now, can’t change anything.
+own grants, and sends commands the same way: `POST /commands` is the one change it may make.
 
 ## The relay
 

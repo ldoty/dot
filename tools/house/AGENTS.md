@@ -11,16 +11,18 @@ Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
   Adding a domain (lock, cover, camera…) is an access change: ask Luke.
 - **Grants only narrow.** No grant, no access; the highest matching level wins; admins have control.
   Areas are matched as they are now, so moving a device in Home Assistant moves its grants.
-- **Dot is read-only here until stage 2**, and then only `POST /commands`, within the person's grants.
-  Everything else from a `via: dot` token stays 403.
+- **Dot may only `POST /commands`**, within the person's grants. Everything else from a `via: dot`
+  token stays 403.
 - The relay's HA user is **non-admin**: its token can't change Home Assistant's setup.
   If the relay needs an admin-only HA command, find another way.
-- Commands are never queued for later (stage 2): if the relay is offline, the answer is 504.
+- Commands are never queued for later: if the relay is offline or silent, the answer is 504, and the
+  relay drops a command that arrives after its `expires` (5 s) or twice.
+- Every command, allowed or not, gets an audit row.
 
 ## Stages
 
-1. Relay + read-only (this): the page, `GET /home`, `GET /dot`.
-2. `POST /commands`: grants checked in the Lambda, ceiling re-checked by the relay, an audit row each.
+1. Relay + read-only: the page, `GET /home`, `GET /dot`. Done.
+2. `POST /commands`: grants checked in the Lambda, ceiling re-checked by the relay, an audit row each. Done.
 3. Dot's built-in `house_control`, with confirmation enforced in Dot's code (only after a new message from the person).
 4. Grants and groups editor, `GET /log`.
 

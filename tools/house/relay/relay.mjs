@@ -4,7 +4,9 @@
 // reachable from the internet.
 //
 // It reports what the ceiling exposes (ceiling.json): a full snapshot on connect and every
-// 5 minutes, and changed states batched about a second. Commands arrive in stage 2.
+// 5 minutes, and changed states batched about a second. It runs commands from AWS only after
+// checking them against its own ceiling again: AWS has already checked the person's grants, but
+// the ceiling is the line AWS can't move. A command that arrives late, or twice, is dropped.
 //
 // Config (environment, set by house-relay.service):
 //   HA_URL           ws://<home assistant>/api/websocket
@@ -13,8 +15,8 @@
 //   HOUSE_KEY_FILE   file holding the device key (same value as SSM /family/house/relay-key)
 //   CEILING          path to ceiling.json (default: next to this file)
 import { readFileSync } from 'node:fs';
-import { validateCeiling, exposed, reportState } from './ceiling.mjs';
-import { MAX_ENTITIES } from './protocol.mjs';
+import { validateCeiling, exposed, refuseCommand, reportState } from './ceiling.mjs';
+import { MAX_ENTITIES, parseCommand } from './protocol.mjs';
 
 const env = process.env;
 const ceiling = validateCeiling(JSON.parse(readFileSync(env.CEILING ?? new URL('./ceiling.json', import.meta.url), 'utf8')));
@@ -143,6 +145,35 @@ function queueChange(id) {
   }, BATCH_MS);
 }
 
+const seen = new Set(); // recent command ids: a replayed command never runs twice
+
+async function runCommand(raw) {
+  let cmd;
+  try {
+    cmd = parseCommand(JSON.parse(raw));
+  } catch (e) {
+    return log('aws: ignored a malformed message', e.message);
+  }
+  const answer = (ok, error) => {
+    log(`command ${cmd.id} ${cmd.action} ${cmd.entity_id}: ${ok ? 'done' : error}`);
+    send({ type: 'result', id: cmd.id, ok, ...(ok ? {} : { error }) });
+  };
+  if (seen.has(cmd.id)) return log(`command ${cmd.id}: already seen, dropped`);
+  seen.add(cmd.id);
+  if (seen.size > 500) seen.delete(seen.values().next().value);
+  if (Date.now() > cmd.expires) return answer(false, 'arrived too late');
+  const why = refuseCommand(ceiling, cmd, registry.areaOf.get(cmd.entity_id) ?? null);
+  if (why) return answer(false, `refused: ${why}`);
+  if (!ha) return answer(false, 'Home Assistant is offline');
+  const [domain, service] = [cmd.entity_id.split('.')[0], cmd.action];
+  try {
+    await haCall({ type: 'call_service', domain, service, service_data: cmd.data, target: { entity_id: cmd.entity_id } });
+    answer(true);
+  } catch (e) {
+    answer(false, e.message.slice(0, 200));
+  }
+}
+
 function connectAws() {
   // Node's WebSocket sends extra headers; the key never goes in the URL, where it would be logged
   const ws = new WebSocket(env.HOUSE_WS_URL, { headers: { 'x-house-key': houseKey } });
@@ -152,7 +183,7 @@ function connectAws() {
     log('aws: connected');
     sendFull();
   };
-  ws.onmessage = (ev) => log('aws: message', String(ev.data).slice(0, 200)); // commands: stage 2
+  ws.onmessage = (ev) => runCommand(String(ev.data));
   ws.onclose = (ev) => {
     if (aws === ws) aws = null;
     log(`aws: closed (${ev.code}), retrying in ${awsBackoff / 1000} s`);
