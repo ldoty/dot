@@ -62,8 +62,19 @@ export function makeAutomations({ db, table, get, all, members, admins, people, 
     const [rows, entities, grants, groups, ran, inHouse, admin, names] = await Promise.all([
       all('AUTO'), all('ENTITY'), all('GRANT'), people.groups(), all('RAN'), members(), admins(), people.names(),
     ]);
+    // One row that no longer reads (saved in an older shape) is left out and logged, never allowed to stop
+    // the rest from showing or reaching the relay
+    const readable = rows.filter((r) => {
+      try {
+        parseAutomation(r);
+        return true;
+      } catch (e) {
+        console.error('automation unreadable, left out', r.sk, e.message);
+        return false;
+      }
+    });
     return {
-      rows, grants, ran: new Map(ran.map((r) => [r.sk, r])),
+      rows: readable, grants, ran: new Map(ran.map((r) => [r.sk, r])),
       groups: groups.map((g) => ({ name: g.id, members: g.members })), // grants name a group by id
       entities: new Map(entities.map((e) => [e.sk, e])),
       members: new Set(inHouse.map((p) => p.sub)), admins: new Set(admin.map((p) => p.sub)),

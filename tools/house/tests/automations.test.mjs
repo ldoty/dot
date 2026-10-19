@@ -438,3 +438,12 @@ test('a text counts toward its owner’s daily limit on what Dot-y sends; past i
   assert.match(r.why, /today's limit of 50 texts and emails/);
   assert.equal(audit().find((x) => x.action === 'notify').outcome, 'failed');
 });
+
+test('one automation saved in an older shape is left out, never stopping the rest', async () => {
+  const id = (await call('POST', '/automations', MORNING)).body.id;
+  table.put({ pk: 'AUTO', sk: 'oldshape01', ...SAVED, repeat: undefined, days: ['mon'], enabled: true, owner: LUKE, rev: 1 });
+  const r = await call('GET', '/automations');
+  assert.deepEqual([r.status, r.body.map((a) => a.id)], [200, [id]]);
+  await call('PATCH', `/automations/${id}`, { name: 'Still sent' });
+  assert.deepEqual(runnable(), ['Still sent']);
+});
