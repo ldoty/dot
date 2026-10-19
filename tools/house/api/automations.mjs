@@ -6,7 +6,8 @@
 //   PUT    /automations/{id}     { …the same, rev }  -> the automation   rev-checked (409 + current)
 //   DELETE /automations/{id}                         -> { id }
 // Who may: making or changing one needs `control` (not just ask-first) on every device in it, now:
-// it will run with no one there to ask. Only its owner (whoever last saved it) or an admin may change
+// it will run with no one there to ask; one set off by a change needs `read` on what changes (a
+// person's home/away). Its texts go only to its owner (api/notify.mjs). Only its owner (whoever last saved it) or an admin may change
 // or delete it; pausing needs no control, so anyone who could change it can always stop it.
 // From Dot, every change first answers 202 { confirm_id, prompt }, and goes ahead only when sent again
 // with ?confirm_id= (Dot's code sends that only after the person's own reply): same person, same
@@ -59,6 +60,9 @@ export function makeAutomations({ db, table, get, all, members, admins, people, 
   function stopped(w, a) {
     if (!w.members.has(a.owner)) return `${w.nameOf(a.owner)} no longer uses House`;
     const isAdmin = w.admins.has(a.owner);
+    const on = a.when?.changes;
+    if (on && !w.entities.has(on)) return `${on} isn’t in the house anymore`;
+    if (on && !atLeast(level(w, a.owner, isAdmin, on), 'read')) return `${w.nameOf(a.owner)} can’t see ${w.entities.get(on).name} anymore`;
     for (const x of a.actions) {
       if (!w.entities.has(x.entity_id)) return `${x.entity_id} isn’t in the house anymore`;
       if (!atLeast(level(w, a.owner, isAdmin, x.entity_id), 'control')) return `${w.nameOf(a.owner)} can’t control ${w.entities.get(x.entity_id).name} anymore`;
@@ -106,6 +110,10 @@ export function makeAutomations({ db, table, get, all, members, admins, people, 
 
   /** Is the person allowed to put this automation in the house? null, or a response */
   function refuse(w, a, sub, isAdmin) {
+    // What sets it off must be something they can see: else its texts would tell them what they can't
+    const on = a.when.changes;
+    if (on && !w.entities.has(on)) return json(404, { error: `unknown device ${on}` });
+    if (on && !atLeast(level(w, sub, isAdmin, on), 'read')) return json(403, { error: `not allowed: ${w.entities.get(on).name}` });
     for (const x of a.actions) {
       const e = w.entities.get(x.entity_id);
       if (!e) return json(404, { error: `unknown device ${x.entity_id}` });
@@ -162,7 +170,7 @@ export function makeAutomations({ db, table, get, all, members, admins, people, 
     async list(sub, isAdmin) {
       const w = await world();
       const visible = w.rows.filter((r) => isAdmin || r.owner === sub
-        || r.actions.every((x) => atLeast(level(w, sub, isAdmin, x.entity_id), 'read')));
+        || [...r.actions.map((x) => x.entity_id), ...(r.when?.changes ? [r.when.changes] : [])].every((id) => atLeast(level(w, sub, isAdmin, id), 'read')));
       return json(200, visible.map((r) => out(w, r, sub, isAdmin)).sort((a, b) => a.name.localeCompare(b.name)));
     },
 

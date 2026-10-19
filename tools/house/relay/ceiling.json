@@ -1,7 +1,7 @@
 {
   "expose": {
     "areas": ["kitchen", "living_room", "dining_room", "office", "lukes_office", "master_bedroom", "flex_room_bedroom"],
-    "entities": ["switch.lutron_smart_away"],
+    "entities": ["switch.lutron_smart_away", "person.luke_doty", "person.amber_brackett"],
     "exclude": []
   },
   "domains": {
@@ -12,6 +12,10 @@
     "switch": {
       "attributes": [],
       "actions": { "turn_on": [], "turn_off": [] }
+    },
+    "person": {
+      "attributes": [],
+      "actions": {}
     }
   }
 }

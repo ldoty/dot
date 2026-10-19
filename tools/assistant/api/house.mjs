@@ -39,8 +39,10 @@ export const AUTOMATION_OPS = ['create', 'update', 'pause', 'resume', 'delete'];
 
 export const automationDefinition = {
   name: 'house_automation',
-  description: 'House: make, change, pause, resume or delete an automation, something the house does by itself at a time or around sunrise/sunset '
-    + '(e.g. every weekday at 6:00 turn on the kitchen lights). As the person asking: they need control of every device in it. Use house_state for device ids and '
+  description: 'House: make, change, pause, resume or delete an automation, something the house does by itself at a time, around sunrise/sunset, '
+    + 'or when something changes, like a person leaving or coming home (e.g. every weekday at 6:00 turn on the kitchen lights; when Luke leaves home, text him). '
+    + 'It can switch lights and switches, and text the person who makes it (only them). As the person asking: they need control of every device it switches, '
+    + 'and to be able to see what sets it off. Use house_state for device and person ids and '
     + 'house_automations for automation ids. update changes only the fields given (actions, if given, replace them all). It always asks the person first: '
     + 'ask them in plain words and wait for their reply; only if they agree, call again with the same op (and automation_id) and confirm: true.',
   input_schema: {
@@ -51,6 +53,9 @@ export const automationDefinition = {
       name: { type: 'string', description: 'Short name, e.g. “Kitchen lights on weekday mornings”' },
       time: { type: 'string', description: 'At a time: "HH:MM", 24-hour, the house’s local time. Or use sun' },
       sun: { type: 'string', enum: ['sunrise', 'sunset'], description: 'Around sunrise or sunset instead of a time' },
+      when_changes: { type: 'string', description: 'Instead of a time: when this device or person (id from house_state, e.g. person.luke_doty) changes to `to`' },
+      to: { type: 'string', enum: ['home', 'not_home', 'on', 'off'], description: 'With when_changes: not_home is leaving home, home is coming home' },
+      notify: { type: 'string', description: 'Text this to the person making it (only them) each time it runs: plain words, no links, up to 160 characters' },
       offset_minutes: { type: 'integer', description: 'With sun: minutes before (negative) or after, -180 to 180' },
       days: { type: 'array', items: { type: 'string' }, description: 'Some of sun, mon, tue, wed, thu, fri, sat; leave out for every day' },
       actions: {
@@ -79,10 +84,13 @@ export const automationDefinition = {
 function automationFields(i) {
   const out = {};
   if (i.name !== undefined) out.name = i.name;
-  if (i.time !== undefined && i.sun !== undefined) throw new Error('Give time or sun, not both.');
+  if ([i.time, i.sun, i.when_changes].filter((x) => x !== undefined).length > 1) throw new Error('Give one of time, sun or when_changes.');
+  if ((i.when_changes === undefined) !== (i.to === undefined)) throw new Error('when_changes and to go together.');
   if (i.offset_minutes !== undefined && i.sun === undefined) throw new Error('offset_minutes goes with sun.');
   if (i.time !== undefined) out.when = { at: i.time };
   if (i.sun !== undefined) out.when = { sun: i.sun, offset: i.offset_minutes ?? 0 };
+  if (i.when_changes !== undefined) out.when = { changes: i.when_changes, to: i.to };
+  if (i.notify !== undefined) out.notify = i.notify ? { message: i.notify } : null;
   if (i.days !== undefined) {
     if (!i.days.length || i.days.some((d) => !DAYS.includes(d))) throw new Error(`days: some of ${DAYS.join(', ')}`);
     out.days = i.days;
@@ -132,7 +140,7 @@ export function makeHouse({ tokenFor, apiUrl, clientId, user, channel = 'web', a
       } else {
         const fields = automationFields(input);
         if (op === 'create') {
-          if (!fields.name || !fields.when || !fields.actions) throw new Error('create needs name, time or sun, and actions.');
+          if (!fields.name || !fields.when || !(fields.actions?.length || fields.notify)) throw new Error('create needs name, time, sun or when_changes, and actions or notify.');
           req = { method: 'POST', path: '/automations', body: { days: DAYS, ...fields } };
         } else {
           if (!/^[a-z0-9]{8,24}$/.test(id ?? '')) throw new Error('automation_id: from house_automations');
@@ -142,7 +150,7 @@ export function makeHouse({ tokenFor, apiUrl, clientId, user, channel = 'web', a
             if (!res.ok) throw new Error(`House answered ${res.status}${out.error ? `: ${out.error}` : ''}`);
             const cur = out.find((a) => a.id === id);
             if (!cur) throw new Error('No automation with that id that this person can see.');
-            const base = { name: cur.name, when: cur.when, days: cur.days, actions: cur.actions.map(({ entity_id, action, data }) => ({ entity_id, action, data })), enabled: cur.enabled, rev: cur.rev };
+            const base = { name: cur.name, when: cur.when, days: cur.days, actions: cur.actions.map(({ entity_id, action, data }) => ({ entity_id, action, data })), notify: cur.notify ?? null, enabled: cur.enabled, rev: cur.rev };
             const next = op === 'update' ? { ...base, ...fields } : { ...base, enabled: op === 'resume' };
             req = { method: 'PUT', path: `/automations/${id}`, body: next };
           }

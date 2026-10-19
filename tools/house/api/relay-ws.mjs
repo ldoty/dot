@@ -6,7 +6,8 @@
 //   sync         what the house reports (relay/protocol.mjs). Only the current connection may sync
 //   result       how a command went, for the API Lambda waiting on it (api.mjs)
 //   ran          how an automation's run went (automation.mjs): kept as its last run, and an audit
-//                row per action, like a command's
+//                row per action, like a command's. One that texts its owner hands that to the notify
+//                Lambda (api/notify.mjs), which decides from the stored automation whether and what
 //   $default     anything else is refused
 // The relay has already cut everything to the ceiling; this stores it as given, checked field by
 // field. Its role can only read that key and write these rows, so a leaked key can paint a false
@@ -54,8 +55,8 @@ async function keys(table, pk) {
   return out;
 }
 
-/** deps: table, relayKey() -> the key, now() -> Date */
-export function createRelayWs({ table, relayKey, now = () => new Date() }) {
+/** deps: table, relayKey() -> the key, now() -> Date, notify({ id, key, at }) (asynchronous: never waited on for the text) */
+export function createRelayWs({ table, relayKey, now = () => new Date(), notify = async () => {} }) {
   const current = async () => (await db.send(new GetCommand({ TableName: table, Key: { pk: 'RELAY', sk: 'CONN' } }))).Item;
 
   return async (event) => {
@@ -109,6 +110,13 @@ export function createRelayWs({ table, relayKey, now = () => new Date() }) {
         const [auto, names] = await Promise.all([item('AUTO', r.id), Promise.all(r.results.map(async (x) => (await item('ENTITY', x.entity_id))?.name ?? null))]);
         const ok = r.results.every((x) => x.ok);
         await db.send(new PutCommand({ TableName: table, Item: { pk: 'RAN', sk: r.id, at: r.at, key: r.key, ok, results: r.results } }));
+        if (r.notify) {
+          try {
+            await notify({ id: r.id, key: r.key, at: r.at });
+          } catch (e) {
+            console.warn('notify not handed over', r.id, e.name ?? e.message);
+          }
+        }
         const expires = Math.floor(now().getTime() / 1000) + 365 * 86_400;
         await Promise.all(r.results.map((x, i) => db.send(new PutCommand({
           TableName: table,
@@ -162,4 +170,12 @@ async function relayKeyFromSsm() {
   return cachedKey;
 }
 
-export const handler = createRelayWs({ table: process.env.TABLE, relayKey: relayKeyFromSsm });
+// The notify Lambda, invoked asynchronously (only in Lambda)
+let lambda;
+async function notifyLive(payload) {
+  const { LambdaClient, InvokeCommand } = await import('@aws-sdk/client-lambda');
+  lambda ??= new LambdaClient({});
+  await lambda.send(new InvokeCommand({ FunctionName: process.env.NOTIFY_FUNCTION, InvocationType: 'Event', Payload: Buffer.from(JSON.stringify(payload)) }));
+}
+
+export const handler = createRelayWs({ table: process.env.TABLE, relayKey: relayKeyFromSsm, notify: notifyLive });

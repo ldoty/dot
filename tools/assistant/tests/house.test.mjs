@@ -221,7 +221,7 @@ test('changing one keeps what wasn’t mentioned; pausing and deleting ask too',
   assert.equal(JSON.parse(await house.automation({ op: 'delete', automation_id: id })).ask_them, 'Delete the automation “Porch”?');
   assert.equal(table.get('AUTO', id).when.sun, 'sunset', 'nothing changed without a yes');
   await assert.rejects(house.automation({ op: 'update', automation_id: 'nosuchone1', time: '07:00' }), /No automation with that id/);
-  await assert.rejects(house.automation({ op: 'create', name: 'x', time: '06:00', sun: 'sunrise', actions: MORNING.actions }), /time or sun, not both/);
+  await assert.rejects(house.automation({ op: 'create', name: 'x', time: '06:00', sun: 'sunrise', actions: MORNING.actions }), /one of time, sun or when_changes/);
   await assert.rejects(house.automation({ ...MORNING, days: ['monday'] }), /days/);
 });
 
@@ -238,4 +238,16 @@ test('a confirmation fits only the automation it asked about', async () => {
   await c.say('yes');
   assert.match(c.results().at(-1).content, /Nothing like that is waiting/);
   assert.ok(table.get('AUTO', id) && table.get('AUTO', other));
+});
+
+test('an automation set off by someone leaving home, that texts: asked about in words, saved as asked', async () => {
+  table.put({ pk: 'ENTITY', sk: 'person.luke_doty', name: 'Luke Doty', area: null, domain: 'person', state: 'home', attrs: {}, updated: '2026-10-19T17:00:00Z', actions: {} });
+  const { house } = dotFor(LUKE, ADMIN);
+  const input = { op: 'create', name: 'Garage check', when_changes: 'person.luke_doty', to: 'not_home', notify: 'You left: is the garage shut?' };
+  const asked = JSON.parse(await house.automation(input));
+  assert.equal(asked.ask_them, 'Save “Garage check”? When Luke Doty leaves home: text “You left: is the garage shut?”.');
+  assert.deepEqual(asked.body.when, { changes: 'person.luke_doty', to: 'not_home' });
+  await assert.rejects(house.automation({ ...input, time: '06:00' }), /one of time, sun or when_changes/);
+  await assert.rejects(house.automation({ ...input, to: undefined }), /go together/);
+  await assert.rejects(house.automation({ ...input, notify: 'see www.example.com' }), /no links/);
 });

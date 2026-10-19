@@ -24,6 +24,9 @@ Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
 - Commands are never queued for later: if the relay is offline or silent, the answer is 504, and the
   relay drops a command that arrives after its `expires` (5 s) or twice.
 - Every command, allowed or not, gets an audit row.
+- **Texts from automations go only to the automation's owner**, decided in AWS from the stored
+  automation (never from what the relay says), once per run, at most 10 a day each, no links.
+  What sets one off must be inside the ceiling (the relay checks) and readable by its owner (AWS checks).
 - The relay must recover on its own after a power cut: its unit waits for a default route
   (network-online.target doesn't wait in the container), and it exits after 2 minutes without a
   working connection to Home Assistant or AWS so systemd restarts it. On 2026-10-19 a relay that
@@ -38,6 +41,14 @@ Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
    the family's (`platform/family`); grants name them by id.
 5. Automations: at a time or around sunrise/sunset, on chosen days; made through Dot
    (`house_automation`), paused or deleted on the page, run by the relay. Done.
+6. Who's home: `person.*` in the ceiling (state only: home / not_home; never the phone trackers
+   behind them, which carry IP, MAC and access point). Automations set off by a change ("when Luke
+   leaves home") and texts to the automation's owner (`api/notify.mjs`). Done.
+
+People in Home Assistant, and the phone each follows (UniFi device trackers, enabled by hand; the
+rest of UniFi's client trackers stay disabled): `person.luke_doty` ← `device_tracker.lukes_iphone_2`,
+`person.amber_brackett` ← `device_tracker.iphone` (a private Wi-Fi address: if her iPhone rotates it,
+link the new tracker). A person's home/away is someone's whereabouts: grant `read` on it on purpose.
 
 What syncs by itself: states, names, and areas (grants follow a device that moves). What doesn't, on
 purpose: a new area or a new domain appears only once it's in `relay/ceiling.json` (then `deploy-relay.sh`).

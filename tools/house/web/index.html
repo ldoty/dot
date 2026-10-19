@@ -98,6 +98,7 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
   var pct = function (e) { return typeof e.attrs.brightness === "number" ? Math.max(1, Math.round(e.attrs.brightness / 2.55)) : null; };
 
   function stateText(e) {
+    if (e.domain === "person") return e.state === "home" ? "Home" : e.state === "not_home" ? "Away" : e.state === "unknown" ? "Not sure" : e.state;
     if (e.state === "unavailable" || e.state === "unknown") return "Not responding";
     if (e.state !== "on") return e.state === "off" ? "Off" : e.state;
     return pct(e) !== null ? "On · " + pct(e) + "%" : "On";
@@ -279,7 +280,7 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
     html += '<section class="card"><h3>Groups</h3><p class="status">Groups like “Kids” are shared by every family tool. Family admins manage them at <a href="https://dot-y.co/family">dot-y.co/family</a>; give a group access here.</p></section>';
 
     html += '<section class="card"><h3>Recent activity</h3><ul class="rules log">' + (activity.length ? activity.slice(0, 50).map(function (a) {
-      var verb = (a.action === "turn_off" ? "turned off " : "turned on ") + (a.name || a.entity_id) + (a.data && a.data.brightness_pct ? " at " + a.data.brightness_pct + "%" : "");
+      var verb = a.action === "notify" ? "got a text" : (a.action === "turn_off" ? "turned off " : "turned on ") + (a.name || a.entity_id) + (a.data && a.data.brightness_pct ? " at " + a.data.brightness_pct + "%" : "");
       var how = DONE[a.outcome] === undefined ? a.outcome : DONE[a.outcome];
       var through = a.via === "dot" ? " · through Dot" : a.via === "automation" ? " · automation “" + (a.automation || "removed") + "”" : "";
       return '<li><span class="what' + (a.outcome === "done" ? "" : " denied") + '">' + esc(a.who ? personName(a.who) : "Someone") + " " + esc(verb) + (how ? " — " + esc(how) : "") + "</span><small>" + esc(when(a.at)) + esc(through) + "</small></li>";

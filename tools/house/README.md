@@ -77,6 +77,15 @@ Home Assistant automations, which would need an admin HA token. AWS sends the re
 leaving out any whose owner left House or lost `control` of a device in it. Each runs once, within
 5 minutes of its time or not at all, and every action is checked against the ceiling as it runs.
 
+### Who's home, and texts
+
+`person.luke_doty` and `person.amber_brackett` (Home Assistant people, each following their phone on the
+Wi-Fi through UniFi) are in the ceiling as **home** or **not_home**, nothing more. An automation can be set off
+by one changing (“when Luke leaves home”; never from unavailable/unknown, so a restart isn't leaving) and can
+text its owner. The relay reports the run; `family-house-notify` (`api/notify.mjs`) checks the stored
+automation may still run, and texts its own message to its owner's verified phone, once per run and at most
+10 a day (`NOTIFIED` rows, kept 2 days).
+
 ## The relay
 
 A Debian container on the home server (Proxmox CT 102 `relay`), Node 22, user `relay`. It holds:

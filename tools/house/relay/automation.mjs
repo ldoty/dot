@@ -1,13 +1,20 @@
-// House automations: "every weekday at 6:00, turn on the kitchen lights". Shared by the relay
+// House automations: "every weekday at 6:00, turn on the kitchen lights", "when Luke leaves home, text
+// him". Shared by the relay
 // (relay.mjs runs them at home, so they work with the internet down) and the Lambda (api/automation.mjs
 // is a symlink here), so both sides check the same shape and agree on what one says.
 //
 // An automation:
 //   { name, when, days, actions, enabled }
 //   when     { at: 'HH:MM' }  or  { sun: 'sunrise' | 'sunset', offset: minutes, -180…180 }
-//            in the house's own time zone (Home Assistant's), so 6:00 stays 6:00 across DST
+//            in the house's own time zone (Home Assistant's), so 6:00 stays 6:00 across DST;
+//            or { changes: entity_id, to: state }: when that device (or person) changes to that state,
+//            e.g. person.luke_doty to not_home. Never from unavailable or unknown, so a restart of Home
+//            Assistant isn't "leaving home"
 //   days     which days it runs: some of DAYS
-//   actions  1–MAX_ACTIONS commands, each { entity_id, action, data } as POST /commands takes them
+//   actions  0–MAX_ACTIONS commands, each { entity_id, action, data } as POST /commands takes them
+//   notify   { message } or null: text the automation's owner (and only them) this, from AWS
+//            (api/notify.mjs); no links, ever (the texting campaign is registered without them)
+// It must do something: an action or a notify.
 // Who may make one and whether it's allowed to run is decided in AWS (api/automations.mjs); the relay
 // runs only what AWS last sent it, and checks every action against its own ceiling again when it runs.
 import { ID, KEY, parseData } from './protocol.mjs';
@@ -19,6 +26,10 @@ export const MAX_NAME = 60;
 // many minutes after; never later, so a 6 AM light doesn't come on at noon after a power cut
 export const LATE_MIN = 5;
 export const AUTO_ID = /^[a-z0-9]{8,24}$/;
+export const MAX_MESSAGE = 160;
+const STATE = /^[a-z_]{1,20}$/;
+// Anything that reads as a web address: texts never carry links
+const LINKISH = /https?:|www\.|\b[\w-]+\.(com|co|net|org|io|app|ly|me|us|info|biz)\b/i;
 
 /** An automation from a request or a message, checked and copied field by field; throws with a reason */
 export function parseAutomation(a) {
@@ -28,19 +39,23 @@ export function parseAutomation(a) {
   if (!name || name.length > MAX_NAME) bad('name');
   let when;
   const w = a.when;
-  if (w && typeof w.at === 'string' && w.sun === undefined) {
+  if (w && typeof w.at === 'string' && w.sun === undefined && w.changes === undefined) {
     const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(w.at);
     if (!m) bad('when.at: HH:MM, 24-hour');
     when = { at: w.at };
-  } else if (w && (w.sun === 'sunrise' || w.sun === 'sunset') && w.at === undefined) {
+  } else if (w && (w.sun === 'sunrise' || w.sun === 'sunset') && w.at === undefined && w.changes === undefined) {
     const offset = w.offset ?? 0;
     if (!Number.isInteger(offset) || Math.abs(offset) > 180) bad('when.offset: whole minutes, -180 to 180');
     when = { sun: w.sun, offset };
-  } else bad('when: { at } or { sun, offset }');
+  } else if (w && typeof w.changes === 'string' && w.at === undefined && w.sun === undefined) {
+    if (!ID.test(w.changes) || !STATE.test(w.to ?? '')) bad('when: { changes: entity id, to: state }');
+    when = { changes: w.changes, to: w.to };
+  } else bad('when: { at }, { sun, offset } or { changes, to }');
   const days = a.days ?? DAYS;
   if (!Array.isArray(days) || !days.length || days.some((d) => !DAYS.includes(d)) || new Set(days).size !== days.length) bad('days');
-  if (!Array.isArray(a.actions) || !a.actions.length || a.actions.length > MAX_ACTIONS) bad(`actions: 1–${MAX_ACTIONS}`);
-  const actions = a.actions.map((x, i) => {
+  const list = a.actions ?? [];
+  if (!Array.isArray(list) || list.length > MAX_ACTIONS) bad(`actions: up to ${MAX_ACTIONS}`);
+  const actions = list.map((x, i) => {
     if (!x || !ID.test(x.entity_id ?? '') || !KEY.test(x.action ?? '')) bad(`actions[${i}]`);
     try {
       return { entity_id: x.entity_id, action: x.action, data: parseData(x.data) };
@@ -48,12 +63,20 @@ export function parseAutomation(a) {
       return bad(`actions[${i}].${e.message}`);
     }
   });
+  let notify = null;
+  if (a.notify !== undefined && a.notify !== null) {
+    const message = typeof a.notify?.message === 'string' ? a.notify.message.trim() : '';
+    if (!message || message.length > MAX_MESSAGE) bad(`notify.message: up to ${MAX_MESSAGE} characters`);
+    if (LINKISH.test(message)) bad('notify.message: no links');
+    notify = { message };
+  }
+  if (!actions.length && !notify) bad('actions: it must do something (an action, or notify)');
   if (a.enabled !== undefined && typeof a.enabled !== 'boolean') bad('enabled');
-  return { name, when, days: DAYS.filter((d) => days.includes(d)), actions, enabled: a.enabled ?? true };
+  return { name, when, days: DAYS.filter((d) => days.includes(d)), actions, notify, enabled: a.enabled ?? true };
 }
 
 /** The same automation, as stable text: two are the same when this is */
-export const canonical = (a) => JSON.stringify([a.name, a.when, a.days, a.actions.map((x) => [x.entity_id, x.action, Object.entries(x.data).sort()]), a.enabled]);
+export const canonical = (a) => JSON.stringify([a.name, a.when, a.days, a.actions.map((x) => [x.entity_id, x.action, Object.entries(x.data).sort()]), a.notify ?? null, a.enabled]);
 
 // ---- in words ----
 
@@ -63,8 +86,16 @@ function clock(hhmm) {
 }
 const DAY_NAMES = { sun: 'Sunday', mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday' };
 
-export function describeWhen({ when, days }) {
+// A person's states read as coming and going; anything else as what it changes to
+const CHANGE = { not_home: 'leaves home', home: 'comes home', on: 'turns on', off: 'turns off' };
+
+export function describeWhen({ when, days }, nameOf = (id) => id) {
   const set = days.join(',');
+  if (when.changes) {
+    const only = set === DAYS.join(',') ? '' : set === 'mon,tue,wed,thu,fri' ? ' on a weekday' : set === 'sun,sat' ? ' on a weekend'
+      : ` on ${days.length > 1 ? `${days.slice(0, -1).map((d) => DAY_NAMES[d]).join(', ')} or ${DAY_NAMES[days.at(-1)]}` : DAY_NAMES[days[0]]}`;
+    return `When ${nameOf(when.changes)} ${CHANGE[when.to] ?? `changes to ${when.to.replace(/_/g, ' ')}`}${only}`;
+  }
   const which = set === DAYS.join(',') ? 'Every day' : set === 'mon,tue,wed,thu,fri' ? 'Every weekday' : set === 'sun,sat' ? 'Every weekend day'
     : `Every ${days.length > 1 ? `${days.slice(0, -1).map((d) => DAY_NAMES[d]).join(', ')} and ${DAY_NAMES[days.at(-1)]}` : DAY_NAMES[days[0]]}`;
   if (when.at) return `${which} at ${clock(when.at)}`;
@@ -81,7 +112,8 @@ function describeAction({ action, data }, name) {
 /** "Every weekday at 6:00 AM: turn on Kitchen main (80%) and turn on Kitchen island", names by entity id */
 export function describe(a, nameOf = (id) => id) {
   const parts = a.actions.map((x) => describeAction(x, nameOf(x.entity_id)));
-  return `${describeWhen(a)}: ${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0]}`;
+  if (a.notify) parts.push(`text “${a.notify.message}”`);
+  return `${describeWhen(a, nameOf)}: ${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0]}`;
 }
 
 // ---- when it runs (the relay) ----
@@ -100,6 +132,7 @@ export function localParts(t, timeZone) {
  * day earlier is within a couple of minutes of today's.
  */
 export function minuteToday(a, today, timeZone, sun) {
+  if (a.when.changes) return null; // runs on a change, not a clock
   if (a.when.at) {
     const [h, m] = a.when.at.split(':').map(Number);
     return h * 60 + m;
@@ -127,11 +160,24 @@ export function dueKey(a, now, timeZone, sun) {
   return `${local.date}@${minute}`;
 }
 
+/**
+ * Whether a change of `entityId` from one state to another sets the automation off: the key of this
+ * run ('YYYY-MM-DD@minute'), or null. From unavailable or unknown never counts.
+ */
+export function changeKey(a, { entityId, from, to, now, timeZone }) {
+  if (!a.enabled || a.when.changes !== entityId || to !== a.when.to || from === to) return null;
+  if (!from || from === 'unavailable' || from === 'unknown') return null;
+  const local = localParts(now, timeZone);
+  if (!a.days.includes(local.day)) return null;
+  return `${local.date}@${local.minutes}`;
+}
+
 // ---- messages ----
 //   AWS -> relay  { type: 'automations', at, items: [{ id, ...automation }] }   the whole set that may
 //                 run now (AWS has dropped any whose owner lost access); replaces the relay's copy
 //                 unless it's older than the one it has
-//   relay -> AWS  { type: 'ran', id, key, at, results: [{ entity_id, action, ok, error? }] }
+//   relay -> AWS  { type: 'ran', id, key, at, results: [{ entity_id, action, ok, error? }], notify? }
+//                 notify: true when it should text its owner (AWS decides whether it may, and what)
 
 export const MAX_AUTOMATIONS = 40; // 40 x 20 actions stays well under API Gateway's 128 KB message
 
@@ -152,10 +198,12 @@ export function parseAutomations(m) {
 export function parseRan(m) {
   const bad = () => { throw new Error('bad ran'); };
   if (!m || m.type !== 'ran' || !AUTO_ID.test(m.id ?? '') || !/^\d{4}-\d{2}-\d{2}@\d{1,4}$/.test(m.key ?? '')) bad();
-  if (Number.isNaN(Date.parse(m.at ?? '')) || !Array.isArray(m.results) || !m.results.length || m.results.length > MAX_ACTIONS) bad();
+  if (Number.isNaN(Date.parse(m.at ?? '')) || !Array.isArray(m.results) || m.results.length > MAX_ACTIONS) bad();
+  if (m.notify !== undefined && typeof m.notify !== 'boolean') bad();
+  if (!m.results.length && !m.notify) bad();
   const results = m.results.map((r) => {
     if (!r || !ID.test(r.entity_id ?? '') || !KEY.test(r.action ?? '') || typeof r.ok !== 'boolean') bad();
     return { entity_id: r.entity_id, action: r.action, ok: r.ok, ...(r.ok ? {} : { error: String(r.error ?? 'failed').slice(0, 200) }) };
   });
-  return { id: m.id, key: m.key, at: new Date(m.at).toISOString(), results };
+  return { id: m.id, key: m.key, at: new Date(m.at).toISOString(), results, notify: m.notify === true };
 }

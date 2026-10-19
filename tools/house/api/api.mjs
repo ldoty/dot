@@ -36,6 +36,7 @@ import { ID, KEY, parseData } from './protocol.mjs';
 import { makeAccess } from './access.mjs';
 import { makePeople } from './people.mjs';
 import { makeAutomations } from './automations.mjs';
+import { createNotify } from './notify.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 // The relay sends everything every 5 minutes; past this its picture of the house may be old
@@ -53,10 +54,10 @@ const same = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringi
 export const MANIFEST = validateManifest({
   name: 'house',
   title: 'House',
-  description: 'The house’s lights and switches from Home Assistant, by room, as the person asking may see them.',
+  description: 'The house’s lights and switches from Home Assistant, by room, and who’s home, as the person asking may see them.',
   operations: [{
     name: 'state',
-    description: 'Every room with its devices: name, kind (domain), state (on/off), brightness (0–255) where it has one, and when it last changed. '
+    description: 'Every room with its devices: name, kind (domain), state (on/off; a person: home or not_home), brightness (0–255) where it has one, and when it last changed. '
       + 'Only rooms and devices this person may see. relay.stale = true means the house hasn’t reported in over 10 minutes, so states may be out of date: say so.',
     path: '/home',
     input: {
@@ -282,12 +283,13 @@ export function createApi(deps) {
   };
   // The house-publish Lambda (every 5 minutes): the relay's set catches up with anyone who left House
   handler.publish = automations.publish;
+  handler.automations = automations;
   return handler;
 }
 
 // The people in a Cognito group (only in Lambda): the tool's, for the access pickers, and its admins'.
 // Usernames are subs.
-async function inGroup(GroupName) {
+export async function inGroup(GroupName) {
   const { CognitoIdentityProviderClient, ListUsersInGroupCommand } = await import('@aws-sdk/client-cognito-identity-provider');
   const idp = new CognitoIdentityProviderClient({});
   const out = [];
@@ -320,3 +322,22 @@ export const handler = createApi({
 
 // The house-publish Lambda's entry (infra/api.tf: every 5 minutes)
 export const publish = () => handler.publish();
+
+// The house-notify Lambda's entry (infra/notify.tf): texts an automation's owner, if it may
+async function contact(sub) {
+  const { CognitoIdentityProviderClient, AdminGetUserCommand } = await import('@aws-sdk/client-cognito-identity-provider');
+  const u = await new CognitoIdentityProviderClient({}).send(new AdminGetUserCommand({ UserPoolId: env.USER_POOL_ID, Username: sub }));
+  const attr = (n) => u.UserAttributes?.find((a) => a.Name === n)?.Value;
+  return { phone: u.Enabled !== false && attr('phone_number_verified') === 'true' ? attr('phone_number') : null };
+}
+let twilio;
+async function sendTextLive(phone, body) {
+  const { twilioConfig, sendText } = await import('./twilio.mjs');
+  const { SSMClient, GetParameterCommand } = await import('@aws-sdk/client-ssm');
+  twilio ??= twilioConfig(async () => (await new SSMClient({}).send(new GetParameterCommand({ Name: env.TWILIO_PARAM, WithDecryption: true }))).Parameter.Value);
+  return sendText(await twilio(), phone, body);
+}
+export const notify = createNotify({
+  db, table: env.TABLE, get: async (pk, sk) => (await db.send(new GetCommand({ TableName: env.TABLE, Key: { pk, sk } }))).Item,
+  automations: handler.automations, contact, text: sendTextLive, now: () => new Date(),
+});

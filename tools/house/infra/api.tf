@@ -31,6 +31,14 @@ data "archive_file" "api" {
     filename = "automation.mjs"
   }
   source {
+    content  = file("${path.module}/../api/notify.mjs")
+    filename = "notify.mjs"
+  }
+  source {
+    content  = file("${path.module}/../../../platform/api/twilio.mjs")
+    filename = "twilio.mjs"
+  }
+  source {
     content  = file("${path.module}/../../../platform/api/people.mjs")
     filename = "people.mjs"
   }

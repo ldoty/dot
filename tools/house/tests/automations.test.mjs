@@ -23,7 +23,7 @@ test('an admin makes one: stored, described, and sent to the relay at once', asy
   assert.deepEqual([r.body.status, r.body.owner.sub, r.body.mine, r.body.can_change, r.body.enabled], ['on', LUKE, true, true, true]);
   const row = table.get('AUTO', r.body.id);
   assert.deepEqual([row.owner, row.rev, row.when], [LUKE, 1, { at: '06:00' }]);
-  assert.deepEqual(relay.automations.items, [{ id: r.body.id, name: MORNING.name, when: MORNING.when, days: MORNING.days, actions: [{ ...MORNING.actions[0] }, { ...MORNING.actions[1], data: {} }], enabled: true }]);
+  assert.deepEqual(relay.automations.items, [{ id: r.body.id, name: MORNING.name, when: MORNING.when, days: MORNING.days, actions: [{ ...MORNING.actions[0] }, { ...MORNING.actions[1], data: {} }], notify: null, enabled: true }]);
 });
 
 test('making one needs control of every device in it, not just ask-first or read', async () => {
@@ -222,4 +222,93 @@ test('the relay Lambda may write only what it should', async () => {
   assert.match(tf, /Action\s+= "dynamodb:GetItem"[\s\S]*?\["AUTO"\]/);
   assert.doesNotMatch(tf, /"AUTO", |, "AUTO"\]/, 'never in the read-write statement');
   void fakeTable;
+});
+
+// ---- set off by a change; texting the owner ----
+
+const { createNotify, PER_DAY } = await import('../api/notify.mjs');
+const LEAVES = { name: 'Luke leaves', when: { changes: 'person.luke_doty', to: 'not_home' }, notify: { message: 'You left: check the garage.' } };
+const person = () => table.put({ pk: 'ENTITY', sk: 'person.luke_doty', name: 'Luke Doty', area: null, domain: 'person', state: 'home', attrs: {}, updated: '2026-10-19T17:00:00Z', actions: {} });
+
+test('what sets one off must be something they can see; texting needs no control', async () => {
+  person();
+  grant('grant1', `sub:${KID}`, 'area:kitchen', 'control');
+  let r = await call('POST', '/automations', LEAVES, kid());
+  assert.deepEqual([r.status, r.body.error], [403, 'not allowed: Luke Doty'], 'the kid can’t watch Luke come and go');
+  assert.equal((await call('POST', '/automations', { ...LEAVES, when: { changes: 'person.nobody', to: 'home' } })).status, 404);
+  r = await call('POST', '/automations', LEAVES);
+  assert.deepEqual([r.status, r.body.says], [201, 'When Luke Doty leaves home: text “You left: check the garage.”']);
+  assert.deepEqual(relay.automations.items.map((a) => [a.when, a.notify]), [[LEAVES.when, LEAVES.notify]]);
+  // Seeing the kitchen isn't seeing Luke: the kid doesn't see this one
+  assert.deepEqual((await call('GET', '/automations', undefined, kid())).body, []);
+  grant('grant2', `sub:${KID}`, 'entity:person.luke_doty', 'read');
+  assert.equal((await call('GET', '/automations', undefined, kid())).body.length, 1);
+});
+
+test('one stops if its owner can no longer see what sets it off', async () => {
+  person();
+  grant('grant1', `sub:${KID}`, 'entity:person.luke_doty', 'read');
+  const id = (await call('POST', '/automations', LEAVES, kid())).body.id;
+  assert.deepEqual(ids(), [id]);
+  assert.equal((await call('DELETE', '/grants/grant1')).status, 200);
+  assert.deepEqual(ids(), []);
+  assert.equal((await call('GET', '/automations')).body[0].why, 'kid@x.test can’t see Luke Doty anymore');
+});
+
+test('a run that texts: only its owner, with its stored message, once, and only while it may run', async () => {
+  person();
+  const id = (await call('POST', '/automations', LEAVES)).body.id;
+  const texts = [], contacts = [];
+  const { handler } = await import('./helpers/house.mjs');
+  const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb');
+  const { DynamoDBDocumentClient, GetCommand } = await import('@aws-sdk/lib-dynamodb');
+  const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }));
+  const send = createNotify({
+    db, table: 'family-house', get: async (pk, sk) => (await db.send(new GetCommand({ TableName: 'family-house', Key: { pk, sk } }))).Item,
+    automations: handler.automations, now: () => new Date('2026-10-19T17:30:00Z'),
+    contact: async (sub) => { contacts.push(sub); return { phone: '+18645550100' }; },
+    text: async (to, body) => texts.push({ to, body }),
+  });
+  // Through the relay's report, as relay.mjs sends it
+  const handed = [];
+  const ws = createRelayWs({ table: 'family-house', relayKey: async () => 'k', notify: async (p) => { handed.push(p); return send(p); } });
+  const ran = { type: 'ran', id, key: '2026-10-19@810', at: '2026-10-19T17:30:00Z', results: [], notify: true };
+  assert.equal((await ws({ requestContext: { routeKey: 'ran', connectionId: 'c1' }, body: JSON.stringify(ran) })).statusCode, 200);
+  assert.deepEqual(texts, [{ to: '+18645550100', body: 'Dot-y: You left: check the garage.' }]);
+  assert.deepEqual(contacts, [LUKE], 'its owner, nobody else');
+  assert.deepEqual(await send({ id, key: ran.key }), { sent: false, why: 'already sent' }, 'once per run');
+  const row = audit().find((r) => r.action === 'notify');
+  assert.deepEqual([row.who, row.via, row.automationName, row.outcome], [LUKE, 'automation', 'Luke leaves', 'done']);
+  // Not one that may not run, and not one without a text
+  await call('PUT', `/automations/${id}`, { ...LEAVES, enabled: false, rev: 1 });
+  assert.deepEqual(await send({ id, key: '2026-10-19@811' }), { sent: false, why: 'not allowed' });
+  const lights = (await call('POST', '/automations', { ...MORNING, name: 'Lights' })).body.id;
+  assert.deepEqual(await send({ id: lights, key: '2026-10-19@812' }), { sent: false, why: 'not allowed' });
+  assert.deepEqual(await send({ id: 'NOPE', key: 'x' }), { sent: false, why: 'bad request' });
+  assert.equal(texts.length, 1);
+  assert.deepEqual(handed, [{ id, key: ran.key, at: '2026-10-19T17:30:00.000Z' }]);
+});
+
+test('at most PER_DAY texts a day per automation, whatever the relay says', async () => {
+  person();
+  const id = (await call('POST', '/automations', LEAVES)).body.id;
+  const texts = [];
+  const { handler } = await import('./helpers/house.mjs');
+  const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb');
+  const { DynamoDBDocumentClient, GetCommand } = await import('@aws-sdk/lib-dynamodb');
+  const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }));
+  const send = createNotify({
+    db, table: 'family-house', get: async (pk, sk) => (await db.send(new GetCommand({ TableName: 'family-house', Key: { pk, sk } }))).Item,
+    automations: handler.automations, now: () => new Date(), contact: async () => ({ phone: '+18645550100' }), text: async (to, body) => texts.push(body),
+  });
+  for (let m = 0; m < PER_DAY + 3; m++) await send({ id, key: `2026-10-19@${600 + m}` });
+  assert.equal(texts.length, PER_DAY);
+  await send({ id, key: '2026-10-20@600' });
+  assert.equal(texts.length, PER_DAY + 1, 'a new day');
+  // No verified phone: recorded as failed, nothing sent
+  const none = createNotify({
+    db, table: 'family-house', get: async (pk, sk) => (await db.send(new GetCommand({ TableName: 'family-house', Key: { pk, sk } }))).Item,
+    automations: handler.automations, now: () => new Date(), contact: async () => ({ phone: null }), text: async () => { throw new Error('never'); },
+  });
+  assert.deepEqual(await none({ id, key: '2026-10-21@600' }), { sent: false, why: 'no verified phone' });
 });

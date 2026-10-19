@@ -74,6 +74,8 @@ resource "aws_iam_role_policy" "relay" {
         Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = ["AUTO"] } }
       },
       { Effect = "Allow", Action = "ssm:GetParameter", Resource = local.relay_key_arn },
+      # Hand an automation's text to the notify Lambda, which decides whether it may go (infra/notify.tf)
+      { Effect = "Allow", Action = "lambda:InvokeFunction", Resource = aws_lambda_function.notify.arn },
     ]
   })
 }
@@ -91,6 +93,7 @@ resource "aws_lambda_function" "relay" {
     variables = {
       TABLE           = aws_dynamodb_table.main.name
       RELAY_KEY_PARAM = local.relay_key_param
+      NOTIFY_FUNCTION = aws_lambda_function.notify.function_name
     }
   }
 }

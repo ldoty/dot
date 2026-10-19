@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canonical, describe, dueKey, minuteToday, parseAutomation, parseAutomations, parseRan } from '../relay/automation.mjs';
+import { canonical, changeKey, describe, dueKey, minuteToday, parseAutomation, parseAutomations, parseRan } from '../relay/automation.mjs';
 
 const TZ = 'America/New_York';
 const at = (hhmm, over = {}) => parseAutomation({ name: 'Morning', when: { at: hhmm }, actions: [{ entity_id: 'light.kitchen_main', action: 'turn_on', data: { brightness_pct: 80 } }], ...over });
 
 test('an automation is checked field by field, with every day by default', () => {
   const a = at('06:00');
-  assert.deepEqual(a, { name: 'Morning', when: { at: '06:00' }, days: ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'], actions: [{ entity_id: 'light.kitchen_main', action: 'turn_on', data: { brightness_pct: 80 } }], enabled: true });
+  assert.deepEqual(a, { name: 'Morning', when: { at: '06:00' }, days: ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'], actions: [{ entity_id: 'light.kitchen_main', action: 'turn_on', data: { brightness_pct: 80 } }], notify: null, enabled: true });
   assert.deepEqual(at('06:00', { days: ['fri', 'mon'] }).days, ['mon', 'fri'], 'days in week order');
   for (const [over, why] of [
     [{ name: ' ' }, 'name'], [{ name: 'x'.repeat(61) }, 'name'],
@@ -91,4 +91,43 @@ test('the set from AWS and the run reports are checked', () => {
   for (const bad of [{ id: 'nope' }, { key: 'today' }, { results: [] }, { results: [{ entity_id: 'light.a', action: 'turn_on', ok: 'yes' }] }]) {
     assert.throws(() => parseRan({ ...ran, ...bad }), JSON.stringify(bad));
   }
+});
+
+// ---- set off by a change, and texts ----
+
+const leaves = (over = {}) => parseAutomation({ name: 'Luke leaves', when: { changes: 'person.luke_doty', to: 'not_home' }, notify: { message: 'You left: check the garage.' }, ...over });
+
+test('a change sets it off; it can just text, but must do something, with no links', () => {
+  const a = leaves();
+  assert.deepEqual([a.when, a.actions, a.notify], [{ changes: 'person.luke_doty', to: 'not_home' }, [], { message: 'You left: check the garage.' }]);
+  assert.throws(() => leaves({ notify: null }), /must do something/);
+  assert.throws(() => leaves({ notify: { message: 'see https://x.test' } }), /no links/);
+  assert.throws(() => leaves({ notify: { message: 'go to dot-y.co' } }), /no links/);
+  assert.throws(() => leaves({ notify: { message: 'x'.repeat(161) } }), /160/);
+  assert.throws(() => leaves({ when: { changes: 'person.luke_doty', to: 'Not Home' } }), /changes/);
+  assert.throws(() => leaves({ when: { changes: 'person.luke_doty', to: 'home', at: '06:00' } }));
+  assert.notEqual(canonical(a), canonical(leaves({ notify: { message: 'Other' } })), 'the message is part of what it is');
+});
+
+test('in words: leaving and coming home, on which days, and the text', () => {
+  const name = (id) => ({ 'person.luke_doty': 'Luke Doty', 'light.porch': 'Porch' }[id]);
+  assert.equal(describe(leaves(), name), 'When Luke Doty leaves home: text “You left: check the garage.”');
+  assert.equal(describe(leaves({ when: { changes: 'person.luke_doty', to: 'home' }, days: ['mon', 'tue', 'wed', 'thu', 'fri'], actions: [{ entity_id: 'light.porch', action: 'turn_on' }] }), name),
+    'When Luke Doty comes home on a weekday: turn on Porch and text “You left: check the garage.”');
+});
+
+test('a change sets it off once, never from unavailable or unknown, only on its days', () => {
+  const at = { entityId: 'person.luke_doty', now: new Date('2026-10-19T17:30:00Z'), timeZone: TZ }; // Monday 1:30 PM EDT
+  assert.equal(changeKey(leaves(), { ...at, from: 'home', to: 'not_home' }), '2026-10-19@810');
+  assert.equal(changeKey(leaves(), { ...at, from: 'not_home', to: 'home' }), null, 'the other way');
+  assert.equal(changeKey(leaves(), { ...at, from: 'unknown', to: 'not_home' }), null, 'Home Assistant restarting isn’t leaving');
+  assert.equal(changeKey(leaves(), { ...at, from: 'unavailable', to: 'not_home' }), null);
+  assert.equal(changeKey(leaves(), { ...at, from: undefined, to: 'not_home' }), null);
+  assert.equal(changeKey(leaves(), { ...at, entityId: 'person.amber', from: 'home', to: 'not_home' }), null);
+  assert.equal(changeKey(leaves({ days: ['sat'] }), { ...at, from: 'home', to: 'not_home' }), null);
+  assert.equal(changeKey(leaves({ enabled: false }), { ...at, from: 'home', to: 'not_home' }), null);
+  assert.equal(dueKey(leaves(), at.now, TZ), null, 'never on a clock');
+  const ran = { type: 'ran', id: 'abcdefgh12', key: '2026-10-19@810', at: '2026-10-19T17:30:00Z', results: [], notify: true };
+  assert.equal(parseRan(ran).notify, true);
+  assert.throws(() => parseRan({ ...ran, notify: false }), 'nothing ran and nothing to send');
 });

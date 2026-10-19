@@ -221,3 +221,9 @@ test('automations: none yet says how to make one; their runs show in the activit
   assert.match(p.text('.autos small')[0], /^On · last ran /);
   assert.match(p.text('.log li')[0], /turned on kitchen main at 80%.*automation “Kitchen mornings”/);
 });
+
+test('a person shows as Home or Away', async () => {
+  table.put({ pk: 'ENTITY', sk: 'person.luke_doty', name: 'Luke Doty', area: null, domain: 'person', state: 'not_home', attrs: {}, updated: '2026-10-19T17:00:00Z', actions: {} });
+  const p = await open({ sub: LUKE });
+  assert.equal(p.li('person.luke_doty').querySelector('.state').textContent, 'Away');
+});

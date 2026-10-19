@@ -23,7 +23,7 @@
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { validateCeiling, exposed, refuseCommand, reportState } from './ceiling.mjs';
 import { MAX_ENTITIES, parseCommand } from './protocol.mjs';
-import { dueKey, parseAutomations } from './automation.mjs';
+import { changeKey, dueKey, parseAutomations } from './automation.mjs';
 
 const env = process.env;
 const ceiling = validateCeiling(JSON.parse(readFileSync(env.CEILING ?? new URL('./ceiling.json', import.meta.url), 'utf8')));
@@ -113,6 +113,7 @@ function connectHa() {
         if (!s) { states.delete(e.data.entity_id); return sendFull(); } // removed: a full sync drops its row
         states.set(s.entity_id, s);
         queueChange(s.entity_id);
+        onChange(s.entity_id, e.data.old_state?.state, s.state);
       } else {
         // An area, device or entity moved or was renamed: what's exposed may have changed
         loadRegistry().then(sendFull, (err) => log('ha: registry reload failed', err.message));
@@ -257,6 +258,31 @@ function flushRan() {
   while (unsent.length && aws?.readyState === WebSocket.OPEN) send(unsent.shift());
 }
 
+/** Runs one automation now, once for this key: each action checked against the ceiling, then reported */
+async function runAutomation(a, key, now) {
+  if (auto.fired[a.id] === key) return;
+  auto.fired[a.id] = key;
+  saveAutomations();
+  const results = [];
+  for (const x of a.actions) {
+    const why = refuseCommand(ceiling, x, registry.areaOf.get(x.entity_id) ?? null);
+    if (why) {
+      results.push({ entity_id: x.entity_id, action: x.action, ok: false, error: `refused: ${why}` });
+      continue;
+    }
+    try {
+      await haCall({ type: 'call_service', domain: x.entity_id.split('.')[0], service: x.action, service_data: x.data, target: { entity_id: x.entity_id } });
+      results.push({ entity_id: x.entity_id, action: x.action, ok: true });
+    } catch (e) {
+      results.push({ entity_id: x.entity_id, action: x.action, ok: false, error: e.message.slice(0, 200) });
+    }
+  }
+  log(`automation ${a.id} "${a.name}" ${key}: ${[...results.map((r) => (r.ok ? 'done' : r.error)), a.notify ? 'notify' : null].filter(Boolean).join(', ')}`);
+  unsent.push({ type: 'ran', id: a.id, key, at: now.toISOString(), results, ...(a.notify ? { notify: true } : {}) });
+  if (unsent.length > 50) unsent.shift();
+  flushRan();
+}
+
 let running = false;
 async function runDue() {
   if (running || !ha || !timeZone) return; // without Home Assistant nothing can run; it may still in time
@@ -266,30 +292,27 @@ async function runDue() {
     const sun = states.get('sun.sun')?.attributes;
     for (const a of auto.items) {
       const key = dueKey(a, now, timeZone, sun);
-      if (!key || auto.fired[a.id] === key) continue;
-      auto.fired[a.id] = key;
-      saveAutomations();
-      const results = [];
-      for (const x of a.actions) {
-        const why = refuseCommand(ceiling, x, registry.areaOf.get(x.entity_id) ?? null);
-        if (why) {
-          results.push({ entity_id: x.entity_id, action: x.action, ok: false, error: `refused: ${why}` });
-          continue;
-        }
-        try {
-          await haCall({ type: 'call_service', domain: x.entity_id.split('.')[0], service: x.action, service_data: x.data, target: { entity_id: x.entity_id } });
-          results.push({ entity_id: x.entity_id, action: x.action, ok: true });
-        } catch (e) {
-          results.push({ entity_id: x.entity_id, action: x.action, ok: false, error: e.message.slice(0, 200) });
-        }
-      }
-      log(`automation ${a.id} "${a.name}" ${key}: ${results.map((r) => (r.ok ? 'done' : r.error)).join(', ')}`);
-      unsent.push({ type: 'ran', id: a.id, key, at: now.toISOString(), results });
-      if (unsent.length > 50) unsent.shift();
-      flushRan();
+      if (key) await runAutomation(a, key, now);
     }
   } finally {
     running = false;
+  }
+}
+
+// Something changed in the house: run what it sets off. What sets one off must be inside the ceiling
+// too, or AWS could learn (through its texts) about something it can't see.
+function onChange(entityId, from, to) {
+  if (!timeZone) return;
+  const now = new Date();
+  const area = registry.areaOf.get(entityId) ?? null;
+  for (const a of auto.items) {
+    const key = changeKey(a, { entityId, from, to, now, timeZone });
+    if (!key) continue;
+    if (!exposed(ceiling, entityId, area)) {
+      log(`automation ${a.id}: ${entityId} isn’t exposed; not run`);
+      continue;
+    }
+    runAutomation(a, key, now).catch((e) => log('automations:', e.message));
   }
 }
 
