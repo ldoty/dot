@@ -6,6 +6,8 @@
 // Each reminder is claimed before it's sent: the item is rewritten with remind.sentAt, conditional on
 // its rev. A sweep that loses that race, or finds the item done, deleted or moved to another time,
 // sends nothing. A failed send is recorded, not retried, so nobody gets the same text twice.
+// A repeating item in schedule mode that wasn't ticked off rolls on to its next occurrence here
+// (repeat.mjs), is reminded again, and gets the row for the one after.
 //
 // Texts go through the Dot-y number's registered campaign ("reminder and assistant texts"; no
 // links, ever), only to a verified phone, and Twilio refuses anyone who replied STOP. Email comes
@@ -16,6 +18,8 @@
 //                                                          error, expires (3 days) }
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { reminderKey } from './model.mjs';
+import { advance } from './repeat.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const LOOKBACK_DAYS = 2; // reminders due up to a day or so ago still go out (the sweep was down, say)
@@ -51,14 +55,18 @@ export function createSweep(deps) {
       const item = await get(`ITEMS#${r.listId}`, r.itemId);
       const list = await get('LIST', r.listId);
       // Done, deleted, already sent or moved to another time since this row was written: nothing to send
-      if (!item || !list || item.done || !item.remind || item.remind.sentAt || item.remind.at !== at) {
+      const key = item && list && reminderKey(r.listId, r.itemId, item);
+      if (!key || key.sk !== r.sk) {
         await del(r.pk, r.sk);
         continue;
       }
       const sentAt = now.toISOString();
+      // Already reminded and not ticked off: a schedule-mode repeat rolls on to this occurrence
+      const due = item.remind.sentAt ? advance(item, { at: sentAt, done: false }) : item;
+      const claimed = { ...due, remind: { ...due.remind, sentAt }, rev: item.rev + 1 };
       try {
         await db.send(new PutCommand({
-          TableName: table, Item: { ...item, remind: { ...item.remind, sentAt }, rev: item.rev + 1 },
+          TableName: table, Item: claimed,
           ConditionExpression: 'rev = :rev', ExpressionAttributeValues: { ':rev': item.rev },
         }));
       } catch (e) {
@@ -66,6 +74,8 @@ export function createSweep(deps) {
         throw e;
       }
       await del(r.pk, r.sk);
+      const after = reminderKey(r.listId, r.itemId, claimed);
+      if (after) await db.send(new PutCommand({ TableName: table, Item: { ...after, listId: r.listId, itemId: r.itemId } }));
 
       const to = item.remind.to;
       const pref = (await get('PREF', to))?.channel ?? 'sms';

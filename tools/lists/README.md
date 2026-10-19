@@ -9,7 +9,7 @@ and reminders come by text or email, even when the home server is down.
 | Folder | What |
 |---|---|
 | `web/` | The page (installable: add it to your phone's home screen) |
-| `api/` | `api.mjs` (the API), `model.mjs` (access, layouts, what a list, item and reminder are), `sweep.mjs` (sends reminders). `verify-token.mjs`, `dot-manifest.mjs`, `people.mjs`, `twilio.mjs` link to `platform/api/` |
+| `api/` | `api.mjs` (the API), `model.mjs` (access, layouts, what a list, item and reminder are), `repeat.mjs` (repeating items), `sweep.mjs` (sends reminders). `verify-token.mjs`, `dot-manifest.mjs`, `people.mjs`, `twilio.mjs` link to `platform/api/` |
 | `infra/` | OpenTofu root (state key `tools/lists/terraform.tfstate`); `sweep.tf` is the every-minute reminder sweep |
 | `tests/` | `*.test.mjs` run in `npm test`; `*.live.mjs` run in `npm run test:live` |
 
@@ -37,6 +37,14 @@ The routes are listed at the top of `api/api.mjs`, the rows there and in `api/sw
 before sending, so nothing goes twice; a failed send is recorded, not retried. Texts go through the
 Dot-y number's registered campaign, never with links, only to a verified phone; email comes from
 dot@dot-y.co. Replies reach Dot, which finds the reminder through `GET /reminders/recent`.
+
+## Repeating
+
+An item can repeat from its due date or reminder: a small part of the calendar standard's rule
+format (`FREQ`, `INTERVAL`, weekly `BYDAY`, monthly `BYMONTHDAY` or `BYDAY=2TU`/`-1FR`, `UNTIL`/`COUNT`),
+in the person's time zone so 9 AM stays 9 AM; the 31st falls on a short month's last day. Ticking it
+off moves it to its next occurrence. Each item chooses what happens if it isn't ticked off:
+**when_done** waits, overdue; **schedule** rolls on and reminds again (the sweep does that).
 
 ## Deploy
 

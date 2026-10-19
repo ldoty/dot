@@ -19,6 +19,10 @@ data "archive_file" "api" {
     filename = "model.mjs"
   }
   source {
+    content  = file("${path.module}/../api/repeat.mjs")
+    filename = "repeat.mjs"
+  }
+  source {
     content  = file("${path.module}/../../../platform/api/verify-token.mjs")
     filename = "verify-token.mjs"
   }

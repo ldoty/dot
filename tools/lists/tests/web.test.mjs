@@ -140,3 +140,68 @@ test('every item has a visible Details button that opens due date and reminder',
   assert.ok(p.$('[data-save] [name="due"]'));
   assert.ok(p.$('[data-save] [name="remind"]'));
 });
+
+// ---- repeating ----
+
+async function openDetails(p) { p.$('[data-item] .more').click(); await wait(50); }
+const select = async (p, name, value) => { const el = p.$(`[data-save] [name="${name}"]`); el.value = value; el.dispatchEvent(new p.w.Event('change', { bubbles: true })); await wait(20); };
+
+test('repeat every week from the page, with its reminder; shown in words', async () => {
+  const l = await newList('Health');
+  await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Pills', remind: { at: '2026-10-20T13:00:00Z' } });
+  const p = await open(LUKE, `#l=${l.id}`);
+  await openDetails(p);
+  assert.equal(p.$('[data-when]').hidden, true, 'no repeat options until a repeat is picked');
+  await select(p, 'preset', 'weekly');
+  assert.equal(p.$('[data-when]').hidden, false);
+  await p.submit(p.$('[data-save]'));
+  const [i] = items(l.id);
+  assert.deepEqual([i.repeat.rule, i.repeat.mode, i.repeat.start], ['FREQ=WEEKLY', 'when_done', '2026-10-20']);
+  assert.match(p.$('[data-open] .meta').textContent, /↻ every week/);
+});
+
+test('custom: every other Tuesday, on schedule, ending after 10 times', async () => {
+  const l = await newList('House');
+  await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Recycling out', remind: { at: '2026-10-20T23:00:00Z' } });
+  const p = await open(LUKE, `#l=${l.id}`);
+  await openDetails(p);
+  await select(p, 'preset', 'custom');
+  p.$('[data-save] [name="interval"]').value = '2';
+  await select(p, 'freq', 'WEEKLY');
+  p.$('[data-save] [name="day"][value="TU"]').checked = true;
+  await select(p, 'mode', 'schedule');
+  await select(p, 'ends', 'count');
+  assert.equal(p.$('[data-save] [name="count"]').hidden, false);
+  p.$('[data-save] [name="count"]').value = '10';
+  await p.submit(p.$('[data-save]'));
+  const [i] = items(l.id);
+  assert.deepEqual([i.repeat.rule, i.repeat.mode], ['FREQ=WEEKLY;INTERVAL=2;BYDAY=TU;COUNT=10', 'schedule']);
+  assert.match(p.$('[data-open] .meta').textContent, /↻ every other Tuesday, 10 times/);
+});
+
+test('custom monthly: the last Friday; reopening shows what’s set', async () => {
+  const l = await newList('Bills');
+  await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Card payment', due: '2026-10-30' });
+  let p = await open(LUKE, `#l=${l.id}`);
+  await openDetails(p);
+  await select(p, 'preset', 'custom');
+  await select(p, 'freq', 'MONTHLY');
+  await select(p, 'monthly', '-1FR');
+  await p.submit(p.$('[data-save]'));
+  assert.equal(items(l.id)[0].repeat.rule, 'FREQ=MONTHLY;BYDAY=-1FR');
+  p = await open(LUKE, `#l=${l.id}`);
+  await openDetails(p);
+  assert.deepEqual([p.$('[name="preset"]').value, p.$('[name="freq"]').value, p.$('[name="monthly"]').value], ['custom', 'MONTHLY', '-1FR']);
+});
+
+test('ticking off a repeating item on the page moves it to next time', async () => {
+  const l = await newList('Bills');
+  await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Rent', due: '2026-11-01', repeat: { rule: 'FREQ=MONTHLY', mode: 'when_done', tz: 'America/New_York' } });
+  const p = await open(LUKE, `#l=${l.id}`);
+  const box = p.$('[data-item] [data-done]');
+  box.checked = true;
+  await p.change(box);
+  const [i] = items(l.id);
+  assert.deepEqual([i.done, i.due], [false, '2026-12-01']);
+  assert.match(p.$('[data-open] .meta').textContent, /Due Dec 1/);
+});

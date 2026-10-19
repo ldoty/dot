@@ -29,6 +29,13 @@ export const definition = {
       column: { type: 'string', description: 'Board: one of the list’s columns' },
       remind_at: { type: 'string', description: 'Local time "YYYY-MM-DDTHH:MM" (their time zone), or "" to clear the reminder' },
       remind_by: { type: 'string', enum: ['sms', 'email'], description: 'Leave out to use how they usually get reminders' },
+      repeat: {
+        type: 'string',
+        description: 'Make it repeat: a calendar RRULE (no "RRULE:"), or "" to stop. FREQ=DAILY|WEEKLY|MONTHLY|YEARLY, INTERVAL, and: weekly BYDAY=TU or MO,TH; '
+          + 'monthly BYMONTHDAY=1 (or -1, the last day) or BYDAY=2TU / -1FR (2nd Tuesday, last Friday); UNTIL=YYYYMMDD or COUNT=n to end it. '
+          + 'Every other Tuesday: FREQ=WEEKLY;INTERVAL=2;BYDAY=TU. Every third month: FREQ=MONTHLY;INTERVAL=3. It repeats from the item’s due date or reminder, so set one.',
+      },
+      repeat_mode: { type: 'string', enum: ['when_done', 'schedule'], description: 'when_done (default): the next one comes once they tick it off; schedule: it reminds every time, ticked off or not (needs a reminder)' },
       name: { type: 'string', description: 'List name' },
       layout: { type: 'string', enum: ['checklist', 'matrix', 'board'] },
       confirm: { type: 'boolean', description: 'Only for delete_list, after the person agreed' },
@@ -54,7 +61,7 @@ export function zonedToIso(local, timeZone) {
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-const ITEM_FIELDS = ['text', 'done', 'notes', 'due', 'urgent', 'important', 'column', 'order', 'assignee', 'remind'];
+const ITEM_FIELDS = ['text', 'done', 'notes', 'due', 'urgent', 'important', 'column', 'order', 'assignee', 'remind', 'repeat'];
 
 export const REMINDERS = 'Reminders';
 
@@ -81,6 +88,8 @@ export function makeLists({ tokenFor, apiUrl, clientId, user, channel = 'web', a
     for (const k of ['text', 'notes', 'urgent', 'important', 'column']) if (input[k] !== undefined) c[k] = input[k];
     if (input.due !== undefined) c.due = input.due || null;
     if (input.remind_at !== undefined) c.remind = input.remind_at ? { at: zonedToIso(input.remind_at, timeZone), channel: input.remind_by ?? null } : null;
+    if (input.repeat !== undefined) c.repeat = input.repeat ? { rule: input.repeat, mode: input.repeat_mode ?? 'when_done', tz: timeZone } : null;
+    else if (input.repeat_mode !== undefined) c.repeatMode = input.repeat_mode;
     return c;
   }
   /** Read-change-write one item, retrying once if someone else changed it meanwhile */
@@ -92,7 +101,10 @@ export function makeLists({ tokenFor, apiUrl, clientId, user, channel = 'web', a
       if (!item) throw new Error('No such item on that list.');
       const body = Object.fromEntries(ITEM_FIELDS.map((k) => [k, item[k]]));
       if (body.remind) body.remind = { at: body.remind.at, channel: body.remind.channel };
-      const r = await call('PUT', `/lists/${listId}/items/${itemId}`, { ...body, ...patch, rev: item.rev });
+      if (body.repeat) body.repeat = { rule: body.repeat.rule, mode: body.repeat.mode, tz: body.repeat.tz };
+      const { repeatMode, ...rest } = patch;
+      if (repeatMode && body.repeat) body.repeat.mode = repeatMode;
+      const r = await call('PUT', `/lists/${listId}/items/${itemId}`, { ...body, ...rest, rev: item.rev });
       if (r.status === 200) return { list: got.out.list, item: r.out };
       if (r.status !== 409) fail(r);
     }
@@ -127,7 +139,7 @@ export function makeLists({ tokenFor, apiUrl, clientId, user, channel = 'web', a
             const order = Math.max(0, ...got.out.items.map((i) => i.order || 0)) + 1;
             const r = await call('PUT', `/lists/${listId}/items/${uid()}`, { order, ...changes(input) });
             if (r.status !== 200) fail(r);
-            said = `Added “${r.out.text}” to ${got.out.list.name}${r.out.remind ? `, with a reminder at ${r.out.remind.at}` : ''}.`;
+            said = `Added “${r.out.text}” to ${got.out.list.name}${r.out.remind ? `, with a reminder at ${r.out.remind.at}` : ''}${r.out.repeat ? `, repeating ${r.out.repeat.text}` : ''}.`;
             break;
           }
           case 'update_item':
@@ -136,7 +148,9 @@ export function makeLists({ tokenFor, apiUrl, clientId, user, channel = 'web', a
             need('list_id', 'item_id');
             const patch = action === 'update_item' ? changes(input) : { done: action === 'complete_item' };
             const { list, item } = await changeItem(listId, itemId, patch);
-            said = action === 'update_item' ? `Updated “${item.text}” on ${list.name}.` : `${item.done ? 'Ticked off' : 'Reopened'} “${item.text}” on ${list.name}.`;
+            const next = item.repeat && !item.done ? ` It repeats ${item.repeat.text}; the next one is ${item.due ?? item.remind?.at}.` : '';
+            said = action === 'update_item' ? `Updated “${item.text}” on ${list.name}.${item.repeat ? ` It repeats ${item.repeat.text}.` : ''}`
+              : action === 'complete_item' ? `Ticked off “${item.text}” on ${list.name}.${next}` : `Reopened “${item.text}” on ${list.name}.`;
             break;
           }
           case 'delete_item': {

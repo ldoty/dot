@@ -6,7 +6,8 @@
 //   DELETE /lists/{id}                     owner. From Dot: 202 { confirm_id, prompt } first, then again with
 //                                          ?confirm_id= (Dot's code sends it only after the person's own reply)
 //   PUT    /lists/{id}/items/{itemId}      { text, done, notes, due, urgent, important, column, order, assignee,
-//                                            remind, rev? } -> the item   edit; no rev: new; rev: replace that version
+//                                            remind, repeat, rev? } -> the item   edit; no rev: new; rev: replace that version
+//                                          ticking off a repeating item moves it to its next occurrence (repeat.mjs)
 //   DELETE /lists/{id}/items/{itemId}      edit
 //   GET    /prefs, PUT /prefs              { channel: sms | email }: how their reminders come by default
 //   GET    /reminders/recent               reminders sent to them in the last 2 days (to act on "done" or "snooze")
@@ -19,7 +20,8 @@
 //
 // Rows: LIST / <id>                     { name, layout, columns, owner, share, rev, createdAt, updatedAt }
 //       ITEMS#<list> / <item id>        { text, done, doneAt, notes, due, urgent, important, column, order, assignee,
-//                                         remind: { at, channel, to, sentAt }, rev, createdBy, updatedAt, updatedBy }
+//                                         remind: { at, channel, to, sentAt }, repeat: { rule, mode, tz, start, n, lastDoneAt },
+//                                         rev, createdBy, updatedAt, updatedBy }
 //       REMIND#<UTC day> / <at>#<list>#<item>   the sweep's index of reminders still to send (sweep.mjs)
 //       PREF / <sub>                    { channel }
 //       PENDING / <id>                  a list deletion waiting for its confirmation (2 minutes)
@@ -29,7 +31,8 @@ import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCom
 import { verifyAccessToken } from './verify-token.mjs';
 import { validateManifest } from './dot-manifest.mjs';
 import { makePeople } from './people.mjs';
-import { CHANNELS, ID, atLeast, levelOf, parseItem, parseList, parseShare, reminderKey } from './model.mjs';
+import { CHANNELS, ID, atLeast, levelOf, parseItem, parseList, parseShare, reminderKey, settle } from './model.mjs';
+import { describe } from './repeat.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const CONFIRM_MS = 2 * 60_000;
@@ -39,7 +42,8 @@ const json = (statusCode, body) => ({
   statusCode, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
 });
 const listOut = ({ pk: _p, sk, ...l }) => ({ id: sk, ...l, share: l.share ?? [] });
-const itemOut = ({ pk: _p, sk, ...i }) => ({ id: sk, ...i });
+// A repeat comes with its rule in words ("every other Tuesday"), for the page and Dot
+const itemOut = ({ pk: _p, sk, ...i }) => ({ id: sk, ...i, ...(i.repeat ? { repeat: { ...i.repeat, text: describe(i.repeat.rule) } } : {}) });
 
 export const MANIFEST = validateManifest({
   name: 'lists',
@@ -238,9 +242,10 @@ export function createApi(deps) {
           const same = old?.remind && old.remind.at === fields.remind.at && old.remind.channel === fields.remind.channel;
           fields.remind = same ? old.remind : { ...fields.remind, to: sub, sentAt: null };
         }
+        const settled = settle(fields, old, at);
         const item = {
-          pk: `ITEMS#${p.id}`, sk: p.itemId, ...fields,
-          doneAt: fields.done ? (old?.done ? old.doneAt : at) : null,
+          pk: `ITEMS#${p.id}`, sk: p.itemId, ...settled,
+          doneAt: settled.done ? (old?.done ? old.doneAt : at) : null,
           rev: (rev ?? 0) + 1, createdBy: old?.createdBy ?? sub, createdAt: old?.createdAt ?? at, updatedAt: at, updatedBy: sub,
         };
         if (!(await putAt(item, rev))) {

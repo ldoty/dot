@@ -13,6 +13,8 @@
 //   matrix     Eisenhower: urgent × important, from each item's two flags
 //   board      columns (the list's `columns`), from each item's `column`
 
+import { advance, occurrenceOf, parseRepeat, rollAt } from './repeat.mjs';
+
 export const LEVELS = ['none', 'read', 'edit', 'owner'];
 const rank = (l) => Math.max(0, LEVELS.indexOf(l));
 export const atLeast = (level, min) => rank(level) >= rank(min);
@@ -72,6 +74,8 @@ export function parseShare(share) {
 /**
  * An item's fields from input; throws with a reason. remind: { at: ISO time, channel?: sms | email }
  * or null; who it goes to is set by the API (whoever set it), and sentAt only by the sweep.
+ * repeat: { rule, mode, tz } or null (repeat.mjs); it needs a due date or a reminder to repeat from,
+ * and schedule mode needs a reminder.
  */
 export function parseItem(b) {
   const out = {
@@ -85,6 +89,7 @@ export function parseItem(b) {
     order: b.order ?? 0,
     assignee: b.assignee ?? null,
     remind: null,
+    repeat: null,
   };
   if (out.due !== null && !DAY.test(out.due)) throw new Error('due: YYYY-MM-DD');
   if (typeof out.order !== 'number' || !Number.isFinite(out.order)) throw new Error('order: a number');
@@ -96,13 +101,36 @@ export function parseItem(b) {
     if (channel !== null && !CHANNELS.includes(channel)) throw new Error(`remind.channel: ${CHANNELS.join(' or ')}`);
     out.remind = { at: at.toISOString(), channel };
   }
+  if (b.repeat) {
+    out.repeat = parseRepeat(b.repeat);
+    if (!out.due && !out.remind) throw new Error('repeat needs a due date or a reminder to repeat from');
+    if (out.repeat.mode === 'schedule' && !out.remind) throw new Error('repeating on schedule needs a reminder');
+  }
   return out;
 }
 
-/** The sweep's index row for an item's reminder, or null when nothing should be sent */
+/**
+ * The sweep's index row for an item's reminder, or null when nothing should be sent: its reminder
+ * until sent; then, for a schedule-mode repeat, the next occurrence's (when it rolls on, unticked)
+ */
 export function reminderKey(listId, itemId, item) {
-  if (!item.remind || item.done || item.remind.sentAt) return null;
-  return { pk: `REMIND#${item.remind.at.slice(0, 10)}`, sk: `${item.remind.at}#${listId}#${itemId}` };
+  if (!item.remind || item.done) return null;
+  const at = item.remind.sentAt ? rollAt(item) : item.remind.at;
+  return at ? { pk: `REMIND#${at.slice(0, 10)}`, sk: `${at}#${listId}#${itemId}` } : null;
+}
+
+/**
+ * The stored item after a write: a repeat keeps its start and count while its rule is unchanged
+ * (else it starts from this occurrence), and ticking off a repeating item moves it to its next one
+ */
+export function settle(fields, old, at) {
+  let item = fields;
+  if (item.repeat) {
+    const same = old?.repeat && old.repeat.rule === item.repeat.rule && old.repeat.tz === item.repeat.tz;
+    item = { ...item, repeat: same ? { ...old.repeat, mode: item.repeat.mode } : { ...item.repeat, start: occurrenceOf(item, item.repeat.tz), n: 0 } };
+  }
+  if (item.done && !old?.done && item.repeat && !item.repeat.ended) return advance(item, { at });
+  return item;
 }
 
 /** Which matrix quadrant an item is in */

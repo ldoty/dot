@@ -18,6 +18,14 @@ data "archive_file" "sweep" {
     filename = "sweep.mjs"
   }
   source {
+    content  = file("${path.module}/../api/model.mjs")
+    filename = "model.mjs"
+  }
+  source {
+    content  = file("${path.module}/../api/repeat.mjs")
+    filename = "repeat.mjs"
+  }
+  source {
     content  = file("${path.module}/../../../platform/api/twilio.mjs")
     filename = "twilio.mjs"
   }

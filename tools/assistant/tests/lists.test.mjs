@@ -25,6 +25,7 @@ test('local reminder times become UTC, across daylight saving', () => {
   assert.equal(zonedToIso('2026-10-20T09:00', 'America/New_York'), '2026-10-20T13:00:00.000Z');
   assert.equal(zonedToIso('2026-12-20T09:00', 'America/New_York'), '2026-12-20T14:00:00.000Z');
   assert.equal(zonedToIso('2026-11-01T09:00', 'America/New_York'), '2026-11-01T14:00:00.000Z', 'the morning DST ends');
+  assert.equal(zonedToIso('2026-03-08T03:30', 'America/New_York'), '2026-03-08T07:30:00.000Z', 'just after the clocks spring forward');
   assert.throws(() => zonedToIso('tomorrow 9am', 'America/New_York'), /YYYY-MM-DDTHH:MM/);
 });
 
@@ -162,4 +163,28 @@ test('a Reminders list someone shared with you isn’t yours: Dot starts your ow
   assert.equal((await call('GET', `/lists/${lukes.id}`)).body.items.length, 1, 'nothing of Amber’s on Luke’s');
   const theirs = (await call('GET', '/lists', undefined, token(AMBER))).body.filter((l) => l.name === 'Reminders');
   assert.deepEqual(theirs.map((l) => l.owner).sort(), [AMBER, LUKE].sort());
+});
+
+test('Dot sets a repeat; ticking it off moves it on and says when next', async () => {
+  const l = await newList('Bills');
+  const { lists } = dotFor(LUKE);
+  const said = await lists.change({ action: 'add_item', list_id: l.id, text: 'Rent', due: '2026-11-01', repeat: 'FREQ=MONTHLY;BYMONTHDAY=1' });
+  assert.match(said, /repeating every month on the 1st/);
+  const [i] = items(l.id);
+  assert.deepEqual([i.repeat.mode, i.repeat.tz, i.repeat.start], ['when_done', 'America/New_York', '2026-11-01']);
+  assert.equal(await lists.change({ action: 'complete_item', list_id: l.id, item_id: i.sk }), 'Ticked off “Rent” on Bills. It repeats every month on the 1st; the next one is 2026-12-01.');
+  await lists.change({ action: 'update_item', list_id: l.id, item_id: i.sk, notes: 'Autopay?' });
+  assert.equal(items(l.id)[0].repeat.rule, 'FREQ=MONTHLY;BYMONTHDAY=1', 'other changes keep the repeat');
+  await lists.change({ action: 'update_item', list_id: l.id, item_id: i.sk, repeat: '' });
+  assert.equal(items(l.id)[0].repeat, null);
+});
+
+test('Dot: every other Tuesday at 7 PM, reminding every time', async () => {
+  const l = await newList('House');
+  const { lists } = dotFor(LUKE);
+  await lists.change({ action: 'add_item', list_id: l.id, text: 'Recycling out', remind_at: '2026-10-20T19:00', repeat: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=TU', repeat_mode: 'schedule' });
+  const [i] = items(l.id);
+  assert.deepEqual([i.remind.at, i.repeat.mode], ['2026-10-20T23:00:00.000Z', 'schedule']);
+  await assert.rejects(lists.change({ action: 'add_item', list_id: l.id, text: 'x', repeat: 'FREQ=HOURLY' }), /Lists answered 400/);
+  assert.match(systemPrompt({ lists: true }), /every other Tuesday/);
 });

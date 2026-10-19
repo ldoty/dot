@@ -122,3 +122,66 @@ test('a leftover index row for a done or moved item sends nothing, and is cleare
   assert.deepEqual(outbox.texts, []);
   assert.deepEqual(remindRows(), [`2026-10-19T18:00:00.000Z#${l.id}#i00002`], 'only the real one is left');
 });
+
+// ---- repeating ----
+
+const NY = 'America/New_York';
+const weekly = (mode = 'when_done', rule = 'FREQ=WEEKLY') => ({ rule, mode, tz: NY });
+
+test('when_done: ticking off moves it to next week, same local time; unticked, it waits', async () => {
+  const l = await newList();
+  await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Pills', remind: at('2026-10-30T13:00:00Z'), repeat: weekly() });
+  await minute('2026-10-30T13:00:30Z');
+  assert.equal(outbox.texts.length, 1);
+  await minute('2026-11-06T14:00:30Z');
+  assert.equal(outbox.texts.length, 1, 'not ticked off: no more reminders until it is');
+  const it = (await call('GET', `/lists/${l.id}`)).body.items[0];
+  const r = await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Pills', done: true, remind: { at: it.remind.at }, repeat: weekly(), rev: it.rev });
+  assert.deepEqual([r.body.done, r.body.remind.at, r.body.remind.sentAt, r.body.repeat.n], [false, '2026-11-06T14:00:00.000Z', null, 1], '9 AM after daylight saving ends');
+  await minute('2026-11-06T14:00:30Z');
+  assert.equal(outbox.texts.length, 2);
+});
+
+test('schedule: unticked, it rolls on and reminds every time', async () => {
+  const l = await newList();
+  await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Bins out', remind: at('2026-10-20T23:00:00Z'), repeat: weekly('schedule') });
+  await minute('2026-10-20T23:00:30Z');
+  await minute('2026-10-27T23:00:30Z');
+  await minute('2026-11-03T23:00:30Z');
+  assert.equal(outbox.texts.length, 2, '7 PM Eastern is midnight UTC once daylight saving ends');
+  await minute('2026-11-04T00:00:30Z');
+  assert.equal(outbox.texts.length, 3);
+  const it = (await call('GET', `/lists/${l.id}`)).body.items[0];
+  assert.deepEqual([it.remind.at, it.repeat.n, it.done], ['2026-11-04T00:00:00.000Z', 2, false]);
+});
+
+test('schedule: ticking off between reminders moves on once, never skipping one', async () => {
+  const l = await newList();
+  await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Bins out', remind: at('2026-10-20T23:00:00Z'), repeat: weekly('schedule') });
+  await minute('2026-10-20T23:00:30Z');
+  let it = (await call('GET', `/lists/${l.id}`)).body.items[0];
+  await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Bins out', done: true, remind: { at: it.remind.at }, repeat: weekly('schedule'), rev: it.rev });
+  await minute('2026-10-27T23:00:30Z');
+  it = (await call('GET', `/lists/${l.id}`)).body.items[0];
+  assert.equal(outbox.texts.length, 2, 'this week’s came');
+  assert.deepEqual([it.remind.at, it.repeat.n], ['2026-10-27T23:00:00.000Z', 1]);
+});
+
+test('a due-date-only repeat moves its due date when ticked off; the series ends with COUNT', async () => {
+  const l = await newList();
+  await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Rent', due: '2026-11-01', repeat: { rule: 'FREQ=MONTHLY;BYMONTHDAY=1;COUNT=2', mode: 'when_done', tz: NY } });
+  let it = (await call('GET', `/lists/${l.id}`)).body.items[0];
+  let r = await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Rent', due: it.due, done: true, repeat: it.repeat && { rule: it.repeat.rule, mode: it.repeat.mode, tz: it.repeat.tz }, rev: it.rev });
+  assert.deepEqual([r.body.due, r.body.done], ['2026-12-01', false]);
+  it = r.body;
+  r = await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Rent', due: it.due, done: true, repeat: { rule: it.repeat.rule, mode: it.repeat.mode, tz: it.repeat.tz }, rev: it.rev });
+  assert.deepEqual([r.body.due, r.body.done], ['2026-12-01', true], 'the second of two: done for good');
+});
+
+test('repeats need something to repeat from, and schedule needs a reminder', async () => {
+  const l = await newList();
+  assert.equal((await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'x', repeat: weekly() })).status, 400);
+  assert.equal((await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'x', due: '2026-11-01', repeat: weekly('schedule') })).status, 400);
+  assert.equal((await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'x', due: '2026-11-01', repeat: { rule: 'FREQ=HOURLY', tz: NY } })).status, 400);
+  assert.equal((await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'x', due: '2026-11-01', repeat: { rule: 'FREQ=WEEKLY', tz: 'Mars/Olympus' } })).status, 400);
+});

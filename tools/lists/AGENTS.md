@@ -10,5 +10,8 @@ Read `README.md` for the pieces. Rules:
 - **A reminder is never sent twice.** The sweep claims (rev-conditional write) before sending and
   never retries a failure. Keep `reserved_concurrent_executions = 1`.
 - Items are written whole with their `rev`; partial updates read, merge and write (Dot's `lists.mjs`).
+- **Repeats are local time.** `repeat.mjs` computes on calendar days in the item's own `tz`; never
+  add a fixed number of hours. Ticking off always advances (API); only schedule mode advances unticked
+  (sweep). Both use `advance()`, so the page, Dot and a "done" reply behave the same.
 - The API keeps `REMIND#` rows in step with items; the sweep still checks each item before sending,
   so a leftover row is harmless.
