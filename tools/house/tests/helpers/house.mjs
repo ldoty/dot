@@ -10,7 +10,10 @@ export const table = fakeTable({ pageSize: 2 }); // the API must follow pages
 const { createApi } = await import('../../api/api.mjs');
 const { createRelayWs } = await import('../../api/relay-ws.mjs');
 
-export const ROUTES = ['GET /home', 'GET /dot', 'POST /commands'];
+export const ROUTES = [
+  'GET /home', 'GET /dot', 'POST /commands',
+  'GET /access', 'PUT /grants/{id}', 'DELETE /grants/{id}', 'PUT /groups/{name}', 'DELETE /groups/{name}', 'GET /log',
+];
 export const LUKE = '22222222-2222-2222-2222-222222222222';
 export const KID = '11111111-1111-1111-1111-111111111111';
 export const ceiling = validateCeiling(JSON.parse(readFileSync(new URL('../../relay/ceiling.json', import.meta.url), 'utf8')));
@@ -36,6 +39,7 @@ export const handler = createApi({
   table: 'family-house', group: 'family_house', issuer: ISSUER,
   clientIds: ['house-client', 'house-via-dot'], dotClientId: 'house-via-dot',
   toRelay, now: () => new Date(), sleep: (ms) => new Promise((r) => setTimeout(r, ms / 50)),
+  members: async () => [{ sub: LUKE, name: 'Luke' }, { sub: KID, name: 'Kid' }],
 });
 
 export const token = ({ sub = LUKE, groups = ['family_house'], clientId = 'house-client', ...over } = {}) =>

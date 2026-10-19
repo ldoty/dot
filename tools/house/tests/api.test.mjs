@@ -36,7 +36,7 @@ test('an admin sees every room, by name, with Other last, all at control with th
 });
 
 test('a member sees only what their grants allow, and actions only where they may control', async () => {
-  table.put({ pk: 'GROUP', sk: 'kids', name: 'kids', members: [KID] });
+  table.put({ pk: 'GROUP', sk: 'kids', members: [KID] }); // as access.mjs stores it: the name is the key
   grant('g1', 'group:kids', 'area:kitchen', 'control');
   grant('g2', `sub:${KID}`, 'entity:light.dining_room_main', 'read');
   const r = await call('GET', '/home', undefined, kid());

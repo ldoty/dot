@@ -1,5 +1,8 @@
 locals {
-  routes = ["GET /home", "GET /dot", "POST /commands"]
+  routes = [
+    "GET /home", "GET /dot", "POST /commands",
+    "GET /access", "PUT /grants/{id}", "DELETE /grants/{id}", "PUT /groups/{name}", "DELETE /groups/{name}", "GET /log",
+  ]
 }
 
 # The tool's handler plus the platform's shared token check
@@ -13,6 +16,10 @@ data "archive_file" "api" {
   source {
     content  = file("${path.module}/../api/grants.mjs")
     filename = "grants.mjs"
+  }
+  source {
+    content  = file("${path.module}/../api/access.mjs")
+    filename = "access.mjs"
   }
   source {
     content  = file("${path.module}/../relay/protocol.mjs")
@@ -51,7 +58,8 @@ resource "aws_iam_role_policy" "api_table" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Reads everything; writes only confirmations (PENDING) and the audit trail (CMD#…)
+        # Reads everything; writes only confirmations (PENDING), the audit trail (CMD#…) and,
+        # for admins, grants and groups
         Effect   = "Allow"
         Action   = ["dynamodb:GetItem", "dynamodb:Query"]
         Resource = aws_dynamodb_table.main.arn
@@ -60,7 +68,13 @@ resource "aws_iam_role_policy" "api_table" {
         Effect    = "Allow"
         Action    = ["dynamodb:PutItem", "dynamodb:DeleteItem"]
         Resource  = aws_dynamodb_table.main.arn
-        Condition = { "ForAllValues:StringLike" = { "dynamodb:LeadingKeys" = ["PENDING", "CMD#*"] } }
+        Condition = { "ForAllValues:StringLike" = { "dynamodb:LeadingKeys" = ["PENDING", "CMD#*", "GRANT", "GROUP"] } }
+      },
+      {
+        # Who is in this tool's group, for the access pickers (read only)
+        Effect   = "Allow"
+        Action   = "cognito-idp:ListUsersInGroup"
+        Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}"
       },
       {
         # Hand a command to the relay's connection; nothing else on that API
@@ -89,6 +103,7 @@ resource "aws_lambda_function" "api" {
       ISSUER        = local.issuer
       CLIENT_ID     = module.app.client_id
       DOT_CLIENT_ID = module.app.delegated_client_id
+      USER_POOL_ID  = local.pool_id
       # API Gateway's management endpoint for the relay's connection (https, not wss)
       RELAY_ENDPOINT = "https://${aws_apigatewayv2_api.relay.id}.execute-api.${data.aws_region.current.region}.amazonaws.com/${aws_apigatewayv2_stage.relay.name}"
     }
@@ -105,7 +120,7 @@ resource "aws_apigatewayv2_api" "api" {
   protocol_type = "HTTP"
   cors_configuration {
     allow_origins = [trimsuffix(local.app_url, "/"), trimsuffix(local.dev_url, "/")]
-    allow_methods = ["GET", "POST"]
+    allow_methods = ["GET", "POST", "PUT", "DELETE"]
     allow_headers = ["authorization", "content-type"]
     max_age       = 600
   }

@@ -34,6 +34,24 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
 .dim input { flex: 1; min-width: 0; accent-color: var(--sun) }
 .dim output { width: 3.5em; text-align: right }
 .err { grid-column: 1 / -1; color: var(--ember); font-size: 14px; margin: 0 }
+/* People & access (admins): who may do what, groups, and recent activity */
+#admin { display: grid; gap: 16px }
+#admin h2 { font-size: 24px; margin: 8px 0 0 }
+#admin h3 { font-size: 17px; margin: 0 0 8px }
+.rules { list-style: none; margin: 0; padding: 0 }
+.rules li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px }
+.rules li:first-child { border-top: 0 }
+.rules small { color: var(--muted) }
+.x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 18px; padding: 0 4px }
+.x:hover { color: var(--ember) }
+.pick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px }
+.pick select, .pick input[type=text] { flex: 1 1 140px; min-width: 0; background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 8px 10px; color: var(--ink); font: inherit }
+.pick select:focus, .pick input:focus { border-color: var(--pool); outline: none }
+.members { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 15px }
+.log li { display: block }
+.log .what { display: block }
+.log small { display: block }
+.denied { color: var(--ember) }
 @media (prefers-reduced-motion: reduce) { .switch::after { transition: none } }
 </style>
 </head>
@@ -42,6 +60,7 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
   <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
   <h1>House</h1>
   <div id="main"><p class="status">Loading…</p></div>
+  <div id="admin" hidden></div>
 </div>
 <script src="family-auth.js"></script>
 <script>
@@ -155,6 +174,113 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
     send(e, "turn_on", { brightness_pct: Number(ev.target.value) });
   });
 
+  // ---- People & access (admins only; the API refuses everyone else) ----
+  var adminEl = document.getElementById("admin"), access = null, activity = [], adminMsg = "";
+  var LEVEL = { read: "Can see", confirm: "Ask first", control: "Can control" };
+  var DONE = { done: "", denied: "not allowed", failed: "failed", offline: "house offline", timeout: "no answer" };
+
+  function whoName(who) {
+    if (who.indexOf("group:") === 0) return "Group “" + who.slice(6) + "”";
+    var sub = who.slice(4);
+    for (var i = 0; i < access.people.length; i++) if (access.people[i].sub === sub) return access.people[i].name;
+    return "Someone no longer in House";
+  }
+  function whereName(where) {
+    if (where === "*") return "Everywhere";
+    var id = where.slice(where.indexOf(":") + 1), list = where.indexOf("area:") === 0 ? access.areas : access.entities;
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i].name;
+    return id;
+  }
+  function personName(sub) {
+    for (var i = 0; i < access.people.length; i++) if (access.people[i].sub === sub) return access.people[i].name;
+    return "Someone";
+  }
+  function when(iso) {
+    return new Date(iso).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
+  }
+
+  function renderAdmin() {
+    var opts = function (list, val, label) { return list.map(function (x) { return '<option value="' + esc(val(x)) + '">' + esc(label(x)) + "</option>"; }).join(""); };
+    var grants = access.grants.slice().sort(function (a, b) { return whoName(a.who).localeCompare(whoName(b.who)); });
+    var html = "<h2>People &amp; access</h2>";
+    if (adminMsg) html += '<p class="status warn">' + esc(adminMsg) + "</p>";
+
+    html += '<section class="card"><h3>Who can do what</h3><p class="status">Admins can control everything. Everyone else sees only what’s listed here.</p><ul class="rules">' +
+      (grants.length ? grants.map(function (g) {
+        return '<li data-grant="' + esc(g.id) + '"><span>' + esc(whoName(g.who)) + " · " + esc(whereName(g.where)) + " · <strong>" + esc(LEVEL[g.level]) + '</strong></span><button class="x" data-del-grant aria-label="Remove">&times;</button></li>';
+      }).join("") : '<li><small>No one yet.</small></li>') + "</ul>" +
+      '<form class="pick" id="add-grant"><select id="g-who" aria-label="Who">' +
+      opts(access.people, function (p) { return "sub:" + p.sub; }, function (p) { return p.name; }) +
+      opts(access.groups, function (g) { return "group:" + g.name; }, function (g) { return "Group “" + g.name + "”"; }) +
+      '</select><select id="g-where" aria-label="Where"><option value="*">Everywhere</option><optgroup label="Rooms">' +
+      opts(access.areas, function (a) { return "area:" + a.id; }, function (a) { return a.name; }) +
+      '</optgroup><optgroup label="Devices">' + opts(access.entities, function (e) { return "entity:" + e.id; }, function (e) { return e.name; }) +
+      '</optgroup></select><select id="g-level" aria-label="Level"><option value="read">Can see</option><option value="confirm">Ask first</option><option value="control">Can control</option></select>' +
+      '<button class="btn primary">Add</button></form></section>';
+
+    html += '<section class="card"><h3>Groups</h3><ul class="rules">' + (access.groups.length ? access.groups.map(function (g) {
+      return '<li data-group="' + esc(g.name) + '"><span><strong>' + esc(g.name) + '</strong><span class="members">' + access.people.map(function (p) {
+        return '<label><input type="checkbox" data-member="' + esc(p.sub) + '"' + (g.members.indexOf(p.sub) >= 0 ? " checked" : "") + "> " + esc(p.name) + "</label>";
+      }).join("") + '</span></span><button class="x" data-del-group aria-label="Remove group">&times;</button></li>';
+    }).join("") : '<li><small>No groups. A group lets you give several people the same access.</small></li>') + "</ul>" +
+      '<form class="pick" id="add-group"><input type="text" id="new-group" placeholder="New group, like kids" aria-label="Group name" maxlength="40"><button class="btn ghost">Add group</button></form></section>';
+
+    html += '<section class="card"><h3>Recent activity</h3><ul class="rules log">' + (activity.length ? activity.slice(0, 50).map(function (a) {
+      var verb = (a.action === "turn_off" ? "turned off " : "turned on ") + (a.name || a.entity_id) + (a.data && a.data.brightness_pct ? " at " + a.data.brightness_pct + "%" : "");
+      var how = DONE[a.outcome] === undefined ? a.outcome : DONE[a.outcome];
+      return '<li><span class="what' + (a.outcome === "done" ? "" : " denied") + '">' + esc(personName(a.who)) + " " + esc(verb) + (how ? " — " + esc(how) : "") + "</span><small>" + esc(when(a.at)) + (a.via === "dot" ? " · through Dot" : "") + "</small></li>";
+    }).join("") : '<li><small>Nothing this week.</small></li>') + "</ul></section>";
+    adminEl.innerHTML = html;
+    adminEl.hidden = false;
+  }
+
+  function loadAdmin() {
+    return Promise.all([api("GET", "/access"), api("GET", "/log")]).then(function (rs) {
+      if (!rs[0].ok || !rs[1].ok) return;
+      return Promise.all([rs[0].json(), rs[1].json()]).then(function (j) { access = j[0]; activity = j[1]; renderAdmin(); });
+    });
+  }
+  // Every change reloads the lists, so what's shown is what's stored; a 409 says someone else got there first
+  function change(method, path, body) {
+    adminMsg = "";
+    return api(method, path, body).then(function (res) {
+      if (res.status === 409) adminMsg = "Someone else changed that just now. Here’s the latest.";
+      else if (!res.ok) adminMsg = "Couldn’t save that (" + res.status + "). Try again.";
+      return loadAdmin();
+    }).catch(function () { adminMsg = "Couldn’t reach House. Try again."; renderAdmin(); });
+  }
+  function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
+
+  adminEl.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    if (ev.target.id === "add-grant") {
+      var who = document.getElementById("g-who").value;
+      if (!who) return;
+      change("PUT", "/grants/" + uid(), { who: who, where: document.getElementById("g-where").value, level: document.getElementById("g-level").value });
+    } else if (ev.target.id === "add-group") {
+      var name = document.getElementById("new-group").value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+      if (!name) return;
+      change("PUT", "/groups/" + encodeURIComponent(name), { members: [] });
+    }
+  });
+  adminEl.addEventListener("click", function (ev) {
+    var g = ev.target.closest("[data-del-grant]"), gr = ev.target.closest("[data-del-group]");
+    if (g) change("DELETE", "/grants/" + encodeURIComponent(g.closest("li").dataset.grant));
+    if (gr) {
+      var name = gr.closest("li").dataset.group;
+      if (window.confirm("Remove the group “" + name + "” and the access it gives?")) change("DELETE", "/groups/" + encodeURIComponent(name));
+    }
+  });
+  adminEl.addEventListener("change", function (ev) {
+    if (!ev.target.matches("[data-member]")) return;
+    var name = ev.target.closest("li").dataset.group, grp = null;
+    for (var i = 0; i < access.groups.length; i++) if (access.groups[i].name === name) grp = access.groups[i];
+    if (!grp) return;
+    var members = grp.members.filter(function (s) { return s !== ev.target.dataset.member; });
+    if (ev.target.checked) members.push(ev.target.dataset.member);
+    change("PUT", "/groups/" + encodeURIComponent(name), { members: members, rev: grp.rev });
+  });
+
   function gate(msg) {
     main.innerHTML = '<p class="status">' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button>';
     document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
@@ -168,7 +294,9 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
         // Don't redraw under someone mid-command or mid-drag
         for (var id in busy) if (busy[id]) return;
         if (document.activeElement && document.activeElement.matches && document.activeElement.matches("[data-dim]")) return;
+        var first = !home;
         home = h; render();
+        if (first && h.you.admin) loadAdmin().catch(function () {});
       });
     });
   }
