@@ -1,9 +1,11 @@
 // The tools Claude can call for one person: calendar tools for their calendars (if they have any),
-// read_budget (if Budget is set up for Dot; it reads with their own access), and whatever family
-// tools discovery found for them (discovery.mjs: { definitions, connected, handlers }). Each tool's input
+// read_budget (if Budget is set up for Dot; it reads with their own access), house_control (if they
+// can use House; house.mjs), and whatever family tools discovery found for them
+// (discovery.mjs: { definitions, connected, handlers }). Each tool's input
 // is checked here before anything runs, and a failure comes back to Claude as an error result.
 
 import { COLORS } from './calendar.mjs';
+import { definition as houseControl } from './house.mjs';
 
 const dateTime = 'Date "YYYY-MM-DD" or local time "YYYY-MM-DDTHH:MM" (the calendar’s time zone unless an offset is given)';
 
@@ -24,7 +26,7 @@ const people = {
     + 'for reference, not invited: Google won’t send them anything.',
 };
 
-export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = [], budget, discovered = { definitions: [], connected: [], handlers: {} } }) {
+export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = [], budget, house, discovered = { definitions: [], connected: [], handlers: {} } }) {
   const cal = { type: 'string', enum: calendarNames, description: 'Which calendar' };
   // Changes are offered only on calendars this person may change (calendar.mjs refuses the rest too)
   const writable = calendarNames.filter((c) => !readOnlyCalendars.includes(c));
@@ -126,10 +128,11 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
   }] : [];
   const writeTools = ['create_event', 'update_event', 'delete_event'];
   const offered = calendarTools.filter((t) => writable.length || !writeTools.includes(t.name));
-  const definitions = [...(calendarNames.length ? offered : []), ...budgetTools, ...discovered.definitions];
+  const definitions = [...(calendarNames.length ? offered : []), ...budgetTools, ...(house ? [houseControl] : []), ...discovered.definitions];
 
   const handlers = {
     read_budget: (i) => budget.read(i),
+    house_control: (i, ctx) => house.control(i, ctx),
     list_calendars: () => calendar.listCalendars(),
     list_events: (i) => calendar.listEvents(i),
     create_event: (i) => calendar.createEvent(i),
@@ -165,15 +168,15 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
     definitions,
     /** Family tools found by discovery, for the system prompt: [{ title, description, tools }] */
     connected: discovered.connected,
-    /** Runs one tool_use block; always resolves to a tool_result block */
-    async run(block) {
+    /** Runs one tool_use block; always resolves to a tool_result block. ctx: { history } of the conversation */
+    async run(block, ctx = {}) {
       const def = definitions.find((d) => d.name === block.name);
       const fail = (msg) => ({ type: 'tool_result', tool_use_id: block.id, is_error: true, content: msg });
       if (!def) return fail(`Unknown tool "${block.name}"`);
       const problem = validate(def.input_schema, block.input);
       if (problem) return fail(`Invalid input: ${problem}`);
       try {
-        const out = await handlers[block.name](block.input);
+        const out = await handlers[block.name](block.input, ctx);
         return { type: 'tool_result', tool_use_id: block.id, content: typeof out === 'string' ? out : JSON.stringify(out) };
       } catch (e) {
         return fail(e.message);

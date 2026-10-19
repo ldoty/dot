@@ -23,7 +23,7 @@ Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
 
 1. Relay + read-only: the page, `GET /home`, `GET /dot`. Done.
 2. `POST /commands`: grants checked in the Lambda, ceiling re-checked by the relay, an audit row each. Done.
-3. Dot's built-in `house_control`, with confirmation enforced in Dot's code (only after a new message from the person).
+3. Dot's built-in `house_control` (`tools/assistant/api/house.mjs`), with confirmation enforced in Dot's code (only after a new message from the person). Done.
 4. Grants and groups editor, `GET /log`.
 
 ## The home server

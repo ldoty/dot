@@ -8,7 +8,8 @@
 //          what Dot did with people's access: everyone's for family_assistant:admin, otherwise your own
 // Every request needs a family_assistant access token, verified here. Dot then acts as that
 // person: their name and calendars (PEOPLE), and their own access to other tools (delegation):
-// Budget through read_budget, and any family tool that describes itself (discovery.mjs).
+// Budget through read_budget, House's lights through house_control, and any family tool that
+// describes itself (discovery.mjs).
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { SSMClient, GetParameterCommand, GetParametersByPathCommand } from '@aws-sdk/client-ssm';
@@ -20,6 +21,7 @@ import { verifyAccessToken } from './verify-token.mjs';
 import { makeStore } from './store.mjs';
 import { makeDelegation } from './delegation.mjs';
 import { makeBudget } from './budget.mjs';
+import { makeHouse } from './house.mjs';
 import { makeDiscovery } from './discovery.mjs';
 import { makeGoogleAuth } from './google.mjs';
 import { makeCalendar } from './calendar.mjs';
@@ -101,6 +103,10 @@ export function liveDeps(env = process.env) {
       const me = people[userId] || {};
       const calendars = me.calendars || {};
       const audit = (entry) => store.addAudit({ user: userId, username: claims.username, channel, ...entry });
+      const user = { sub: claims.sub, username: claims.username };
+      const discovered = await discovery.forUser({ user, channel, audit });
+      // House is discovered for reading; control is built in, only for people who can use House
+      const houseApp = discovered.apps?.family_house;
       return {
         person: { name: me.name },
         tools: makeTools({
@@ -111,7 +117,8 @@ export function liveDeps(env = process.env) {
             tokenFor, apiUrl: budgetApp.api_url, clientId: budgetApp.client_id,
             user: { sub: claims.sub, username: claims.username }, channel, audit,
           }),
-          discovered: await discovery.forUser({ user: { sub: claims.sub, username: claims.username }, channel, audit }),
+          house: houseApp && makeHouse({ tokenFor, apiUrl: houseApp.api_url, clientId: houseApp.client_id, user, channel, audit }),
+          discovered,
         }),
       };
     },

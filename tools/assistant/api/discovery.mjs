@@ -37,9 +37,9 @@ export function makeDiscovery({ listApps, tokenFor, fetch = globalThis.fetch, no
     return manifest;
   }
 
-  /** The discovered tools for one person: { definitions, connected, handlers } */
+  /** The discovered tools for one person: { definitions, connected, handlers, apps } (apps: the ones they can use) */
   async function forUser({ user, channel = 'web', audit = async () => {} }) {
-    const definitions = [], connected = [], handlers = {};
+    const definitions = [], connected = [], handlers = {}, apps = {};
     for (const app of await published()) {
       let token;
       try {
@@ -50,6 +50,7 @@ export function makeDiscovery({ listApps, tokenFor, fetch = globalThis.fetch, no
       }
       const m = await manifestOf(app, token);
       if (!m) continue;
+      apps[app.app] = { api_url: app.api_url, client_id: app.client_id };
       connected.push({ title: m.title, description: m.description, tools: m.operations.map((op) => `${m.name}_${op.name}`) });
       for (const op of m.operations) {
         const name = `${m.name}_${op.name}`;
@@ -72,7 +73,7 @@ export function makeDiscovery({ listApps, tokenFor, fetch = globalThis.fetch, no
         };
       }
     }
-    return { definitions, connected, handlers };
+    return { definitions, connected, handlers, apps };
   }
 
   return { forUser };

@@ -57,7 +57,7 @@ person* from the other tool's **delegated client** (`platform/api/delegation.mjs
 - The target tool opts in with family-app `delegated = true` and lists who may read it in
   `delegates` (default `["dot"]`). It publishes `{api_url, client_id}` at SSM `/family/delegation/<group>`.
 - Cognito still applies the group gate; tokens come out marked `via: "dot"`; **the target refuses
-  every non-GET from them** (403 `read-only`). Reads are audited by the reader.
+  every non-GET from them** (403 `read-only`); the one exception is House's `POST /commands`, within the person's grants (Dot's `house_control`). Reads are audited by the reader.
 
 Current links: Dot → any tool with a manifest (today the three finances tools and House); finances tools → Budget (as their person);
 Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`).
@@ -65,7 +65,7 @@ Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`)
 ### Dot (the assistant) and tool discovery
 
 Dot (`tools/assistant`; internals in `tools/assistant/AGENTS.md`) acts as whoever is signed in. Apart
-from its built-ins (calendar, `read_budget`), **every tool is discovered** (`api/discovery.mjs`): Dot lists `/family/delegation/*`, borrows a token for the
+from its built-ins (calendar, `read_budget`, `house_control`), **every tool is discovered** (`api/discovery.mjs`): Dot lists `/family/delegation/*`, borrows a token for the
 asker, reads each tool's `GET /dot` manifest (`platform/api/dot-manifest.mjs`) and offers its
 operations as `<name>_<operation>` tools, GET only. Members can also **text** Dot: the SMS webhook maps a
 verified Cognito `phone_number` in `family_assistant` to the person, and Dot's SMS worker runs the same turn
