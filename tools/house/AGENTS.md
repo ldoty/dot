@@ -18,6 +18,10 @@ Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
 - Commands are never queued for later: if the relay is offline or silent, the answer is 504, and the
   relay drops a command that arrives after its `expires` (5 s) or twice.
 - Every command, allowed or not, gets an audit row.
+- The relay must recover on its own after a power cut: its unit waits for a default route
+  (network-online.target doesn't wait in the container), and it exits after 2 minutes without a
+  working connection to Home Assistant or AWS so systemd restarts it. On 2026-10-19 a relay that
+  started before the network sat silent until restarted by hand.
 
 ## Stages
 

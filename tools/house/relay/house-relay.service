@@ -7,6 +7,9 @@ Wants=network-online.target
 
 [Service]
 User=relay
+# network-online.target doesn't wait in this container: wait for a default route (up to a minute)
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do ip route | grep -q "^default" && exit 0; sleep 1; done; exit 0'
+TimeoutStopSec=15
 WorkingDirectory=/opt/house-relay
 ExecStart=/usr/local/bin/node /opt/house-relay/relay.mjs
 Environment=HA_URL=ws://192.168.0.165/api/websocket

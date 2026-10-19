@@ -24,6 +24,11 @@ const haToken = readFileSync(env.HA_TOKEN_FILE, 'utf8').trim();
 const houseKey = readFileSync(env.HOUSE_KEY_FILE, 'utf8').trim();
 const FULL_EVERY_MS = 5 * 60_000;
 const BATCH_MS = 1000;
+// Past this without a working connection to either side, exit and let systemd start a fresh
+// process: after the 2026-10-19 power cut a relay started before the network sat silent for good
+const STUCK_MS = 2 * 60_000;
+const started = Date.now();
+let haOkAt = started, awsOkAt = started;
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
@@ -70,6 +75,7 @@ function connectHa() {
     if (m.type === 'auth_invalid') { log('ha: token refused'); return ws.close(); }
     if (m.type === 'auth_ok') {
       ha = ws;
+      haOkAt = Date.now();
       try {
         await loadRegistry();
         states = new Map((await haCall({ type: 'get_states' })).map((s) => [s.entity_id, s]));
@@ -179,6 +185,7 @@ function connectAws() {
   const ws = new WebSocket(env.HOUSE_WS_URL, { headers: { 'x-house-key': houseKey } });
   ws.onopen = () => {
     aws = ws;
+    awsOkAt = Date.now();
     awsBackoff = 1000;
     log('aws: connected');
     sendFull();
@@ -196,3 +203,13 @@ function connectAws() {
 connectHa();
 connectAws();
 setInterval(sendFull, FULL_EVERY_MS); // also keeps the connection inside API Gateway's 10-minute idle limit
+setInterval(() => {
+  const now = Date.now();
+  if (ha) haOkAt = now;
+  if (aws?.readyState === WebSocket.OPEN) awsOkAt = now;
+  const down = [now - haOkAt > STUCK_MS && 'Home Assistant', now - awsOkAt > STUCK_MS && 'AWS'].filter(Boolean);
+  if (down.length) {
+    log(`no connection to ${down.join(' or ')} for over 2 minutes: exiting so systemd restarts the relay`);
+    process.exit(1);
+  }
+}, 15_000);
