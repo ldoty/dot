@@ -112,6 +112,8 @@ body { display: flex; flex-direction: column }
     recall: ["Checking notes…", "Checked notes"],
     house_state: ["Checking the house…", "Checked the house"],
     house_control: ["Changing the lights…", "Changed the lights"],
+    house_automation: ["Setting up an automation…", "Worked on an automation"],
+    schedule: ["Working on a scheduled ask…", "Worked on a scheduled ask"],
   };
   function toolLabel(name, done) { var l = TOOL_LABELS[name]; return l ? l[done ? 1 : 0] : name; }
 
@@ -188,7 +190,7 @@ body { display: flex; flex-direction: column }
   }
 
   // ---- What Dot knows: notes Dot saved; you edit your own, admins the household's ----
-  var memory = null, editing = null, memoryMsg = "";
+  var memory = null, editing = null, memoryMsg = "", scheduled = [];
   var CHANNEL = { sms: "by text", email: "by email", web: "in chat" };
   function noteHtml(n, canEdit) {
     if (editing === n.id) {
@@ -204,10 +206,17 @@ body { display: flex; flex-direction: column }
     var section = function (title, list, canEdit, empty) {
       return '<section class="card"><h3>' + title + "</h3>" + (list.length ? list.map(function (n) { return noteHtml(n, canEdit); }).join("") : '<p class="lede">' + empty + "</p>") + "</section>";
     };
+    // Scheduled asks: what Dot does for you by itself, and when
+    var sched = '<section class="card"><h3>Scheduled for you</h3>' + (scheduled.length ? scheduled.map(function (x) {
+      var last = x.lastRun ? (x.lastRun.ok ? "Last sent " + ago(x.lastRun.at) : "Last time it didn’t work (" + x.lastRun.error + ")") : "Not sent yet";
+      var next = x.nextAt ? "next " + new Date(x.nextAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "finished";
+      return '<div class="note" data-sched="' + esc(x.id) + '"><strong>' + esc(x.title) + "</strong><p>" + esc(x.says) + ": “" + esc(x.ask) + "”</p><small>" + esc(last + " · " + next) +
+        '</small><div class="acts"><button data-del-sched>Delete</button></div></div>';
+    }).join("") : '<p class="lede">Nothing yet. Ask Dot: “Text me a budget overview every Sunday at 1.”</p>') + "</section>";
     thread.innerHTML = '<div class="memory"><h2>What Dot knows</h2><p class="lede">Dot saves things you tell it that are likely to come up again. Ask Dot to forget something, or change it here.</p>' +
       (memoryMsg ? '<p class="notice">' + esc(memoryMsg) + "</p>" : "") +
       section("Just you", memory.personal, true, "Nothing yet. Tell Dot what you like, or what your shorthands mean.") +
-      section("Everyone in the family", memory.household, memory.canEditHousehold, "Nothing yet.") + "</div>";
+      section("Everyone in the family", memory.household, memory.canEditHousehold, "Nothing yet.") + sched + "</div>";
   }
   function openMemory() {
     current = null; editing = null; memoryMsg = "";
@@ -216,7 +225,7 @@ body { display: flex; flex-direction: column }
     document.querySelector(".chat").classList.add("notes-open");
     renderList();
     thread.innerHTML = '<p class="thinking">Loading…</p>';
-    return apiJson("GET", "/notes").then(function (m) { memory = m; renderMemory(); })
+    return Promise.all([apiJson("GET", "/notes"), apiJson("GET", "/schedules")]).then(function (r) { memory = r[0]; scheduled = r[1]; renderMemory(); })
       .catch(function () { thread.innerHTML = '<p class="notice">Couldn’t load what Dot knows.</p>'; });
   }
   function findNote(el) {
@@ -227,7 +236,16 @@ body { display: flex; flex-direction: column }
   }
   thread.addEventListener("click", function (e) {
     if (!memory || !document.querySelector(".chat.notes-open")) return;
-    var n;
+    var n, sc = e.target.closest("[data-del-sched]");
+    if (sc) {
+      var id = sc.closest("[data-sched]").dataset.sched, x = scheduled.filter(function (y) { return y.id === id; })[0];
+      if (!x || !window.confirm("Delete “" + x.title + "”? Dot stops sending it.")) return;
+      api("DELETE", "/schedules/" + encodeURIComponent(id)).then(function (res) {
+        memoryMsg = res.ok ? "" : "Couldn’t delete that. Try again.";
+        return apiJson("GET", "/schedules");
+      }).then(function (list) { scheduled = list; renderMemory(); });
+      return;
+    }
     if (e.target.closest("[data-edit-note]")) { editing = findNote(e.target).id; renderMemory(); }
     else if (e.target.closest("[data-cancel-note]")) { editing = null; renderMemory(); }
     else if (e.target.closest("[data-del-note]") && (n = findNote(e.target)) && window.confirm("Delete “" + n.title + "”? Dot will forget it.")) {

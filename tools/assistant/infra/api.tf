@@ -128,6 +128,7 @@ resource "aws_lambda_function" "api" {
       DELEGATION_PATH = "/family/delegation"
       TIME_ZONE       = "America/New_York"
       PHOTOS_BUCKET   = aws_s3_bucket.photos.id
+      USER_POOL_ID    = local.pool_id
     }
   }
 }

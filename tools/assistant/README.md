@@ -80,6 +80,19 @@ Twilio's 15-second timeout. The worker runs `runTurn()` as that person with `cha
 - The worker runs one turn at a time (reserved concurrency 1; other texts wait in line), never
   retries a turn, and drops a text that has waited more than 15 minutes.
 
+## Scheduled asks
+
+“Text me a budget overview every Sunday at 1”: Dot sets it up after you say yes, and at that time runs the
+ask as you, **read-only** (it can look at calendars, Budget, Lists and the house, but change nothing), and
+texts or emails you the answer. Replying carries on that conversation. Daily at most, ten each; yours are
+listed under What Dot knows, where you can delete them (or ask Dot to stop one).
+
+- `lukes-assistant-scheduled` (`api/scheduled.mjs`, `infra/scheduled.tf`) runs every minute, one at a time,
+  never retried. A run that's more than an hour late is recorded as missed, not sent.
+- It checks you're still an enabled `family_assistant` member and reads your verified phone and email from
+  Cognito (`AdminGetUser`, `AdminListGroupsForUser`), so an ask stops when you leave Dot.
+- Rows: `SCHED#<sub>` / `<id>` (the ask) and `SCHEDDUE` / `<nextAt>#<sub>#<id>` (what's due), in `api/schedules.mjs`.
+
 ## Photos
 
 Photos texted or emailed in are kept **7 days** in a private bucket (`lukes-assistant-photos-…`, `infra/photos.tf`)

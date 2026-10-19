@@ -10,6 +10,8 @@
 //   PUT    /notes/{scope}/{id}  { title, body, tags, links, rev } -> the note   (409 + current if it changed)
 //   DELETE /notes/{scope}/{id}
 //          personal notes are only ever your own; household notes are for admins to edit
+//   GET    /schedules           -> your scheduled asks (schedules.mjs), with what each says and when it runs next
+//   DELETE /schedules/{id}
 // Every request needs a family_assistant access token, verified here. Dot then acts as that
 // person: their name and calendars (PEOPLE), and their own access to other tools (delegation):
 // Budget through read_budget, House's lights through house_control, Lists through lists_change, and any family tool that
@@ -28,6 +30,7 @@ import { makeBudget } from './budget.mjs';
 import { makeHouse } from './house.mjs';
 import { makeLists } from './lists.mjs';
 import { makeMemoryTools, makeNotes, NOTE_ID } from './memory.mjs';
+import { cognitoContact, makeScheduleTool, makeSchedules, SCHED_ID } from './schedules.mjs';
 import { makeDiscovery } from './discovery.mjs';
 import { makeCalendars } from './calendars.mjs';
 import { makeTools } from './tools.mjs';
@@ -75,6 +78,7 @@ export function liveDeps(env = process.env) {
   const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
   const store = makeStore({ db, table: env.TABLE, photos: env.PHOTOS_BUCKET && s3Photos(env.PHOTOS_BUCKET) });
   const notes = makeNotes({ db, table: env.TABLE });
+  const schedules = makeSchedules({ db, table: env.TABLE });
   // Family tools published for Dot: SSM /family/delegation/<app> = { api_url, client_id }
   const discovery = makeDiscovery({
     tokenFor,
@@ -94,6 +98,7 @@ export function liveDeps(env = process.env) {
     auth: { issuer: env.ISSUER, clientId: env.CLIENT_ID, group: env.GROUP },
     store,
     notes,
+    schedules,
     // Bedrock Runtime (InvokeModel). Opus 4.7+ needs per-account approval this account doesn't
     // have yet; this client also serves those models, so upgrading is just the model setting.
     // With FALLBACK_MODEL set, refusals retry on it (Bedrock has no server-side fallback). Off for
@@ -102,11 +107,14 @@ export function liveDeps(env = process.env) {
       awsRegion: env.AWS_REGION,
       middleware: env.FALLBACK_MODEL ? [betaRefusalFallbackMiddleware([{ model: env.FALLBACK_MODEL }])] : [],
     }),
-    /** Dot for one person: their name, their calendars, and their own access to the family's tools */
-    async forUser(claims, channel = 'web') {
+    /**
+     * Dot for one person: their name, their calendars, and their own access to the family's tools.
+     * readOnly: a scheduled ask's run (scheduled.mjs), with only tools that read; scheduled: its id, for the audit
+     */
+    async forUser(claims, channel = 'web', { readOnly = false, scheduled } = {}) {
       const userId = claims.sub || claims.username;
       const me = people[userId] || {};
-      const audit = (entry) => store.addAudit({ user: userId, username: claims.username, channel, ...entry });
+      const audit = (entry) => store.addAudit({ user: userId, username: claims.username, channel, ...(scheduled ? { scheduled } : {}), ...entry });
       const user = { sub: claims.sub, username: claims.username };
       const discovered = await discovery.forUser({ user, channel, audit });
       // House is discovered for reading; control is built in, only for people who can use House
@@ -130,6 +138,8 @@ export function liveDeps(env = process.env) {
           house: houseApp && makeHouse({ tokenFor, apiUrl: houseApp.api_url, clientId: houseApp.client_id, user, channel, audit }),
           lists: listsApp && makeLists({ tokenFor, apiUrl: listsApp.api_url, clientId: listsApp.client_id, user, channel, audit, timeZone: env.TIME_ZONE }),
           memory: makeMemoryTools({ notes, userId, name: me.name, channel, audit }),
+          schedule: makeScheduleTool({ schedules, userId, channel, timeZone: env.TIME_ZONE, contact: () => cognitoContact(env, userId), audit }),
+          readOnly,
           discovered,
         }),
       };
@@ -164,6 +174,15 @@ export function createHandler(depsOrFactory) {
     if (method === 'GET' && path === '/conversations') return json(200, await deps.store.listConversations(userId));
     if (method === 'GET' && path === '/audit') {
       return json(200, await deps.store.listAudit(admin ? {} : { user: userId }));
+    }
+    // Scheduled asks: each person's own, never anyone else's
+    if (method === 'GET' && path === '/schedules') return json(200, await deps.schedules.list(userId));
+    const schedMatch = /^\/schedules\/([a-z0-9]{9,21})$/.exec(path);
+    if (schedMatch && method === 'DELETE') {
+      if (!SCHED_ID.test(schedMatch[1])) return json(400, { error: 'bad id' });
+      if (!(await deps.schedules.remove(userId, schedMatch[1]))) return json(404, { error: 'not found' });
+      await deps.store.addAudit({ user: userId, username: claims.username, channel: 'web', tool: 'schedule', action: `delete ${schedMatch[1]} (page)`, outcome: 'ok' });
+      return json(200, { deleted: schedMatch[1] });
     }
     const noteMatch = /^\/notes\/(household|personal)\/([a-z0-9]{7,21})$/.exec(path);
     if (method === 'GET' && path === '/notes') {

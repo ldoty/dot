@@ -18,6 +18,15 @@ House `confirm` grant, any automation change, deleting a list or an event) are e
 have no confirm_id field, and `confirm: true` is sent only if the person has written a new message
 since that tool asked. Keep it that way: tool results never count as their reply.
 
+**Scheduled asks** (`api/schedules.mjs`, run by `api/scheduled.mjs` every minute): "text me a budget overview
+every Sunday at 1". Each person's own (the `schedule` tool and the page's What Dot knows; nobody else's, not even
+an admin's). Making one needs the person's own reply (`confirm.mjs`); it's a standing permission. A run is a turn
+as its owner with **read-only tools** (`makeTools({ readOnly })` leaves out `WRITE_TOOLS`; keep that list complete
+when adding a tool that changes anything), only while they're an enabled `family_assistant` member, to their
+verified phone or email, once (claimed with a rev check), and never more than an hour late. Its message starts with
+`SCHEDULED_MARK`, which never counts as the person's reply to a confirmation. Repeat rules are Lists' (`repeat.mjs`
+is a symlink to `tools/lists/api/repeat.mjs`), daily at most.
+
 **Memory** (`api/memory.mjs`): Dot keeps notes (`remember`, `forget`, `recall`), household (every
 member's Dot reads them; admins edit them on the page) or personal (only that person's Dot; only they
 edit them). Dot decides what's worth saving. Every note goes into the instructions each turn, last, so

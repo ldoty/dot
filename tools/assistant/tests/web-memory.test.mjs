@@ -6,6 +6,7 @@ import { JSDOM } from 'jsdom';
 import { ISSUER, accessToken } from '../../../platform/tests/helpers/tokens.mjs';
 import { createHandler } from '../api/handler.mjs';
 import { makeNotes } from '../api/memory.mjs';
+import { makeSchedules } from '../api/schedules.mjs';
 import { db, store, table } from './helpers/deps.mjs';
 
 const HTML = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8').replace('<script src="family-auth.js"></script>', '');
@@ -13,7 +14,8 @@ const wait = (ms = 60) => new Promise((r) => setTimeout(r, ms));
 const API = 'https://fn.test';
 const LUKE = 'luke-sub', AMBER = 'amber-sub';
 const notes = makeNotes({ db, table: 'lukes-assistant' });
-const handle = createHandler({ auth: { issuer: ISSUER, clientId: 'assistant-client', group: 'family_assistant' }, store, notes });
+const schedules = makeSchedules({ db, table: 'lukes-assistant', now: () => new Date('2026-10-19T16:00:00Z') });
+const handle = createHandler({ auth: { issuer: ISSUER, clientId: 'assistant-client', group: 'family_assistant' }, store, notes, schedules });
 const opened = [];
 
 async function open({ sub = LUKE, admin = false, confirm = true } = {}) {
@@ -78,4 +80,34 @@ test('an admin deletes a household note', async () => {
   await wait(120);
   assert.match(p.section(1).textContent, /Nothing yet/);
   assert.deepEqual((await notes.forPerson(LUKE)).household, []);
+});
+
+// ---- scheduled asks ----
+
+const SUNDAY = { title: 'Sunday budget', ask: 'Give me an overview of this month’s budget.', time: '13:00', repeat: { rule: 'FREQ=WEEKLY;BYDAY=SU', tz: 'America/New_York', start: '2026-10-19', n: 0 }, by: 'sms' };
+
+test('your scheduled asks show under What Dot knows, with when they run; delete one', async () => {
+  await schedules.create(LUKE, SUNDAY, { via: 'sms' });
+  await schedules.create(AMBER, { ...SUNDAY, title: 'Amber’s' }, { via: 'sms' });
+  const p = await open();
+  const card = p.section(2);
+  assert.equal(card.querySelector('h3').textContent, 'Scheduled for you');
+  assert.deepEqual([...card.querySelectorAll('strong')].map((e) => e.textContent), ['Sunday budget'], 'only your own');
+  assert.equal(card.querySelector('p').textContent, 'Every Sunday at 1:00 PM, by text: “Give me an overview of this month’s budget.”');
+  assert.match(card.querySelector('small').textContent, /^Not sent yet · next Sun, Oct 25, 1:00 PM$/);
+  card.querySelector('[data-del-sched]').click();
+  await wait(120);
+  assert.deepEqual(await schedules.list(LUKE), []);
+  assert.equal((await schedules.list(AMBER)).length, 1);
+  assert.match(p.section(2).textContent, /Nothing yet. Ask Dot: “Text me a budget overview every Sunday at 1.”/);
+});
+
+test('you can’t delete someone else’s scheduled ask', async () => {
+  const theirs = await schedules.create(AMBER, SUNDAY, { via: 'sms' });
+  const tok = accessToken({ clientId: 'assistant-client', sub: LUKE, 'cognito:groups': ['family_assistant', 'family_assistant:admin'] });
+  const res = {};
+  await handle({ rawPath: `/schedules/${theirs.id}`, requestContext: { http: { method: 'DELETE' } }, headers: { authorization: `Bearer ${tok}` } },
+    (status) => { res.status = status; return { write() {}, end() {} }; });
+  assert.equal(res.status, 404, 'not even an admin');
+  assert.equal((await schedules.list(AMBER)).length, 1);
 });
