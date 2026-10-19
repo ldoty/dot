@@ -1,21 +1,17 @@
 // Who may do what (admins only, from the page; Dot can't reach any of this). The rules themselves
 // are in grants.mjs; this stores them.
 //   GET    /access         -> { grants, groups, people, areas, entities }   people: members of the
-//                             tool's group (Cognito), for the pickers; areas/entities: what the house reports
+//                             tool's group (Cognito), named as dot-y.co/family names them; groups: the
+//                             family's (platform/api/people.mjs), edited there, granted here by id
 //   PUT    /grants/{id}    { who, where, level, rev? } -> the grant      no rev: new; rev: replace that
 //   DELETE /grants/{id}                                                   version (409 + current if it changed)
-//   PUT    /groups/{name}  { members, rev? } -> the group               members: Cognito subs
-//   DELETE /groups/{name}                                                its grants stop applying (and are removed)
 //   GET    /log            -> the last 7 days of commands, newest first (at most 200)
 //
 // Rows: GRANT / <id>    { who, where, level, rev, changedBy, changedAt }
-//       GROUP / <name>  { name, members, rev, changedBy, changedAt }
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { parseGrant } from './grants.mjs';
 
 const GRANT_ID = /^[a-z0-9]{6,24}$/;
-const GROUP = /^[a-z0-9_-]{1,40}$/;
-const SUB = /^[0-9a-f-]{36}$/;
 const LOG_DAYS = 7;
 const LOG_MAX = 200;
 
@@ -23,10 +19,9 @@ const json = (statusCode, body) => ({
   statusCode, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
 });
 const grantOut = (g) => ({ id: g.sk, who: g.who, where: g.where, level: g.level, rev: g.rev });
-const groupOut = (g) => ({ name: g.sk, members: g.members ?? [], rev: g.rev });
 
-/** deps: db, table, all(pk), members() -> [{ sub, name }], now() */
-export function makeAccess({ db, table, all, members, now }) {
+/** deps: db, table, all(pk), members() -> [{ sub, name }], people (platform/api/people.mjs), now() */
+export function makeAccess({ db, table, all, members, people, now }) {
   const get = async (pk, sk) => (await db.send(new GetCommand({ TableName: table, Key: { pk, sk } }))).Item;
 
   /** Put with a rev check; false if someone else changed it first */
@@ -48,11 +43,11 @@ export function makeAccess({ db, table, all, members, now }) {
 
   return {
     async read() {
-      const [grants, groups, people, areas, entities] = await Promise.all([all('GRANT'), all('GROUP'), members(), all('AREA'), all('ENTITY')]);
+      const [grants, groups, list, names, areas, entities] = await Promise.all([all('GRANT'), people.groups(), members(), people.names(), all('AREA'), all('ENTITY')]);
       return json(200, {
         grants: grants.map(grantOut),
-        groups: groups.map(groupOut),
-        people: people.sort((a, b) => a.name.localeCompare(b.name)),
+        groups: groups.map((g) => ({ id: g.id, name: g.name })),
+        people: list.map((p) => ({ sub: p.sub, name: names.get(p.sub) ?? p.name })).sort((a, b) => a.name.localeCompare(b.name)),
         areas: areas.map((a) => ({ id: a.sk, name: a.name })).sort((a, b) => a.name.localeCompare(b.name)),
         entities: entities.map((e) => ({ id: e.sk, name: e.name, area: e.area ?? null })).sort((a, b) => a.name.localeCompare(b.name)),
       });
@@ -82,33 +77,6 @@ export function makeAccess({ db, table, all, members, now }) {
       await db.send(new DeleteCommand({ TableName: table, Key: { pk: 'GRANT', sk: id } }));
       console.log('grant removed', JSON.stringify({ id, by }));
       return json(200, { id });
-    },
-
-    async putGroup(name, body, by) {
-      if (!GROUP.test(name ?? '')) return json(400, { error: 'bad name' });
-      const list = body.members;
-      if (!Array.isArray(list) || list.length > 50 || list.some((s) => typeof s !== 'string' || !SUB.test(s))) return json(400, { error: 'bad members' });
-      const rev = revOf(body);
-      if (Number.isNaN(rev)) return json(400, { error: 'bad rev' });
-      const item = { pk: 'GROUP', sk: name, members: [...new Set(list)], rev: (rev ?? 0) + 1, changedBy: by, changedAt: now().toISOString() };
-      if (!(await putAt(item, rev))) {
-        const cur = await get('GROUP', name);
-        return json(409, { error: 'changed by someone else', current: cur ? groupOut(cur) : null });
-      }
-      console.log('group saved', JSON.stringify({ name, members: item.members, by }));
-      return json(200, groupOut(item));
-    },
-
-    async deleteGroup(name, by) {
-      if (!GROUP.test(name ?? '')) return json(400, { error: 'bad name' });
-      // Its grants would otherwise come back to life if a group of the same name were made later
-      const orphans = (await all('GRANT')).filter((g) => g.who === `group:${name}`);
-      await Promise.all([
-        db.send(new DeleteCommand({ TableName: table, Key: { pk: 'GROUP', sk: name } })),
-        ...orphans.map((g) => db.send(new DeleteCommand({ TableName: table, Key: { pk: 'GRANT', sk: g.sk } }))),
-      ]);
-      console.log('group removed', JSON.stringify({ name, grants: orphans.map((g) => g.sk), by }));
-      return json(200, { name, removedGrants: orphans.map((g) => g.sk) });
     },
 
     async log() {

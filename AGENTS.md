@@ -30,6 +30,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/sms` | (API only) | | Dot-y texting program: opt-in consent records, and Twilio’s webhook that hands members’ texts to Dot |
 | `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail; dot@dot-y.co: the gate that hands members’ mail to Dot |
 | `platform/billing` | | | Account-wide $75/mo budget + cost anomaly alerts |
+| `platform/family` | dot-y.co/family | `family_admin` | The family's groups and display names, shared by every tool (table `family-people`); tools read them with `platform/api/people.mjs` |
 
 AWS account `921782276410`, region `us-east-1`, CLI profile **`ldoty`**. State bucket
 `family-tfstate-921782276410`, one key per root (`platform/<x>/…`, `tools/<x>/…`).
@@ -74,6 +75,14 @@ verified Cognito `phone_number` in `family_assistant` to the person, and Dot's S
 `platform/email/lambda/dot.mjs` requires DMARC and a verified Cognito `email` in `family_assistant`, then Dot's email worker replies. To make a tool usable by Dot: `delegated = true`,
 publish `/family/delegation/<group>`, serve `GET /dot` (validate it with `validateManifest`), accept the
 delegated client id in its token check, refuse non-GET from it. No Dot code change.
+
+### Family groups
+
+Groups of people ("Kids") are kept once, in `platform/family`, and edited by `family_admin` at
+dot-y.co/family. Tools read them (IAM GetItem/Query on `family-people`, via `platform/api/people.mjs`,
+cached a minute) and grant by **group id** (`group:<id>`), so a deleted group's grants never come back
+with a new group of the same name. What a group may do stays in each tool's own grants. These groups
+are not access to tools: that's each tool's Cognito group, and the family API can't touch those.
 
 ## Conventions
 
@@ -125,6 +134,7 @@ npm run test:live
 - **Read every plan.** Expect `0 to destroy`. Tables are protected, but stop and ask if a plan replaces
   anything stateful (tables, the user pool, buckets, KMS keys, the SimpleFIN secrets).
 - Order for cross-tool changes: core (signers, rules) → the tool being read (delegates) → the reader.
+- `platform/family` before core (core's dot-y.co/family page reads its API URL).
 - New tool: `platform/scripts/new-tool.sh <name> "Title" [group]`, then its infra, then core, then
   `invite.sh` or add people to the group (`aws cognito-idp admin-add-user-to-group`).
 - Cognito usernames are the users' `sub`s: Luke `44f8c468-4011-70b8-76aa-ec2b68b0b004`,
@@ -143,6 +153,7 @@ npm run test:live
 | `/family/calendar/google-key` | SecureString: Dot's Google service-account key |
 | `/family/chamber/device-key` | SecureString, set by hand: the chamber board's key for `POST /ingest` (also in its gitignored `arduino_secrets.h`) |
 | `/family/house/relay-key` | SecureString, set by hand: the house relay's key for its WebSocket `$connect` (also in the relay container's `/etc/house-relay/house-key`) |
+| `/family/people/table-arn`, `/family/people/api-url` | The family's groups and names (`platform/family`): tools read the table; dot-y.co/family calls the API |
 | `/family/sms/optin-url` | The SMS opt-in endpoint, for the public page |
 | `/family/sms/twilio` | SecureString, set by hand: Twilio API key for sending `{accountSid, apiKeySid, apiKeySecret, messagingServiceSid}` |
 | `/family/sms/twilio-webhook` | SecureString, set by hand: `{accountSid, authToken}`, only for the webhook's signature checks |

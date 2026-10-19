@@ -47,7 +47,6 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
 .pick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px }
 .pick select, .pick input[type=text] { flex: 1 1 140px; min-width: 0; background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 8px 10px; color: var(--ink); font: inherit }
 .pick select:focus, .pick input:focus { border-color: var(--pool); outline: none }
-.members { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 15px }
 .log li { display: block }
 .log .what { display: block }
 .log small { display: block }
@@ -180,7 +179,10 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
   var DONE = { done: "", denied: "not allowed", failed: "failed", offline: "house offline", timeout: "no answer" };
 
   function whoName(who) {
-    if (who.indexOf("group:") === 0) return "Group “" + who.slice(6) + "”";
+    if (who.indexOf("group:") === 0) {
+      for (var g = 0; g < access.groups.length; g++) if (access.groups[g].id === who.slice(6)) return "Group “" + access.groups[g].name + "”";
+      return "A removed group";
+    }
     var sub = who.slice(4);
     for (var i = 0; i < access.people.length; i++) if (access.people[i].sub === sub) return access.people[i].name;
     return "Someone no longer in House";
@@ -211,19 +213,14 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
       }).join("") : '<li><small>No one yet.</small></li>') + "</ul>" +
       '<form class="pick" id="add-grant"><select id="g-who" aria-label="Who">' +
       opts(access.people, function (p) { return "sub:" + p.sub; }, function (p) { return p.name; }) +
-      opts(access.groups, function (g) { return "group:" + g.name; }, function (g) { return "Group “" + g.name + "”"; }) +
+      opts(access.groups, function (g) { return "group:" + g.id; }, function (g) { return "Group “" + g.name + "”"; }) +
       '</select><select id="g-where" aria-label="Where"><option value="*">Everywhere</option><optgroup label="Rooms">' +
       opts(access.areas, function (a) { return "area:" + a.id; }, function (a) { return a.name; }) +
       '</optgroup><optgroup label="Devices">' + opts(access.entities, function (e) { return "entity:" + e.id; }, function (e) { return e.name; }) +
       '</optgroup></select><select id="g-level" aria-label="Level"><option value="read">Can see</option><option value="confirm">Ask first</option><option value="control">Can control</option></select>' +
       '<button class="btn primary">Add</button></form></section>';
 
-    html += '<section class="card"><h3>Groups</h3><ul class="rules">' + (access.groups.length ? access.groups.map(function (g) {
-      return '<li data-group="' + esc(g.name) + '"><span><strong>' + esc(g.name) + '</strong><span class="members">' + access.people.map(function (p) {
-        return '<label><input type="checkbox" data-member="' + esc(p.sub) + '"' + (g.members.indexOf(p.sub) >= 0 ? " checked" : "") + "> " + esc(p.name) + "</label>";
-      }).join("") + '</span></span><button class="x" data-del-group aria-label="Remove group">&times;</button></li>';
-    }).join("") : '<li><small>No groups. A group lets you give several people the same access.</small></li>') + "</ul>" +
-      '<form class="pick" id="add-group"><input type="text" id="new-group" placeholder="New group, like kids" aria-label="Group name" maxlength="40"><button class="btn ghost">Add group</button></form></section>';
+    html += '<section class="card"><h3>Groups</h3><p class="status">Groups like “Kids” are shared by every family tool. Family admins manage them at <a href="https://dot-y.co/family">dot-y.co/family</a>; give a group access here.</p></section>';
 
     html += '<section class="card"><h3>Recent activity</h3><ul class="rules log">' + (activity.length ? activity.slice(0, 50).map(function (a) {
       var verb = (a.action === "turn_off" ? "turned off " : "turned on ") + (a.name || a.entity_id) + (a.data && a.data.brightness_pct ? " at " + a.data.brightness_pct + "%" : "");
@@ -257,30 +254,12 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
       var who = document.getElementById("g-who").value;
       if (!who) return;
       change("PUT", "/grants/" + uid(), { who: who, where: document.getElementById("g-where").value, level: document.getElementById("g-level").value });
-    } else if (ev.target.id === "add-group") {
-      var name = document.getElementById("new-group").value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
-      if (!name) return;
-      change("PUT", "/groups/" + encodeURIComponent(name), { members: [] });
     }
   });
   adminEl.addEventListener("click", function (ev) {
-    var g = ev.target.closest("[data-del-grant]"), gr = ev.target.closest("[data-del-group]");
+    var g = ev.target.closest("[data-del-grant]");
     if (g) change("DELETE", "/grants/" + encodeURIComponent(g.closest("li").dataset.grant));
-    if (gr) {
-      var name = gr.closest("li").dataset.group;
-      if (window.confirm("Remove the group “" + name + "” and the access it gives?")) change("DELETE", "/groups/" + encodeURIComponent(name));
-    }
   });
-  adminEl.addEventListener("change", function (ev) {
-    if (!ev.target.matches("[data-member]")) return;
-    var name = ev.target.closest("li").dataset.group, grp = null;
-    for (var i = 0; i < access.groups.length; i++) if (access.groups[i].name === name) grp = access.groups[i];
-    if (!grp) return;
-    var members = grp.members.filter(function (s) { return s !== ev.target.dataset.member; });
-    if (ev.target.checked) members.push(ev.target.dataset.member);
-    change("PUT", "/groups/" + encodeURIComponent(name), { members: members, rev: grp.rev });
-  });
-
   function gate(msg) {
     main.innerHTML = '<p class="status">' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button>';
     document.getElementById("signin").onclick = function () { FamilyAuth.login(); };

@@ -77,6 +77,14 @@ resource "aws_route53_record" "auth" {
 }
 
 # App roots (apps/*) look these up here instead of reading core's state.
+# Family admins: manage the groups and names every tool shares (dot-y.co/family, platform/family).
+# Not access to any tool: that stays with each tool's own group.
+resource "aws_cognito_user_group" "family_admin" {
+  user_pool_id = aws_cognito_user_pool.family.id
+  name         = "family_admin"
+  description  = "Manages the family's groups and names at dot-y.co/family"
+}
+
 resource "aws_ssm_parameter" "user_pool_id" {
   name  = "/family/core/user-pool-id"
   type  = "String"

@@ -28,8 +28,8 @@ Page ┘          (grants)                                (dials out)     (ceili
 | `GET /home[?area=]` | members, Dot | Rooms and devices the caller may read, each with their level; how fresh the picture is |
 | `POST /commands` | members, Dot | `{ entity_id, action, data?, confirm_id? }`: 200 done, 202 confirm first, 403 not theirs, 502 refused/failed, 504 offline. Never queued |
 | `GET /dot` | Dot | The manifest: `house_state` |
-| `GET /access` | admins, not Dot | Grants, groups, the people in `family_house` (Cognito), rooms and devices to pick from |
-| `PUT`/`DELETE /grants/{id}`, `/groups/{name}` | admins, not Dot | `rev`-checked (409 + current); removing a group removes its grants |
+| `GET /access` | admins, not Dot | Grants, the family's groups, the people in `family_house` (named as dot-y.co/family names them), rooms and devices to pick from |
+| `PUT`/`DELETE /grants/{id}` | admins, not Dot | `rev`-checked (409 + current) |
 | `GET /log` | admins, not Dot | The last 7 days of commands, newest first |
 | WebSocket `$connect` | the relay, `x-house-key` | Checked against SSM `/family/house/relay-key` |
 | WebSocket `sync` | the relay | A full snapshot (on connect, every 5 min) or changes |
@@ -50,11 +50,11 @@ own ceiling again, calls Home Assistant, and answers.
 | `PENDING` / `<confirm id>` | A command waiting for its confirmation: same person, same command, 2 minutes, once |
 | `CMD#<UTC day>` / `<ISO>#<id>` | Audit: who, via (page/dot), device, action, data, outcome (done, denied, failed, offline, timeout). Kept a year |
 | `GRANT` / `<id>` | `{ who, where, level }` (see `api/grants.mjs`), `rev`, `changedBy`, `changedAt` |
-| `GROUP` / `<name>` | `members`: Cognito subs, `rev`, `changedBy`, `changedAt` |
 
 ## Access
 
-Admins manage grants and groups under **People & access** on the page, with the last week's activity.
+Admins manage grants under **People & access** on the page, with the last week's activity. Groups are
+the family's (dot-y.co/family, `platform/family`); a grant names one by id.
 
 Two independent checks: the **ceiling** (`relay/ceiling.json`, enforced by the relay; AWS can’t
 change it) decides what exists at all, and **grants** (in the table) decide who may read or control
@@ -84,5 +84,5 @@ npm run test:live
 
 Access is checked four times: Cognito won't issue a token unless the user is in `family_house`,
 API Gateway only accepts this tool's tokens (and its delegated client's), the Lambda re-verifies
-the token itself, and its IAM role reaches only this tool's table (writing only confirmations, the audit trail, grants
-and groups), the relay's connection, and the list of `family_house` members.
+the token itself, and its IAM role reaches only this tool's table (writing only confirmations, the audit trail and
+grants), the relay's connection, the list of `family_house` members, and reading the family's groups.

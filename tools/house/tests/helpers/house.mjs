@@ -5,6 +5,9 @@ import { ISSUER, accessToken } from '../../../../platform/tests/helpers/tokens.m
 import { fakeTable } from '../../../../platform/tests/helpers/fake-table.mjs';
 import { caller } from '../../../../platform/tests/helpers/http.mjs';
 import { validateCeiling, refuseCommand } from '../../relay/ceiling.mjs';
+import { makePeople } from '../../api/people.mjs';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 export const table = fakeTable({ pageSize: 2 }); // the API must follow pages
 const { createApi } = await import('../../api/api.mjs');
@@ -12,7 +15,7 @@ const { createRelayWs } = await import('../../api/relay-ws.mjs');
 
 export const ROUTES = [
   'GET /home', 'GET /dot', 'POST /commands',
-  'GET /access', 'PUT /grants/{id}', 'DELETE /grants/{id}', 'PUT /groups/{name}', 'DELETE /groups/{name}', 'GET /log',
+  'GET /access', 'PUT /grants/{id}', 'DELETE /grants/{id}', 'GET /log',
 ];
 export const LUKE = '22222222-2222-2222-2222-222222222222';
 export const KID = '11111111-1111-1111-1111-111111111111';
@@ -39,7 +42,9 @@ export const handler = createApi({
   table: 'family-house', group: 'family_house', issuer: ISSUER,
   clientIds: ['house-client', 'house-via-dot'], dotClientId: 'house-via-dot',
   toRelay, now: () => new Date(), sleep: (ms) => new Promise((r) => setTimeout(r, ms / 50)),
-  members: async () => [{ sub: LUKE, name: 'Luke' }, { sub: KID, name: 'Kid' }],
+  members: async () => [{ sub: LUKE, name: 'Luke' }, { sub: KID, name: 'kid@x.test' }],
+  // The family's groups and names (platform/family) on the same fake table, never cached here
+  people: makePeople({ db: DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' })), table: 'family-people', ttlMs: 0 }),
 });
 
 export const token = ({ sub = LUKE, groups = ['family_house'], clientId = 'house-client', ...over } = {}) =>
@@ -72,3 +77,6 @@ export function seed() {
 
 /** Audit rows, oldest first */
 export const audit = () => table.dump().filter(([k]) => k.startsWith('CMD#')).map(([, v]) => v);
+
+/** A family group, as dot-y.co/family stores it (platform/family) */
+export const familyGroup = (id, name, members) => table.put({ pk: 'GROUP', sk: id, name, members, rev: 1 });

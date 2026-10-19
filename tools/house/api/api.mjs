@@ -11,8 +11,9 @@
 //                                 404 unknown device, 502 the house refused or failed, 504 the house is offline
 //                                 or didn't answer. Never queued: a command runs now or not at all.
 //   GET  /dot               -> this tool's description for Dot (platform/api/dot-manifest.mjs)
-//   GET /access, PUT|DELETE /grants/{id}, PUT|DELETE /groups/{name}, GET /log
+//   GET /access, PUT|DELETE /grants/{id}, GET /log
 //                           -> admins only (family_house:admin), never via Dot: see access.mjs
+// Groups are the family's (dot-y.co/family, platform/api/people.mjs); a grant names one by id.
 // What the house reports comes from the relay (api/relay-ws.mjs), already cut to the ceiling;
 // grants (api/grants.mjs) narrow it per person, and the relay checks every command against its own
 // ceiling again. Dot's tokens are read-only here except POST /commands, where the asker's grants
@@ -30,6 +31,7 @@ import { validateManifest } from './dot-manifest.mjs';
 import { atLeast, grantsFor, levelFor } from './grants.mjs';
 import { ID, KEY, parseData } from './protocol.mjs';
 import { makeAccess } from './access.mjs';
+import { makePeople } from './people.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 // The relay sends everything every 5 minutes; past this its picture of the house may be old
@@ -61,7 +63,7 @@ export const MANIFEST = validateManifest({
   }],
 });
 
-/** deps: table, group, issuer, clientIds, dotClientId, toRelay(connectionId, message), members(), now(), sleep(ms) */
+/** deps: table, group, issuer, clientIds, dotClientId, toRelay(connectionId, message), members(), people, now(), sleep(ms) */
 export function createApi(deps) {
   const { table } = deps;
   const get = async (pk, sk) => (await db.send(new GetCommand({ TableName: table, Key: { pk, sk } }))).Item;
@@ -77,11 +79,11 @@ export function createApi(deps) {
     } while (ExclusiveStartKey);
     return items;
   }
-  const access = makeAccess({ db, table, all, members: deps.members, now: deps.now });
+  const access = makeAccess({ db, table, all, members: deps.members, people: deps.people, now: deps.now });
   const personFor = async (claims, admin) => {
-    const [grants, groups] = await Promise.all([all('GRANT'), all('GROUP')]);
-    // A group row's name is its key
-    return { admin, grants: grantsFor(claims.sub, grants, groups.map((g) => ({ name: g.sk, members: g.members ?? [] }))) };
+    const [grants, groups] = await Promise.all([all('GRANT'), deps.people.groups()]);
+    // Grants name a family group by id
+    return { admin, grants: grantsFor(claims.sub, grants, groups.map((g) => ({ name: g.id, members: g.members }))) };
   };
 
   async function command(claims, admin, via, body) {
@@ -177,7 +179,7 @@ export function createApi(deps) {
     const admin = (claims['cognito:groups'] ?? []).includes(`${deps.group}:admin`);
 
     // Who may do what is for admins on the page; Dot never reads or changes it
-    const ADMIN_ROUTES = ['GET /access', 'PUT /grants/{id}', 'DELETE /grants/{id}', 'PUT /groups/{name}', 'DELETE /groups/{name}', 'GET /log'];
+    const ADMIN_ROUTES = ['GET /access', 'PUT /grants/{id}', 'DELETE /grants/{id}', 'GET /log'];
     if (ADMIN_ROUTES.includes(event.routeKey)) {
       if (viaDot) return json(403, { error: 'read-only' });
       if (!admin) return json(403, { error: 'admins only' });
@@ -195,8 +197,6 @@ export function createApi(deps) {
         case 'GET /access': return access.read();
         case 'PUT /grants/{id}': return access.putGrant(p.id, body, by);
         case 'DELETE /grants/{id}': return access.deleteGrant(p.id, by);
-        case 'PUT /groups/{name}': return access.putGroup(p.name, body, by);
-        case 'DELETE /groups/{name}': return access.deleteGroup(p.name, by);
         default: return access.log();
       }
     }
@@ -276,5 +276,5 @@ const env = process.env;
 export const handler = createApi({
   table: env.TABLE, group: env.GROUP, issuer: env.ISSUER,
   clientIds: [env.CLIENT_ID, env.DOT_CLIENT_ID].filter(Boolean), dotClientId: env.DOT_CLIENT_ID,
-  toRelay, members, now: () => new Date(), sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  toRelay, members, people: makePeople({ db, table: env.PEOPLE_TABLE }), now: () => new Date(), sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 });

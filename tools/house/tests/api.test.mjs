@@ -2,7 +2,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { forgedToken } from '../../../platform/tests/helpers/tokens.mjs';
-import { KID, LUKE, ROUTES, audit, call, relay, seed, table, token } from './helpers/house.mjs';
+import { KID, LUKE, ROUTES, audit, call, familyGroup, relay, seed, table, token } from './helpers/house.mjs';
 
 const { MANIFEST } = await import('../api/api.mjs');
 const grant = (sk, who, where, level) => table.put({ pk: 'GRANT', sk, who, where, level });
@@ -36,8 +36,8 @@ test('an admin sees every room, by name, with Other last, all at control with th
 });
 
 test('a member sees only what their grants allow, and actions only where they may control', async () => {
-  table.put({ pk: 'GROUP', sk: 'kids', members: [KID] }); // as access.mjs stores it: the name is the key
-  grant('g1', 'group:kids', 'area:kitchen', 'control');
+  familyGroup('gkids00001', 'Kids', [KID]);
+  grant('g1', 'group:gkids00001', 'area:kitchen', 'control');
   grant('g2', `sub:${KID}`, 'entity:light.dining_room_main', 'read');
   const r = await call('GET', '/home', undefined, kid());
   assert.deepEqual(r.body.you, { admin: false });

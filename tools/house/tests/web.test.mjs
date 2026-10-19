@@ -2,7 +2,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { KID, audit, call, relay, seed, table, token } from './helpers/house.mjs';
+import { KID, audit, call, familyGroup, relay, seed, table, token } from './helpers/house.mjs';
 
 const HTML = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8').replace('<script src="family-auth.js"></script>', '');
 const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
@@ -138,7 +138,7 @@ test('an admin gives someone a room: it’s listed by name and takes effect', as
   p.d.getElementById('g-level').value = 'control';
   await submit(p, 'add-grant');
   const [row] = [...admin(p).querySelectorAll('[data-grant]')];
-  assert.equal(row.querySelector('span').textContent, 'Kid · Kitchen · Can control');
+  assert.equal(row.querySelector('span').textContent, 'kid@x.test · Kitchen · Can control');
   const [g] = table.dump().filter(([k]) => k.startsWith('GRANT')).map(([, v]) => v);
   assert.deepEqual([g.who, g.where, g.level], [`sub:${KID}`, 'area:kitchen', 'control']);
   row.querySelector('[data-del-grant]').click();
@@ -148,17 +148,15 @@ test('an admin gives someone a room: it’s listed by name and takes effect', as
   p.close();
 });
 
-test('groups: add one, tick a member, and it can be granted', async () => {
+test('groups come from dot-y.co/family: grant one by name, see it listed', async () => {
+  familyGroup('gkids00001', 'Kids', [KID]);
   const p = await open();
-  p.d.getElementById('new-group').value = 'The Kids';
-  await submit(p, 'add-group');
-  const box = admin(p).querySelector(`[data-group="the-kids"] [data-member="${KID}"]`);
-  box.checked = true;
-  box.dispatchEvent(new p.w.Event('change', { bubbles: true }));
-  await wait(120);
-  assert.deepEqual(table.get('GROUP', 'the-kids').members, [KID]);
-  assert.equal(table.get('GROUP', 'the-kids').rev, 2, 'saved with its rev');
-  assert.ok([...p.d.getElementById('g-who').options].some((o) => o.value === 'group:the-kids'));
+  assert.ok(admin(p).querySelector('a[href="https://dot-y.co/family"]'));
+  p.d.getElementById('g-who').value = 'group:gkids00001';
+  p.d.getElementById('g-where').value = 'area:kitchen';
+  await submit(p, 'add-grant');
+  assert.equal(admin(p).querySelector('[data-grant] span').textContent, 'Group “Kids” · Kitchen · Can see');
+  assert.equal(table.dump().filter(([k]) => k.startsWith('GRANT')).map(([, v]) => v.who)[0], 'group:gkids00001');
   p.close();
 });
 
@@ -168,7 +166,7 @@ test('recent activity says who did what, and what wasn’t allowed', async () =>
   await call('POST', '/commands', { entity_id: 'light.master_bedroom_main', action: 'turn_off' }, token({ sub: KID, clientId: 'house-via-dot', via: 'dot' }));
   const p = await open();
   const items = [...admin(p).querySelectorAll('.log li')];
-  assert.deepEqual(items.map((li) => li.querySelector('.what').textContent), ['Kid turned off master bedroom main — not allowed', 'Kid turned off kitchen main']);
+  assert.deepEqual(items.map((li) => li.querySelector('.what').textContent), ['kid@x.test turned off master bedroom main — not allowed', 'kid@x.test turned off kitchen main']);
   assert.match(items[0].querySelector('small').textContent, /through Dot/);
   p.close();
 });

@@ -1,7 +1,7 @@
 locals {
   routes = [
     "GET /home", "GET /dot", "POST /commands",
-    "GET /access", "PUT /grants/{id}", "DELETE /grants/{id}", "PUT /groups/{name}", "DELETE /groups/{name}", "GET /log",
+    "GET /access", "PUT /grants/{id}", "DELETE /grants/{id}", "GET /log",
   ]
 }
 
@@ -22,6 +22,10 @@ data "archive_file" "api" {
     filename = "access.mjs"
   }
   source {
+    content  = file("${path.module}/../../../platform/api/people.mjs")
+    filename = "people.mjs"
+  }
+  source {
     content  = file("${path.module}/../relay/protocol.mjs")
     filename = "protocol.mjs"
   }
@@ -33,6 +37,11 @@ data "archive_file" "api" {
     content  = file("${path.module}/../../../platform/api/dot-manifest.mjs")
     filename = "dot-manifest.mjs"
   }
+}
+
+# The family's groups and names (platform/family): read only
+data "aws_ssm_parameter" "people_table_arn" {
+  name = "/family/people/table-arn"
 }
 
 resource "aws_iam_role" "api" {
@@ -59,7 +68,7 @@ resource "aws_iam_role_policy" "api_table" {
     Statement = [
       {
         # Reads everything; writes only confirmations (PENDING), the audit trail (CMD#…) and,
-        # for admins, grants and groups
+        # for admins, grants
         Effect   = "Allow"
         Action   = ["dynamodb:GetItem", "dynamodb:Query"]
         Resource = aws_dynamodb_table.main.arn
@@ -68,7 +77,12 @@ resource "aws_iam_role_policy" "api_table" {
         Effect    = "Allow"
         Action    = ["dynamodb:PutItem", "dynamodb:DeleteItem"]
         Resource  = aws_dynamodb_table.main.arn
-        Condition = { "ForAllValues:StringLike" = { "dynamodb:LeadingKeys" = ["PENDING", "CMD#*", "GRANT", "GROUP"] } }
+        Condition = { "ForAllValues:StringLike" = { "dynamodb:LeadingKeys" = ["PENDING", "CMD#*", "GRANT"] } }
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem", "dynamodb:Query"]
+        Resource = nonsensitive(data.aws_ssm_parameter.people_table_arn.value)
       },
       {
         # Who is in this tool's group, for the access pickers (read only)
@@ -104,6 +118,7 @@ resource "aws_lambda_function" "api" {
       CLIENT_ID     = module.app.client_id
       DOT_CLIENT_ID = module.app.delegated_client_id
       USER_POOL_ID  = local.pool_id
+      PEOPLE_TABLE  = element(split("/", nonsensitive(data.aws_ssm_parameter.people_table_arn.value)), 1)
       # API Gateway's management endpoint for the relay's connection (https, not wss)
       RELAY_ENDPOINT = "https://${aws_apigatewayv2_api.relay.id}.execute-api.${data.aws_region.current.region}.amazonaws.com/${aws_apigatewayv2_stage.relay.name}"
     }

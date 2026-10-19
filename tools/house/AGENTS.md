@@ -28,7 +28,8 @@ Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
 1. Relay + read-only: the page, `GET /home`, `GET /dot`. Done.
 2. `POST /commands`: grants checked in the Lambda, ceiling re-checked by the relay, an audit row each. Done.
 3. Dot's built-in `house_control` (`tools/assistant/api/house.mjs`), with confirmation enforced in Dot's code (only after a new message from the person). Done.
-4. Grants and groups editor (People & access, admins only, never via Dot), `GET /log`. Done.
+4. Grants editor (People & access, admins only, never via Dot), `GET /log`. Done. Groups moved to
+   the family's (`platform/family`); grants name them by id.
 
 What syncs by itself: states, names, and areas (grants follow a device that moves). What doesn't, on
 purpose: a new area or a new domain appears only once it's in `relay/ceiling.json` (then `deploy-relay.sh`).

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Family · dot-y.co</title>
+<link rel="icon" type="image/svg+xml" href="/style/favicon.svg">
+<link rel="stylesheet" href="/style/family.css">
+<style>
+/* Layout: one narrow column. Groups (who's in each) first, then the names tools show for each person.
+   For family admins; the API refuses everyone else. */
+.wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 24px }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px }
+.top a { color: var(--muted); text-decoration: none; font-size: 14px }
+h1 { font-size: clamp(32px, 6vw, 44px) }
+.lede { color: var(--muted); margin: 0 }
+.card h2 { font-size: 20px; margin: 0 0 4px }
+.card > p { color: var(--muted); font-size: 14.5px; margin: 0 0 12px }
+.rows { list-style: none; margin: 0; padding: 0 }
+.rows li { padding: 10px 0; border-top: 1px solid var(--line); display: grid; gap: 6px }
+.rows li:first-child { border-top: 0 }
+.head { display: flex; justify-content: space-between; align-items: center; gap: 12px }
+.members { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 15px }
+.x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 18px; padding: 0 4px }
+.x:hover { color: var(--ember) }
+.add { display: flex; gap: 8px; margin-top: 12px }
+.add input, .person input { flex: 1; min-width: 0; background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 8px 10px; color: var(--ink); font: inherit }
+.add input:focus, .person input:focus { border-color: var(--pool); outline: none }
+.person { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: center }
+.person small { color: var(--muted); display: block; overflow-wrap: anywhere }
+.status { color: var(--muted); font-size: 14px; min-height: 1.4em; margin: 0 }
+.status.warn { color: var(--ember) }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a href="/">← dot-y.co</a></div>
+  <div>
+    <h1>Family</h1>
+    <p class="lede">Groups and names every tool shares. Each tool decides what a group may do there.</p>
+  </div>
+  <div id="main"><p class="status">Loading…</p></div>
+</div>
+<script src="/family-auth.js"></script>
+<script>
+(function () {
+  var cfg, apiUrl, data = null, msg = "";
+  var main = document.getElementById("main");
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function gid() { return "g" + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4); }
+  function label(p) { return p.displayName || p.name; }
+
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { location.assign("/"); return new Promise(function () {}); }
+      return fetch(apiUrl + path, {
+        method: method,
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    });
+  }
+
+  function render() {
+    var people = data.people;
+    main.innerHTML = (msg ? '<p class="status warn">' + esc(msg) + "</p>" : "") +
+      '<section class="card"><h2>Groups</h2><p>A group lets you give several people the same access, like “Kids”. Tools such as House grant by group.</p><ul class="rows">' +
+      (data.groups.length ? data.groups.map(function (g) {
+        return '<li data-group="' + esc(g.id) + '"><div class="head"><strong>' + esc(g.name) + '</strong><button class="x" data-del aria-label="Remove ' + esc(g.name) + '">&times;</button></div><div class="members">' +
+          people.map(function (p) {
+            return '<label><input type="checkbox" data-member="' + esc(p.sub) + '"' + (g.members.indexOf(p.sub) >= 0 ? " checked" : "") + "> " + esc(label(p)) + "</label>";
+          }).join("") + "</div></li>";
+      }).join("") : '<li><span class="status">No groups yet.</span></li>') +
+      '</ul><form class="add" id="add-group"><input id="new-group" maxlength="40" placeholder="New group, like Kids" aria-label="Group name"><button class="btn primary">Add</button></form></section>' +
+      '<section class="card"><h2>Names</h2><p>What tools call each person. Leave blank to use their account’s name.</p><ul class="rows">' +
+      people.map(function (p) {
+        return '<li class="person" data-person="' + esc(p.sub) + '"><span>' + esc(p.name) + "<small>" + esc(p.email || "") + '</small></span><input data-name maxlength="40" value="' + esc(p.displayName || "") + '" placeholder="' + esc(p.name) + '" aria-label="Name for ' + esc(p.name) + '"></li>';
+      }).join("") + "</ul></section>";
+  }
+
+  function load() {
+    return api("GET", "/people").then(function (res) {
+      if (res.status === 403) { main.innerHTML = '<p class="status">Only family admins can manage groups.</p>'; return; }
+      if (!res.ok) throw new Error("Couldn’t load (" + res.status + "). Reload to try again.");
+      return res.json().then(function (d) { data = d; render(); });
+    });
+  }
+  // Every change reloads, so the page shows what's stored; a 409 says someone else got there first
+  function change(method, path, body) {
+    return api(method, path, body).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (out) {
+        msg = res.ok ? "" : res.status === 409 ? (out.error === "changed by someone else" ? "Someone else changed that just now. Here’s the latest." : out.error) : "Couldn’t save that (" + res.status + ").";
+        return load();
+      });
+    }).catch(function () { msg = "Couldn’t reach dot-y.co. Try again."; render(); });
+  }
+  function groupOf(el) {
+    var id = el.closest("[data-group]").dataset.group;
+    for (var i = 0; i < data.groups.length; i++) if (data.groups[i].id === id) return data.groups[i];
+    return null;
+  }
+
+  main.addEventListener("submit", function (e) {
+    if (e.target.id !== "add-group") return;
+    e.preventDefault();
+    var name = document.getElementById("new-group").value.trim();
+    if (name) change("PUT", "/groups/" + gid(), { name: name, members: [] });
+  });
+  main.addEventListener("change", function (e) {
+    var g;
+    if (e.target.matches("[data-member]") && (g = groupOf(e.target))) {
+      var members = g.members.filter(function (s) { return s !== e.target.dataset.member; });
+      if (e.target.checked) members.push(e.target.dataset.member);
+      change("PUT", "/groups/" + g.id, { name: g.name, members: members, rev: g.rev });
+    } else if (e.target.matches("[data-name]")) {
+      change("PUT", "/people/" + e.target.closest("[data-person]").dataset.person, { name: e.target.value.trim() });
+    }
+  });
+  main.addEventListener("click", function (e) {
+    var g;
+    if (e.target.closest("[data-del]") && (g = groupOf(e.target)) && window.confirm("Remove the group “" + g.name + "”? Access it gave in every tool stops.")) {
+      change("DELETE", "/groups/" + g.id);
+    }
+  });
+
+  Promise.all([fetch("/config.json").then(function (r) { return r.json(); }), fetch("/family-config.json").then(function (r) { return r.json(); })]).then(function (c) {
+    cfg = c[0]; apiUrl = c[1].apiUrl;
+    return FamilyAuth.init(cfg);
+  }).then(function (claims) {
+    if (!claims) { main.innerHTML = '<p class="status">Sign in on <a href="/">dot-y.co</a> first.</p>'; return; }
+    return load();
+  }).catch(function (e) { main.innerHTML = '<p class="status warn">' + esc(e.message) + "</p>"; });
+})();
+</script>
+</body>
+</html>
