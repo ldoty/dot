@@ -127,3 +127,16 @@ test('reminder preference on the home page', async () => {
   await p.change(p.$('#pref'));
   assert.equal(table.get('PREF', LUKE).channel, 'email');
 });
+
+test('every item has a visible Details button that opens due date and reminder', async () => {
+  const l = await newList('Errands');
+  await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Call the dentist' });
+  const p = await open(LUKE, `#l=${l.id}`);
+  const more = p.$('[data-item] .more');
+  assert.equal(more.textContent, 'Details');
+  more.click();
+  await wait(50);
+  assert.equal(p.$('[data-item] .more').getAttribute('aria-expanded'), 'true', 'redrawn open');
+  assert.ok(p.$('[data-save] [name="due"]'));
+  assert.ok(p.$('[data-save] [name="remind"]'));
+});

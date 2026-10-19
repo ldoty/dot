@@ -135,3 +135,31 @@ test('lists_change is offered only to people who can use Lists, and the prompt e
   assert.match(systemPrompt({ lists: true }), /remind_at on an item in their local time/);
   assert.equal(token(LUKE).length > 0, true);
 });
+
+test('a reminder with no list goes on the person’s own Reminders list, started once', async () => {
+  const groceries = await newList('Groceries');
+  const { lists } = dotFor(LUKE);
+  await lists.change({ action: 'add_item', text: 'Move the car', remind_at: '2026-10-19T17:00' });
+  await lists.change({ action: 'add_item', text: 'Water the plants', remind_at: '2026-10-19T18:00' });
+  const mine = (await call('GET', '/lists')).body;
+  assert.deepEqual(mine.map((l) => [l.name, l.total]), [['Groceries', 0], ['Reminders', 2]], 'one Reminders list, reused');
+  const r = mine.find((l) => l.name === 'Reminders');
+  assert.equal(table.get('LIST', r.id).share.length, 0, 'private');
+  await call('PUT', `/lists/${groceries.id}`, { name: 'Groceries', layout: 'checklist', columns: groceries.columns, share: [{ who: `sub:${AMBER}`, level: 'edit' }], rev: 1 });
+  await dotFor(AMBER).lists.change({ action: 'add_item', text: 'Call mom', remind_at: '2026-10-19T19:00' });
+  const amberLists = (await call('GET', '/lists', undefined, token(AMBER))).body.map((l) => l.name);
+  assert.deepEqual(amberLists, ['Groceries', 'Reminders'], 'Amber gets her own, not Luke’s');
+  assert.match(systemPrompt({ lists: true }), /leave out list_id and it goes on their own Reminders list/);
+});
+
+test('a Reminders list someone shared with you isn’t yours: Dot starts your own', async () => {
+  const { lists } = dotFor(LUKE);
+  await lists.change({ action: 'add_item', text: 'Move the car', remind_at: '2026-10-19T17:00' });
+  const lukes = (await call('GET', '/lists')).body.find((l) => l.name === 'Reminders');
+  const row = table.get('LIST', lukes.id);
+  await call('PUT', `/lists/${lukes.id}`, { name: 'Reminders', layout: 'checklist', columns: row.columns, share: [{ who: `sub:${AMBER}`, level: 'edit' }], rev: row.rev });
+  await dotFor(AMBER).lists.change({ action: 'add_item', text: 'Call mom', remind_at: '2026-10-19T19:00' });
+  assert.equal((await call('GET', `/lists/${lukes.id}`)).body.items.length, 1, 'nothing of Amber’s on Luke’s');
+  const theirs = (await call('GET', '/lists', undefined, token(AMBER))).body.filter((l) => l.name === 'Reminders');
+  assert.deepEqual(theirs.map((l) => l.owner).sort(), [AMBER, LUKE].sort());
+});

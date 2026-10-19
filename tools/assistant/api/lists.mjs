@@ -3,6 +3,8 @@
 // because discovered tools are GET only. Lists decides everything: Dot can change only lists the
 // person may edit, and never who a list is shared with. Each call borrows a short-lived token for the
 // asker (delegation.mjs) and is audited. Deleting a whole list needs the person's own OK (confirm.mjs).
+// A reminder with no obvious list goes on the person's own "Reminders" list, started the first time
+// it's needed (private, like any new list), so a quick "remind me to…" never needs a question.
 import { asking, pendingIn } from './confirm.mjs';
 
 export const ACTIONS = ['add_item', 'update_item', 'complete_item', 'reopen_item', 'delete_item', 'create_list', 'rename_list', 'set_layout', 'delete_list'];
@@ -10,7 +12,7 @@ export const ACTIONS = ['add_item', 'update_item', 'complete_item', 'reopen_item
 export const definition = {
   name: 'lists_change',
   description: 'Lists: change the family’s lists as the person asking (only lists they can edit). Use lists_all and lists_list first for ids. '
-    + 'add_item (list_id, text, and any of the item fields), update_item (list_id, item_id, only the fields to change), complete_item / reopen_item / delete_item '
+    + 'add_item (list_id, text, and any of the item fields; leave out list_id for a reminder with no obvious list: it goes on their own Reminders list), update_item (list_id, item_id, only the fields to change), complete_item / reopen_item / delete_item '
     + '(list_id, item_id), create_list (name, layout?), rename_list (list_id, name), set_layout (list_id, layout), delete_list (list_id; it asks the person first, '
     + 'then call again with confirm: true only after they agree). A reminder is texted or emailed to the person at remind_at.',
   input_schema: {
@@ -54,6 +56,8 @@ export function zonedToIso(local, timeZone) {
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 const ITEM_FIELDS = ['text', 'done', 'notes', 'due', 'urgent', 'important', 'column', 'order', 'assignee', 'remind'];
 
+export const REMINDERS = 'Reminders';
+
 export function makeLists({ tokenFor, apiUrl, clientId, user, channel = 'web', audit = async () => {}, fetch = globalThis.fetch, timeZone = 'America/New_York' }) {
   async function call(method, path, body) {
     let token;
@@ -95,16 +99,29 @@ export function makeLists({ tokenFor, apiUrl, clientId, user, channel = 'web', a
     throw new Error('That item keeps changing; try again in a moment.');
   }
 
+  /** The person's own Reminders list, started if they don't have one */
+  async function remindersList() {
+    const all = await call('GET', '/lists');
+    if (all.status !== 200) fail(all);
+    const mine = all.out.find((l) => l.owner === user.sub && l.name === REMINDERS);
+    if (mine) return mine.id;
+    const r = await call('POST', '/lists', { name: REMINDERS, layout: 'checklist' });
+    if (r.status !== 200) fail(r);
+    return r.out.id;
+  }
+
   return {
     async change(input, { history = [] } = {}) {
-      const { action, list_id: listId, item_id: itemId } = input;
+      const { action, item_id: itemId } = input;
+      let listId = input.list_id;
       const need = (...keys) => { for (const k of keys) if (!input[k]) throw new Error(`${action} needs ${k}`); };
       const record = (outcome, detail) => audit({ tool: 'family_lists', action: `${action}${listId ? ` ${listId}` : ''}${itemId ? `/${itemId}` : ''}`, outcome, ...(detail ? { detail } : {}) });
       try {
         let said;
         switch (action) {
           case 'add_item': {
-            need('list_id', 'text');
+            need('text');
+            listId ||= await remindersList();
             const got = await call('GET', `/lists/${listId}`);
             if (got.status !== 200) fail(got);
             const order = Math.max(0, ...got.out.items.map((i) => i.order || 0)) + 1;

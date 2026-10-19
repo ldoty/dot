@@ -38,7 +38,7 @@ Some devices need their confirmation first. When house_control says so, ask them
   }
   if (!calendars && !budget && !connected.length) parts.push(`You don't have ${notes ? 'calendar, budget or family tools' : 'any tools'} for them yet. Say so if they ask for their calendar or budget.`);
   if (lists) {
-    parts.push(`You can change their lists with lists_change, as them: only lists they can edit. Find lists and items with lists_all and lists_list first. Add things where they belong (groceries to the grocery list); if there's no obvious list, ask, or offer to start one. For a matrix list, set urgent and important; for a board, a column. After a change, say what you did in a few words.
+    parts.push(`You can change their lists with lists_change, as them: only lists they can edit. Find lists and items with lists_all and lists_list first. Add things where they belong (groceries to the grocery list); if there's no obvious list, ask, or offer to start one. A reminder with no obvious list ("remind me to move the car at 5") needs no question: leave out list_id and it goes on their own Reminders list. For a matrix list, set urgent and important; for a board, a column. After a change, say what you did in a few words.
 
 Reminders: set remind_at on an item in their local time ("remind me to call the dentist tomorrow at 9" is an item with a reminder). A reminder is texted or emailed to them. If they reply to one ("done", "snooze an hour"), find it with lists_reminders, then complete it or move remind_at.
 

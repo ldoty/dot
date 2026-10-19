@@ -34,7 +34,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--pool); outline: 
 .items { list-style: none; margin: 0; padding: 0 }
 .items li { border-top: 1px solid var(--line); padding: 8px 0 }
 .items li:first-child { border-top: 0 }
-.item { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; align-items: start }
+.item { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: start }
+.item .more { border: 1.5px solid var(--line); background: none; border-radius: var(--r-pill); padding: 2px 10px; font: inherit; font-size: 13px; color: var(--pool); cursor: pointer; white-space: nowrap }
+.item .more[aria-expanded="true"] { background: var(--raised) }
 .item input[type=checkbox] { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--leaf) }
 .item .open { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; color: inherit; font: inherit; display: grid; gap: 2px }
 .item.done .open > span:first-child { color: var(--muted); text-decoration: line-through }
@@ -127,7 +129,9 @@ details summary { cursor: pointer; color: var(--muted); font-size: 14px }
     if (i.remind && !i.remind.sentAt) bits.push("🔔 " + new Date(i.remind.at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }));
     if (i.notes) bits.push("Notes");
     var html = '<li data-item="' + esc(i.id) + '"><div class="item' + (i.done ? " done" : "") + '"><input type="checkbox" data-done aria-label="Done: ' + esc(i.text) + '"' + (i.done ? " checked" : "") + (canEdit() ? "" : " disabled") + ">" +
-      '<button class="open" data-open><span>' + esc(i.text) + "</span>" + (bits.length ? '<span class="meta">' + esc(bits.join(" · ")) + "</span>" : "") + "</button></div>";
+      '<button class="open" data-open><span>' + esc(i.text) + "</span>" + (bits.length ? '<span class="meta">' + esc(bits.join(" · ")) + "</span>" : "") + "</button>" +
+      // Due date, reminder, notes and the rest live behind this; say so, rather than hiding it on a tap of the text
+      '<button class="more" data-open aria-expanded="' + (editing === i.id) + '" aria-label="Details: ' + esc(i.text) + '">' + (canEdit() ? "Details" : "View") + "</button></div>";
     if (editing === i.id) html += editor(i);
     return html + "</li>";
   }
@@ -136,12 +140,12 @@ details summary { cursor: pointer; color: var(--muted); font-size: 14px }
     var local = function (iso) { if (!iso) return ""; var d = new Date(iso); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
     var cols = current.list.columns.map(function (c) { return '<option' + (i.column === c ? " selected" : "") + ">" + esc(c) + "</option>"; }).join("");
     return '<form class="edit" data-save><label>What<input type="text" name="text" maxlength="300" value="' + esc(i.text) + '"' + ro + "></label>" +
+      '<div class="row"><label>Due<input type="date" name="due" value="' + esc(i.due || "") + '"' + ro + "></label>" +
+      '<label>Remind me<input type="datetime-local" name="remind" value="' + esc(local(i.remind && i.remind.at)) + '"' + ro + "></label>" +
+      '<label>By<select name="channel"' + ro + '><option value="">my usual</option><option value="sms"' + (i.remind && i.remind.channel === "sms" ? " selected" : "") + '>text</option><option value="email"' + (i.remind && i.remind.channel === "email" ? " selected" : "") + ">email</option></select></label></div>" +
       '<label>Notes<textarea name="notes" rows="2" maxlength="2000"' + ro + ">" + esc(i.notes || "") + "</textarea></label>" +
       '<div class="checks"><label><input type="checkbox" name="urgent"' + (i.urgent ? " checked" : "") + ro + "> Urgent</label><label><input type=\"checkbox\" name=\"important\"" + (i.important ? " checked" : "") + ro + "> Important</label></div>" +
-      '<div class="row"><label>Due<input type="date" name="due" value="' + esc(i.due || "") + '"' + ro + "></label>" +
-      (current.list.layout === "board" ? '<label>Column<select name="column"' + ro + ">" + cols + "</select></label>" : "") + "</div>" +
-      '<div class="row"><label>Remind me<input type="datetime-local" name="remind" value="' + esc(local(i.remind && i.remind.at)) + '"' + ro + "></label>" +
-      '<label>By<select name="channel"' + ro + '><option value="">my usual</option><option value="sms"' + (i.remind && i.remind.channel === "sms" ? " selected" : "") + '>text</option><option value="email"' + (i.remind && i.remind.channel === "email" ? " selected" : "") + ">email</option></select></label></div>" +
+      (current.list.layout === "board" ? '<label>Column<select name="column"' + ro + ">" + cols + "</select></label>" : "") +
       (i.remind && i.remind.sentAt ? '<p class="meta">Reminded ' + esc(new Date(i.remind.sentAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })) + ". Pick a new time to be reminded again.</p>" : "") +
       (canEdit() ? '<div class="row"><button class="btn primary">Save</button><button type="button" class="btn ghost" data-close>Close</button><button type="button" class="x" data-delete>Delete</button></div>' : '<button type="button" class="btn ghost" data-close>Close</button>') + "</form>";
   }
@@ -232,7 +236,12 @@ details summary { cursor: pointer; color: var(--muted); font-size: 14px }
     var t = e.target, i;
     if (t.closest("[data-home]")) { location.hash = ""; return; }
     if (t.closest("[data-layout]") && canEdit()) return saveList({ layout: t.closest("[data-layout]").dataset.layout });
-    if (t.closest("[data-open]")) { i = find(t); editing = editing === i.id ? null : i.id; return renderList(); }
+    if (t.closest("[data-open]")) {
+      i = find(t); editing = editing === i.id ? null : i.id; renderList();
+      var first = editing && main.querySelector("[data-save] input");
+      if (first && t.closest(".more")) first.focus();
+      return;
+    }
     if (t.closest("[data-close]")) { editing = null; return renderList(); }
     if (t.closest("[data-delete]") && (i = find(t))) {
       editing = null;
