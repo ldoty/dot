@@ -67,7 +67,8 @@ Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`)
 Dot (`tools/assistant`; internals in `tools/assistant/AGENTS.md`) acts as whoever is signed in. Apart
 from its built-ins (calendar, `read_budget`, `house_control`), **every tool is discovered** (`api/discovery.mjs`): Dot lists `/family/delegation/*`, borrows a token for the
 asker, reads each tool's `GET /dot` manifest (`platform/api/dot-manifest.mjs`) and offers its
-operations as `<name>_<operation>` tools, GET only. Members can also **text** Dot: the SMS webhook maps a
+operations as `<name>_<operation>` tools, GET only. Dot **remembers** what people tell it that's likely to come up again (`api/memory.mjs`: household and
+personal notes, shown on its page under “What Dot knows”). Members can also **text** Dot: the SMS webhook maps a
 verified Cognito `phone_number` in `family_assistant` to the person, and Dot's SMS worker runs the same turn
 (`tools/sms/README.md`, `tools/assistant/README.md`). They can **email** dot@dot-y.co the same way: the gate in
 `platform/email/lambda/dot.mjs` requires DMARC and a verified Cognito `email` in `family_assistant`, then Dot's email worker replies. To make a tool usable by Dot: `delegated = true`,

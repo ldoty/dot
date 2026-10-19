@@ -6,6 +6,10 @@
 //          {type:"conversation",id,title} {type:"text",delta} {type:"tool",name,status} {type:"error",message} {type:"done"}
 //   GET    /audit               -> [{ at, user, username, channel, tool, action, outcome, detail? }]
 //          what Dot did with people's access: everyone's for family_assistant:admin, otherwise your own
+//   GET    /notes               -> { household, personal, canEditHousehold }   what Dot remembers (memory.mjs)
+//   PUT    /notes/{scope}/{id}  { title, body, tags, links, rev } -> the note   (409 + current if it changed)
+//   DELETE /notes/{scope}/{id}
+//          personal notes are only ever your own; household notes are for admins to edit
 // Every request needs a family_assistant access token, verified here. Dot then acts as that
 // person: their name and calendars (PEOPLE), and their own access to other tools (delegation):
 // Budget through read_budget, House's lights through house_control, and any family tool that
@@ -22,6 +26,7 @@ import { makeStore } from './store.mjs';
 import { makeDelegation } from './delegation.mjs';
 import { makeBudget } from './budget.mjs';
 import { makeHouse } from './house.mjs';
+import { makeMemoryTools, makeNotes, NOTE_ID } from './memory.mjs';
 import { makeDiscovery } from './discovery.mjs';
 import { makeGoogleAuth } from './google.mjs';
 import { makeCalendar } from './calendar.mjs';
@@ -70,7 +75,9 @@ export function liveDeps(env = process.env) {
       KeyId: env.DELEGATION_KEY, Message: bytes, MessageType: 'RAW', SigningAlgorithm: 'RSASSA_PKCS1_V1_5_SHA_256',
     }))).Signature),
   });
-  const store = makeStore({ db: DynamoDBDocumentClient.from(new DynamoDBClient({})), table: env.TABLE, photos: env.PHOTOS_BUCKET && s3Photos(env.PHOTOS_BUCKET) });
+  const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+  const store = makeStore({ db, table: env.TABLE, photos: env.PHOTOS_BUCKET && s3Photos(env.PHOTOS_BUCKET) });
+  const notes = makeNotes({ db, table: env.TABLE });
   // Family tools published for Dot: SSM /family/delegation/<app> = { api_url, client_id }
   const discovery = makeDiscovery({
     tokenFor,
@@ -89,6 +96,7 @@ export function liveDeps(env = process.env) {
   return {
     auth: { issuer: env.ISSUER, clientId: env.CLIENT_ID, group: env.GROUP },
     store,
+    notes,
     // Bedrock Runtime (InvokeModel). Opus 4.7+ needs per-account approval this account doesn't
     // have yet; this client also serves those models, so upgrading is just the model setting.
     // With FALLBACK_MODEL set, refusals retry on it (Bedrock has no server-side fallback). Off for
@@ -109,6 +117,7 @@ export function liveDeps(env = process.env) {
       const houseApp = discovered.apps?.family_house;
       return {
         person: { name: me.name },
+        notes: await notes.forPerson(userId),
         tools: makeTools({
           calendar: makeCalendar({ accessToken, calendars, readOnly: me.read_only || [], timeZone: env.TIME_ZONE }),
           calendarNames: Object.keys(calendars),
@@ -118,6 +127,7 @@ export function liveDeps(env = process.env) {
             user: { sub: claims.sub, username: claims.username }, channel, audit,
           }),
           house: houseApp && makeHouse({ tokenFor, apiUrl: houseApp.api_url, clientId: houseApp.client_id, user, channel, audit }),
+          memory: makeMemoryTools({ notes, userId, name: me.name, channel, audit }),
           discovered,
         }),
       };
@@ -147,11 +157,43 @@ export function createHandler(depsOrFactory) {
     }
     const userId = claims.sub || claims.username;
     const convMatch = /^\/conversations\/([A-Za-z0-9_-]{1,40})$/.exec(path);
+    const admin = (claims['cognito:groups'] ?? []).includes(`${deps.auth.group}:admin`);
 
     if (method === 'GET' && path === '/conversations') return json(200, await deps.store.listConversations(userId));
     if (method === 'GET' && path === '/audit') {
-      const admin = (claims['cognito:groups'] ?? []).includes(`${deps.auth.group}:admin`);
       return json(200, await deps.store.listAudit(admin ? {} : { user: userId }));
+    }
+    const noteMatch = /^\/notes\/(household|personal)\/([a-z0-9]{7,21})$/.exec(path);
+    if (method === 'GET' && path === '/notes') {
+      return json(200, { ...(await deps.notes.forPerson(userId)), canEditHousehold: admin });
+    }
+    if (noteMatch) {
+      const [, scope, id] = noteMatch;
+      if (!NOTE_ID.test(id)) return json(400, { error: 'bad id' });
+      if (scope === 'household' && !admin) return json(403, { error: 'admins edit household notes' });
+      if (method === 'DELETE') {
+        await deps.notes.remove(scope, userId, id);
+        await deps.store.addAudit({ user: userId, username: claims.username, channel: 'web', tool: 'memory', action: `delete ${scope} ${id} (page)`, outcome: 'ok' });
+        return json(200, { deleted: id });
+      }
+      if (method === 'PUT') {
+        let body;
+        try {
+          body = JSON.parse(event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString() : event.body || '');
+        } catch {
+          return json(400, { error: 'bad json' });
+        }
+        if (!Number.isInteger(body?.rev)) return json(400, { error: 'rev is required' });
+        if (!(await deps.notes.get(scope, userId, id))) return json(404, { error: 'not found' });
+        try {
+          const r = await deps.notes.save(scope, userId, { ...body, id }, { by: userId });
+          if (r.conflict) return json(409, { error: 'changed since you opened it', current: r.conflict });
+          await deps.store.addAudit({ user: userId, username: claims.username, channel: 'web', tool: 'memory', action: `edit ${scope} “${r.title}” (page)`, outcome: 'ok' });
+          return json(200, r);
+        } catch (e) {
+          return json(400, { error: e.message });
+        }
+      }
     }
     if (convMatch && method === 'GET') {
       const conversation = await deps.store.getConversation(userId, convMatch[1]);

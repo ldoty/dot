@@ -170,7 +170,7 @@ resource "aws_lambda_function_url" "api" {
   invoke_mode        = "RESPONSE_STREAM"
   cors {
     allow_origins = [trimsuffix(local.app_url, "/"), trimsuffix(local.dev_url, "/")]
-    allow_methods = ["GET", "POST", "DELETE"]
+    allow_methods = ["GET", "POST", "PUT", "DELETE"]
     allow_headers = ["authorization", "content-type"]
     max_age       = 600
   }

@@ -2,6 +2,7 @@
 //   pk = USER#<sub>, sk = CONV#<id>            { title, channel, createdAt, updatedAt }
 //   pk = USER#<sub>, sk = MSG#<id>#<seq:000000> { role, content (JSON) }
 //   pk = AUDIT,      sk = <iso time>#<id>        { user, username, channel, tool, action, outcome, detail }
+//   pk = NOTES#household | NOTES#<sub>, sk = <id>   what Dot remembers (memory.mjs)
 //     what Dot did on someone's behalf with their access (admins see everyone's, others their own)
 // History is append-only (a message is never edited): prompt caching depends on an unchanged
 // prefix, and the API rejects edited history that carries thinking blocks.

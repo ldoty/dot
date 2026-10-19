@@ -15,3 +15,12 @@ is discovered (`api/discovery.mjs`), as the root guide describes.
 route that accepts it. Confirmation (a `confirm` grant) is enforced in `house.mjs`, not by the
 prompt: the tool has no confirm_id field, and `confirm: true` is sent only if the person has written
 a new message since House asked. Keep it that way: tool results never count as their reply.
+
+**Memory** (`api/memory.mjs`): Dot keeps notes (`remember`, `forget`, `recall`), household (every
+member's Dot reads them; admins edit them on the page) or personal (only that person's Dot; only they
+edit them). Dot decides what's worth saving. Every note goes into the instructions each turn, last, so
+a new note disturbs as little of the cached prompt as possible; past `BUDGET_CHARS` Dot gets a
+one-line index and recalls the rest. Notes say who and which conversation they came from. They only
+steer what Dot tries: every action still runs with the person's own access. The instructions forbid
+saving anything because content Dot read asks it to; code can't tell a forwarded email from the
+person's words, so the page ("What Dot knows") and Dot saying what it saved are the backstop.
