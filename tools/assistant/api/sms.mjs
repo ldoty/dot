@@ -9,6 +9,7 @@
 import { BetaFallbackState } from '@anthropic-ai/sdk';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { runTurn } from './agent.mjs';
+import { sentSince } from './automations.mjs';
 import { errorMessage, liveDeps } from './handler.mjs';
 import { deleteMedia, fetchMedia, maskPhone, sendText, twilioConfig } from './twilio.mjs';
 
@@ -40,11 +41,15 @@ export async function loadImages(media, { fetchMedia: get, deleteMedia: remove }
   return { images, failed: failed + Math.max(0, media.length - MAX_IMAGES) };
 }
 
-/** The latest texting conversation, if it was active in the last QUIET_HOURS */
-export async function currentConversation(store, userId, now) {
+/** The latest texting conversation (the whole record), if it was active in the last QUIET_HOURS */
+export async function latestConversation(store, userId, now) {
   const recent = (await store.listConversations(userId)).find((c) => c.channel === 'sms');
-  return recent && now - new Date(recent.updatedAt) < QUIET_HOURS * 3600e3 ? recent.id : undefined;
+  return recent && now - new Date(recent.updatedAt) < QUIET_HOURS * 3600e3 ? recent : undefined;
 }
+
+/** The latest texting conversation's id, if it was active in the last QUIET_HOURS */
+export const currentConversation = async (store, userId, now) => (await latestConversation(store, userId, now))?.id;
+
 
 /**
  * A reply as texts: Markdown Claude slipped in is flattened, long replies split at a break, and
@@ -93,9 +98,10 @@ export function createSmsWorker(depsOrFactory) {
     if (images.length || text.trim()) {
       try {
         const forUser = deps.forUser ? await deps.forUser({ sub: userId, username }, 'sms') : {};
+        const conv = await latestConversation(deps.store, userId, now);
         const r = await runTurn({
           ...deps, ...forUser, fallbackState: new BetaFallbackState(), userId, channel: 'sms', text: said, images,
-          conversationId: await currentConversation(deps.store, userId, now),
+          conversationId: conv?.id, sent: await sentSince(forUser, conv?.updatedAt, now, deps.timeZone),
         });
         reply = r.text.trim() || (r.stopReason === 'refusal' ? 'Dot declined to answer that one.' : 'Dot had no answer for that. Try asking another way.');
       } catch (e) {

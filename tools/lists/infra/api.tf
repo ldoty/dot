@@ -2,7 +2,7 @@ locals {
   routes = [
     "GET /lists", "POST /lists", "GET /lists/{id}", "PUT /lists/{id}", "DELETE /lists/{id}",
     "PUT /lists/{id}/items/{itemId}", "DELETE /lists/{id}/items/{itemId}",
-    "GET /prefs", "PUT /prefs", "GET /reminders/recent", "GET /share-options", "GET /dot",
+    "GET /prefs", "PUT /prefs", "GET /reminders/recent", "GET /automations", "GET /share-options", "GET /dot",
   ]
 }
 
@@ -87,6 +87,7 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
+      TIME_ZONE     = "America/New_York"
       TABLE         = aws_dynamodb_table.main.name
       GROUP         = module.app.member_group
       ISSUER        = local.issuer

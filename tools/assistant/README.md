@@ -85,7 +85,18 @@ Twilio's 15-second timeout. The worker runs `runTurn()` as that person with `cha
 “Text me a budget overview every Sunday at 1”: Dot sets it up after you say yes, and at that time runs the
 ask as you, **read-only** (it can look at calendars, Budget, Lists and the house, but change nothing), and
 texts or emails you the answer. Replying carries on that conversation. Daily at most, ten each; yours are
-listed under What Dot knows, where you can delete them (or ask Dot to stop one).
+listed under What Dot knows → Runs on its own, where you can pause, resume or delete them (or ask Dot to;
+from Dot, every change asks you first).
+
+## Everything that runs on its own
+
+“Runs on its own” on the page, and Dot's `automations` tool, list every automation you have from every tool
+in one shape (`api/automations.mjs`): your scheduled asks, the house's automations you can see, and your list
+reminders still to come. Each tool serves its own through a manifest operation with `role: 'automations'`;
+a tool that doesn't answer is named rather than breaking the list. When you text or email Dot, the turn starts
+with a note of what Dot-y sent you since you last wrote (each tool's `role: 'sent'` operation: the house's
+automation texts, Lists' reminders), so “turn them off then” or “done” is understood; the page's transcript
+leaves the note out.
 
 - `lukes-assistant-scheduled` (`api/scheduled.mjs`, `infra/scheduled.tf`) runs every minute, one at a time,
   never retried. A run that's more than an hour late is recorded as missed, not sent.

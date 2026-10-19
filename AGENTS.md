@@ -72,12 +72,24 @@ from its built-ins (calendar tools, through `tools/calendars`; `read_budget`, `h
 asker, reads each tool's `GET /dot` manifest (`platform/api/dot-manifest.mjs`) and offers its
 operations as `<name>_<operation>` tools, GET only. Dot **remembers** what people tell it that's likely to come up again (`api/memory.mjs`: household and
 personal notes, shown on its page under “What Dot knows”), and runs **scheduled asks** (`api/schedules.mjs`:
-“a budget overview every Sunday at 1”) as the person, read-only, sending the answer by text or email. Members can also **text** Dot: the SMS webhook maps a
+“a budget overview every Sunday at 1”) as the person, read-only, sending the answer by text or email.
+
+**Automations** are everything that runs on its own, of three kinds, each run where it must: House's (on the relay
+at home), Dot's scheduled asks (in AWS) and Lists' reminders (Lists' sweep). They work alike: days are the same
+RRULE subset (`tools/lists/api/repeat.mjs`, shared), each describes itself in one shape (`automationItem` in
+`platform/api/dot-manifest.mjs`: says, on/paused/stopped and why, last run, next run), and from Dot every change
+to a House automation or a scheduled ask needs the person's own reply. A tool joins by giving a manifest operation
+`role: 'automations'`; Dot lists them all together (its `automations` tool, and “Runs on its own” on its page).
+What a tool texted or emailed someone is its `role: 'sent'` operation: a text or email to Dot starts with a note of
+what Dot-y sent them since they last wrote, so a reply to one makes sense.
+
+Members can also **text** Dot: the SMS webhook maps a
 verified Cognito `phone_number` in `family_assistant` to the person, and Dot's SMS worker runs the same turn
 (`tools/sms/README.md`, `tools/assistant/README.md`). They can **email** dot@dot-y.co the same way: the gate in
 `platform/email/lambda/dot.mjs` requires DMARC and a verified Cognito `email` in `family_assistant`, then Dot's email worker replies. To make a tool usable by Dot: `delegated = true`,
 publish `/family/delegation/<group>`, serve `GET /dot` (validate it with `validateManifest`), accept the
-delegated client id in its token check, refuse non-GET from it. No Dot code change.
+delegated client id in its token check, refuse non-GET from it. No Dot code change. If it runs things on its own
+or texts people, give those operations their roles.
 
 ### Family groups
 

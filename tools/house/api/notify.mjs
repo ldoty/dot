@@ -8,12 +8,20 @@
 //     key in the wrong hands can't turn this into a stream of texts.
 // Texts go through the Dot-y number's registered campaign, with no links (automation.mjs refuses them).
 //
+// The text says which automation sent it ("Dot-y, Leaving home: check the garage"), and a SENT row keeps
+// it for two days, so when its owner texts Dot back ("turn them off then"), Dot knows what they mean
+// (GET /sent, the manifest's `sent` role).
+//
 // Rows: NOTIFIED / <automation id>#<run key>   { at, expires (2 days) }
+//       SENT#<UTC day> / <ISO>#<id>#<run key>   { to, automation, name, text, channel, sentAt, error, expires (3 days) }
 //       CMD#<UTC day> / <ISO>#<id>n             audit: via 'automation', action 'notify'
 import { PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { AUTO_ID } from './automation.mjs';
 
 export const PER_DAY = 10;
+
+/** The text as sent: from Dot-y, saying which automation it is */
+export const textFor = (row) => `Dot-y, ${row.name}: ${row.notify.message}`;
 const KEY = /^(\d{4}-\d{2}-\d{2})@\d{1,4}$/;
 
 /** deps: db, table, get(pk, sk), automations (automations.mjs), contact(sub) -> { phone }, text(phone, body), now() */
@@ -51,16 +59,24 @@ export function createNotify({ db, table, get, automations, contact, text, now }
     }
 
     let outcome = 'done', error = null;
+    const body = textFor(row);
     try {
       const who = await contact(row.owner);
       if (!who.phone) throw new Error('no verified phone');
-      await text(who.phone, `Dot-y: ${row.notify.message}`);
+      await text(who.phone, body);
     } catch (e) {
       outcome = 'failed';
       error = e.message.slice(0, 200);
       console.warn('notify: not sent', id, error);
     }
     const at = t.toISOString();
+    await db.send(new PutCommand({
+      TableName: table,
+      Item: {
+        pk: `SENT#${at.slice(0, 10)}`, sk: `${at}#${id}#${key}`, to: row.owner, automation: id, name: row.name, text: body, channel: 'sms',
+        sentAt: at, error, expires: Math.floor(t.getTime() / 1000) + 3 * 86_400,
+      },
+    }));
     await db.send(new PutCommand({
       TableName: table,
       Item: {

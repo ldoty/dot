@@ -316,7 +316,7 @@ test('a run that texts: only its owner, with its stored message, once, and only 
   const ws = createRelayWs({ table: 'family-house', relayKey: async () => 'k', notify: async (p) => { handed.push(p); return send(p); } });
   const ran = { type: 'ran', id, key: '2026-10-19@810', at: '2026-10-19T17:30:00Z', results: [], notify: true };
   assert.equal((await ws({ requestContext: { routeKey: 'ran', connectionId: 'c1' }, body: JSON.stringify(ran) })).statusCode, 200);
-  assert.deepEqual(texts, [{ to: '+18645550100', body: 'Dot-y: You left: check the garage.' }]);
+  assert.deepEqual(texts, [{ to: '+18645550100', body: 'Dot-y, Luke leaves: You left: check the garage.' }], 'saying which automation sent it');
   assert.deepEqual(contacts, [LUKE], 'its owner, nobody else');
   assert.deepEqual(await send({ id, key: ran.key }), { sent: false, why: 'already sent' }, 'once per run');
   const row = audit().find((r) => r.action === 'notify');
@@ -329,6 +329,39 @@ test('a run that texts: only its owner, with its stored message, once, and only 
   assert.deepEqual(await send({ id: 'NOPE', key: 'x' }), { sent: false, why: 'bad request' });
   assert.equal(texts.length, 1);
   assert.deepEqual(handed, [{ id, key: ran.key, at: '2026-10-19T17:30:00.000Z' }]);
+});
+
+test('what was texted is kept two days for its owner (GET /sent), so Dot knows what a reply is about', async () => {
+  person();
+  const id = (await call('POST', '/automations', LEAVES)).body.id;
+  const { handler } = await import('./helpers/house.mjs');
+  const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb');
+  const { DynamoDBDocumentClient, GetCommand } = await import('@aws-sdk/lib-dynamodb');
+  const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }));
+  const sentAt = new Date(Date.now() - 60_000);
+  let failing = false;
+  const send = createNotify({
+    db, table: 'family-house', get: async (pk, sk) => (await db.send(new GetCommand({ TableName: 'family-house', Key: { pk, sk } }))).Item,
+    automations: handler.automations, now: () => sentAt, contact: async () => ({ phone: '+18645550100' }),
+    text: async () => { if (failing) throw new Error('Twilio said no'); },
+  });
+  await send({ id, key: '2026-10-19@810' });
+  failing = true;
+  await send({ id, key: '2026-10-19@811' });
+  const mine = await call('GET', '/sent', undefined, dot(LUKE));
+  assert.deepEqual(mine.body, [{
+    sentAt: sentAt.toISOString(), channel: 'sms', text: 'Dot-y, Luke leaves: You left: check the garage.', about: 'House automation “Luke leaves”', automation: id,
+  }], 'Dot may read it as them; one that didn’t go out isn’t listed');
+  assert.deepEqual((await call('GET', '/sent', undefined, kid())).body, [], 'only their own');
+  table.put({ ...table.dump().find(([k]) => k.startsWith('SENT#'))[1], sentAt: new Date(Date.now() - 3 * 86_400_000).toISOString() });
+  assert.deepEqual((await call('GET', '/sent')).body, [], 'two days at most');
+});
+
+test('the notify Lambda may write only its own rows', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const tf = await readFile(new URL('../infra/notify.tf', import.meta.url), 'utf8');
+  assert.match(tf, /Action\s+= "dynamodb:PutItem"[\s\S]*?\["NOTIFIED", "SENT#\*", "CMD#\*"\]/);
+  assert.doesNotMatch(tf, /UpdateItem|DeleteItem/);
 });
 
 test('at most PER_DAY texts a day per automation, whatever the relay says', async () => {

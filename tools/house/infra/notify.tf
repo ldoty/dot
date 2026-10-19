@@ -30,7 +30,7 @@ resource "aws_iam_role_policy" "notify" {
         Effect    = "Allow"
         Action    = "dynamodb:PutItem"
         Resource  = aws_dynamodb_table.main.arn
-        Condition = { "ForAllValues:StringLike" = { "dynamodb:LeadingKeys" = ["NOTIFIED", "CMD#*"] } }
+        Condition = { "ForAllValues:StringLike" = { "dynamodb:LeadingKeys" = ["NOTIFIED", "SENT#*", "CMD#*"] } }
       },
       { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:Query"], Resource = nonsensitive(data.aws_ssm_parameter.people_table_arn.value) },
       {

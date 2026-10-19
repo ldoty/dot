@@ -190,7 +190,7 @@ body { display: flex; flex-direction: column }
   }
 
   // ---- What Dot knows: notes Dot saved; you edit your own, admins the household's ----
-  var memory = null, editing = null, memoryMsg = "", scheduled = [];
+  var memory = null, editing = null, memoryMsg = "", running = { automations: [], unavailable: [] };
   var CHANNEL = { sms: "by text", email: "by email", web: "in chat" };
   function noteHtml(n, canEdit) {
     if (editing === n.id) {
@@ -206,13 +206,22 @@ body { display: flex; flex-direction: column }
     var section = function (title, list, canEdit, empty) {
       return '<section class="card"><h3>' + title + "</h3>" + (list.length ? list.map(function (n) { return noteHtml(n, canEdit); }).join("") : '<p class="lede">' + empty + "</p>") + "</section>";
     };
-    // Scheduled asks: what Dot does for you by itself, and when
-    var sched = '<section class="card"><h3>Scheduled for you</h3>' + (scheduled.length ? scheduled.map(function (x) {
-      var last = x.lastRun ? (x.lastRun.ok ? "Last sent " + ago(x.lastRun.at) : "Last time it didn’t work (" + x.lastRun.error + ")") : "Not sent yet";
-      var next = x.nextAt ? "next " + new Date(x.nextAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "finished";
-      return '<div class="note" data-sched="' + esc(x.id) + '"><strong>' + esc(x.title) + "</strong><p>" + esc(x.says) + ": “" + esc(x.ask) + "”</p><small>" + esc(last + " · " + next) +
-        '</small><div class="acts"><button data-del-sched>Delete</button></div></div>';
-    }).join("") : '<p class="lede">Nothing yet. Ask Dot: “Text me a budget overview every Sunday at 1.”</p>') + "</section>";
+    // Everything that runs on its own for you, from every tool, in one shape (GET /automations).
+    // Your scheduled asks are Dot's own: pause, resume or delete them here. The rest change where they live, or by asking Dot.
+    var KIND = { house: "House automation", ask: "Scheduled ask", reminder: "List reminder" };
+    var LAST = { done: "last ran ", failed: "last time it didn’t work, ", missed: "missed one, " };
+    var autos = running.automations;
+    var sched = '<section class="card"><h3>Runs on its own</h3>' +
+      (running.unavailable.length ? '<p class="notice">Couldn’t reach ' + esc(running.unavailable.join(" or ")) + " just now.</p>" : "") +
+      (autos.length ? autos.map(function (x) {
+        var status = x.status === "paused" ? "Paused" : x.status === "stopped" ? "Not running: " + (x.why || "it can’t run") : "On";
+        var bits = [KIND[x.kind], status,
+          x.last_run ? LAST[x.last_run.outcome] + ago(x.last_run.at) : null,
+          x.next_at ? "next " + new Date(x.next_at).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : null,
+          x.owner && !x.mine ? x.owner.name + "’s" : null].filter(Boolean);
+        var acts = x.kind === "ask" ? '<div class="acts"><button data-pause-sched>' + (x.status === "paused" ? "Resume" : "Pause") + "</button><button data-del-sched>Delete</button></div>" : "";
+        return '<div class="note" data-auto="' + esc(x.id) + '" data-kind="' + esc(x.kind) + '"><strong>' + esc(x.name) + "</strong><p>" + esc(x.says) + "</p><small>" + esc(bits.join(" · ")) + "</small>" + acts + "</div>";
+      }).join("") : '<p class="lede">Nothing yet. Ask Dot: “Text me a budget overview every Sunday at 1,” or “Turn on the kitchen lights every weekday at 6.”</p>') + "</section>";
     thread.innerHTML = '<div class="memory"><h2>What Dot knows</h2><p class="lede">Dot saves things you tell it that are likely to come up again. Ask Dot to forget something, or change it here.</p>' +
       (memoryMsg ? '<p class="notice">' + esc(memoryMsg) + "</p>" : "") +
       section("Just you", memory.personal, true, "Nothing yet. Tell Dot what you like, or what your shorthands mean.") +
@@ -225,7 +234,7 @@ body { display: flex; flex-direction: column }
     document.querySelector(".chat").classList.add("notes-open");
     renderList();
     thread.innerHTML = '<p class="thinking">Loading…</p>';
-    return Promise.all([apiJson("GET", "/notes"), apiJson("GET", "/schedules")]).then(function (r) { memory = r[0]; scheduled = r[1]; renderMemory(); })
+    return Promise.all([apiJson("GET", "/notes"), apiJson("GET", "/automations").catch(function () { return { automations: [], unavailable: ["your automations"] }; })]).then(function (r) { memory = r[0]; running = r[1]; renderMemory(); })
       .catch(function () { thread.innerHTML = '<p class="notice">Couldn’t load what Dot knows.</p>'; });
   }
   function findNote(el) {
@@ -236,14 +245,16 @@ body { display: flex; flex-direction: column }
   }
   thread.addEventListener("click", function (e) {
     if (!memory || !document.querySelector(".chat.notes-open")) return;
-    var n, sc = e.target.closest("[data-del-sched]");
+    var n, sc = e.target.closest("[data-del-sched], [data-pause-sched]");
     if (sc) {
-      var id = sc.closest("[data-sched]").dataset.sched, x = scheduled.filter(function (y) { return y.id === id; })[0];
-      if (!x || !window.confirm("Delete “" + x.title + "”? Dot stops sending it.")) return;
-      api("DELETE", "/schedules/" + encodeURIComponent(id)).then(function (res) {
-        memoryMsg = res.ok ? "" : "Couldn’t delete that. Try again.";
-        return apiJson("GET", "/schedules");
-      }).then(function (list) { scheduled = list; renderMemory(); });
+      var id = sc.closest("[data-auto]").dataset.auto, x = running.automations.filter(function (y) { return y.kind === "ask" && y.id === id; })[0];
+      if (!x) return;
+      var del = sc.hasAttribute("data-del-sched");
+      if (del && !window.confirm("Delete “" + x.name + "”? Dot stops sending it.")) return;
+      (del ? api("DELETE", "/schedules/" + encodeURIComponent(id)) : api("PUT", "/schedules/" + encodeURIComponent(id), { enabled: x.status === "paused" })).then(function (res) {
+        memoryMsg = res.ok ? "" : "Couldn’t change that. Try again.";
+        return apiJson("GET", "/automations");
+      }).then(function (r) { running = r; renderMemory(); });
       return;
     }
     if (e.target.closest("[data-edit-note]")) { editing = findNote(e.target).id; renderMemory(); }

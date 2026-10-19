@@ -4,14 +4,20 @@
 //
 // Rows (lukes-assistant):
 //   SCHED#<sub> / <id>             { title, ask, time 'HH:MM', repeat { rule, tz, start, n }, by 'sms' | 'email',
-//                                    nextAt (ISO), lastRun { at, ok, conversationId?, error? }, createdAt, createdVia, rev }
-//   SCHEDDUE / <nextAt>#<sub>#<id>  the runner's index: what's due next. Rewritten whenever nextAt changes
+//                                    enabled (false: paused; missing on older rows means true),
+//                                    nextAt (ISO; null while paused or once it's ended), lastRun { at, ok, conversationId?, error? },
+//                                    createdAt, createdVia, rev }
+//   SCHEDDUE / <nextAt>#<sub>#<id>  the runner's index: what's due next. Rewritten whenever nextAt changes; none while paused
 // The repeat rule is Lists' (repeat.mjs, RRULE subset: daily at most), on the person's own calendar
 // days in their time zone, so 1:00 PM stays 1:00 PM across daylight saving.
 //
 // Making one is a standing permission (Dot reading as them, later, with no one asking), so it needs
-// their own reply first, enforced in code (confirm.mjs) the same way as House's confirmations.
-// Deleting one needs no confirmation: it only ever takes something away.
+// their own reply first, enforced in code (confirm.mjs) the same way as House's confirmations. So does
+// every other change Dot makes to one (pause, resume, delete), as for the house's automations: the
+// rule is the same for every automation. On Dot's page the person makes the change themselves.
+//
+// Each is also an automation in the shape every tool's share (askAutomation; platform/api/dot-manifest.mjs),
+// so Dot lists scheduled asks with the house's automations and Lists' reminders (automations.mjs).
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { describe as describeRule, localParts, nextAfter, parseRule, validZone, zonedToIso, YMD } from './repeat.mjs';
 import { asking, pendingIn } from './confirm.mjs';
@@ -68,7 +74,18 @@ export function describeSchedule(s) {
   return `${when[0].toUpperCase()}${when.slice(1)} at ${clock(s.time)}, ${BY[s.by]}`;
 }
 
-const out = ({ pk: _p, sk, ...s }) => ({ id: sk, ...s, says: describeSchedule(s) });
+const out = ({ pk: _p, sk, ...s }) => ({ id: sk, ...s, enabled: s.enabled !== false, says: describeSchedule(s) });
+
+const OUTCOME = (r) => (r.ok ? 'done' : /^missed/.test(r.error ?? '') ? 'missed' : 'failed');
+
+/** A scheduled ask (as list() gives it) as an automation, the shape every tool's share */
+export function askAutomation(s) {
+  const status = !s.enabled ? 'paused' : s.nextAt ? 'on' : 'stopped';
+  return {
+    id: s.id, kind: 'ask', name: s.title, says: `${s.says}: “${s.ask}”`, status, ...(status === 'stopped' ? { why: 'its last day has passed' } : {}),
+    mine: true, can_change: true, last_run: s.lastRun ? { at: s.lastRun.at, outcome: OUTCOME(s.lastRun) } : null, next_at: s.nextAt ?? null,
+  };
+}
 
 export function makeSchedules({ db, table, now = () => new Date() }) {
   const pk = (sub) => `SCHED#${sub}`;
@@ -105,6 +122,27 @@ export function makeSchedules({ db, table, now = () => new Date() }) {
       return out(item);
     },
 
+    /** Pause (no due row, so it never runs) or resume (from its next time after now); -> it, or null if there's none */
+    async setEnabled(sub, id, enabled) {
+      for (let tries = 0; tries < 3; tries++) {
+        const s = await this.get(sub, id);
+        if (!s) return null;
+        if ((s.enabled !== false) === enabled) return out(s);
+        const next = enabled ? nextRun(s, now().toISOString()) : null;
+        const item = { ...s, enabled, nextAt: next?.at ?? null, rev: s.rev + 1 };
+        try {
+          await db.send(new PutCommand({ TableName: table, Item: item, ConditionExpression: 'rev = :rev', ExpressionAttributeValues: { ':rev': s.rev } }));
+        } catch (e) {
+          if (e.name === 'ConditionalCheckFailedException') continue; // the runner moved it on meanwhile: read it again
+          throw e;
+        }
+        if (s.nextAt) await db.send(new DeleteCommand({ TableName: table, Key: dueKey(sub, id, s.nextAt) }));
+        if (item.nextAt) await db.send(new PutCommand({ TableName: table, Item: { ...dueKey(sub, id, item.nextAt), sub, id } }));
+        return out(item);
+      }
+      throw new Error('It kept changing; try again.');
+    },
+
     async remove(sub, id) {
       const s = await this.get(sub, id);
       if (!s) return false;
@@ -127,7 +165,7 @@ export function makeSchedules({ db, table, now = () => new Date() }) {
      */
     async claim(row, atIso) {
       const s = await this.get(row.sub, row.id);
-      if (!s || `${s.nextAt}#${row.sub}#${row.id}` !== row.sk) {
+      if (!s || s.enabled === false || `${s.nextAt}#${row.sub}#${row.id}` !== row.sk) {
         await this.dropDue(row);
         return null;
       }
@@ -165,14 +203,14 @@ export const definition = {
   description: 'Scheduled asks: something you do for them by yourself, on a schedule, and send them the answer by text or email '
     + '(“text me a budget overview every Sunday at 1”, “every weekday at 7, what’s on my calendar today”). When it runs you can only read '
     + '(calendars, budget, lists, the house), not change anything. list: theirs, with ids. create: title, ask (the request in their words, '
-    + 'complete enough to run on its own later), time, repeat, by?; it asks them first: ask them in plain words and wait for their reply; only if '
-    + 'they agree, call again with op create and confirm: true. delete: id (no need to ask). For things the house should do by itself, use house_automation; '
-    + 'for a plain reminder, use their lists.',
+    + 'complete enough to run on its own later), time, repeat, by?. pause, resume, delete: id. Every change asks them first: ask them in plain words '
+    + 'and wait for their reply; only if they agree, call again with the same op (and id) and confirm: true. For things the house should do by itself, '
+    + 'use house_automation; for a plain reminder, use their lists.',
   input_schema: {
     type: 'object',
     properties: {
-      op: { type: 'string', enum: ['list', 'create', 'delete'] },
-      id: { type: 'string', description: 'For delete: from list' },
+      op: { type: 'string', enum: ['list', 'create', 'pause', 'resume', 'delete'] },
+      id: { type: 'string', description: 'For pause, resume, delete: from list' },
       title: { type: 'string', description: 'Short: “Sunday budget overview”' },
       ask: { type: 'string', description: 'What to do each time, as a request to you: “Give me an overview of this month’s budget so far.”' },
       time: { type: 'string', description: '"HH:MM", 24-hour, their local time' },
@@ -183,7 +221,7 @@ export const definition = {
       },
       start: { type: 'string', description: 'YYYY-MM-DD: the first day it may run (default today)' },
       by: { type: 'string', enum: CHANNELS, description: 'How to send the answer; leave out to use how they’re talking to you now (text, else email)' },
-      confirm: { type: 'boolean', description: 'Only for create, after they agreed' },
+      confirm: { type: 'boolean', description: 'Only after they agreed' },
     },
     required: ['op'],
     additionalProperties: false,
@@ -197,23 +235,35 @@ export function makeScheduleTool({ schedules, userId, channel, timeZone, contact
     const { op } = input;
     if (op === 'list') {
       const mine = await schedules.list(userId);
-      return JSON.stringify(mine.map((s) => ({ id: s.id, title: s.title, ask: s.ask, says: s.says, next: s.nextAt, last_run: s.lastRun })));
+      return JSON.stringify(mine.map((s) => ({ id: s.id, title: s.title, ask: s.ask, says: s.says, enabled: s.enabled, next: s.nextAt, last_run: s.lastRun })));
     }
-    if (op === 'delete') {
+    /** The confirmation they were asked for, for this op (and id): exactly that, never a new version from this call */
+    const confirmed = () => {
+      const p = pendingIn(history, 'schedule');
+      if (!p || p.op !== op || (op !== 'create' && p.id !== input.id)) throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
+      if (!p.answered) throw new Error('Wait for the person’s reply before confirming.');
+      return p;
+    };
+    if (op === 'pause' || op === 'resume' || op === 'delete') {
       if (!SCHED_ID.test(input.id ?? '')) throw new Error('id: from list');
-      if (!(await schedules.remove(userId, input.id))) throw new Error('No scheduled ask with that id.');
-      await audit({ tool: 'schedule', action: `delete ${input.id}`, outcome: 'ok' });
-      return 'Deleted: it won’t run again.';
+      const s = await schedules.get(userId, input.id);
+      if (!s) throw new Error('No scheduled ask with that id.');
+      if (!input.confirm) {
+        await audit({ tool: 'schedule', action: `${op} “${s.title}”`, outcome: 'asked' });
+        const verb = { pause: 'Pause', resume: 'Start sending again', delete: 'Delete' }[op];
+        return asking('schedule', { ask_them: `${verb} your scheduled ask “${s.title}” (${describeSchedule(s)})?`, op, id: input.id });
+      }
+      confirmed();
+      if (op === 'delete') await schedules.remove(userId, input.id);
+      const after = op === 'delete' ? null : await schedules.setEnabled(userId, input.id, op === 'resume');
+      await audit({ tool: 'schedule', action: `${op} “${s.title}” (confirmed)`, outcome: 'ok' });
+      if (op === 'delete') return 'Deleted: it won’t run again.';
+      if (op === 'pause') return 'Paused: it won’t run until they resume it.';
+      return after?.nextAt ? `Resumed. Next: ${after.nextAt}.` : 'Resumed, but it has no days left to run.';
     }
     // create
     let pending;
-    if (input.confirm) {
-      // Exactly what they were asked about, never a new version from this call
-      const p = pendingIn(history, 'schedule');
-      if (!p) throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
-      if (!p.answered) throw new Error('Wait for the person’s reply before confirming.');
-      pending = p.schedule;
-    }
+    if (input.confirm) pending = confirmed().schedule;
     const [today] = localParts(now().toISOString(), timeZone);
     const given = pending ?? Object.fromEntries(fields.filter((f) => input[f] !== undefined).map((f) => [f, input[f]]));
     const clean = cleanSchedule(given, { tz: timeZone, today });
@@ -229,7 +279,7 @@ export function makeScheduleTool({ schedules, userId, channel, timeZone, contact
       await audit({ tool: 'schedule', action: `create “${s.title}”`, outcome: 'asked' });
       return asking('schedule', {
         ask_them: `${describeSchedule(s)}: “${s.ask}” (first on ${first}). Set that up?`,
-        schedule: { ...given, by },
+        op: 'create', schedule: { ...given, by },
       });
     }
     const saved = await schedules.create(userId, s, { via: channel });

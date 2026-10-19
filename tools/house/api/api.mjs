@@ -14,6 +14,8 @@
 //   GET /automations, POST /automations, PUT|DELETE /automations/{id}
 //                           -> what runs by itself, and when: see automations.mjs (from Dot, changes
 //                              need the person's OK first)
+//   GET  /sent              -> [{ sentAt, channel, text, about, automation }] texts automations sent this
+//                              person in the last two days, newest first (notify.mjs)
 //   GET /access, PUT|DELETE /grants/{id}, GET /log
 //                           -> admins only (family_house:admin), never via Dot: see access.mjs
 // Groups are the family's (dot-y.co/family, platform/api/people.mjs); a grant names one by id.
@@ -72,6 +74,14 @@ export const MANIFEST = validateManifest({
       + 'whose it is, whether this person may change it (can_change), and how its last run went. Only the ones this person may see. '
       + 'Times are the house’s local time. To make or change one, use house_automation.',
     path: '/automations',
+    role: 'automations',
+    input: { type: 'object', properties: {}, additionalProperties: false },
+  }, {
+    name: 'sent',
+    description: 'Texts the house’s automations sent this person in the last two days, newest first (“Dot-y, Leaving home: check the garage”), '
+      + 'with which automation sent each. When they reply to one, find it here.',
+    path: '/sent',
+    role: 'sent',
     input: { type: 'object', properties: {}, additionalProperties: false },
   }],
 });
@@ -240,6 +250,14 @@ export function createApi(deps) {
     switch (event.routeKey) {
       case 'GET /dot':
         return json(200, MANIFEST);
+      case 'GET /sent': {
+        const t = deps.now().getTime();
+        const days = [0, 1, 2].map((d) => new Date(t - d * 86_400_000).toISOString().slice(0, 10));
+        const sent = (await Promise.all(days.map((d) => all(`SENT#${d}`)))).flat()
+          .filter((r) => r.to === claims.sub && !r.error && t - Date.parse(r.sentAt) < 2 * 86_400_000)
+          .sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1));
+        return json(200, sent.map((r) => ({ sentAt: r.sentAt, channel: r.channel, text: r.text, about: `House automation “${r.name}”`, automation: r.automation })));
+      }
       case 'POST /commands': {
         let body;
         try {

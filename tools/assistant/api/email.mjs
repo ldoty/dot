@@ -12,6 +12,7 @@ import { BetaFallbackState } from '@anthropic-ai/sdk';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { runTurn } from './agent.mjs';
+import { sentSince } from './automations.mjs';
 import { errorMessage, liveDeps } from './handler.mjs';
 
 export const MAX_BODY = 20_000;
@@ -119,6 +120,8 @@ export function createEmailWorker(depsOrFactory) {
       const r = await runTurn({
         ...deps, ...forUser, fallbackState: new BetaFallbackState(), userId, channel: 'email', text: said || '(empty email)', images,
         conversationId: existing ? id : undefined, newConversationId: id, title: subject || undefined, now: () => now,
+        // What Dot-y sent them since this thread last heard from them (a new thread: lately)
+        sent: await sentSince(forUser, existing?.updatedAt, now, deps.timeZone),
       });
       reply = r.text.trim() || (r.stopReason === 'refusal' ? 'Dot declined to answer that one.' : 'Dot had no answer for that. Try asking another way.');
     } catch (e) {

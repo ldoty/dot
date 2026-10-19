@@ -11,6 +11,9 @@
 //   DELETE /lists/{id}/items/{itemId}      edit
 //   GET    /prefs, PUT /prefs              { channel: sms | email }: how their reminders come by default
 //   GET    /reminders/recent               reminders sent to them in the last 2 days (to act on "done" or "snooze")
+//   GET    /automations                    -> their reminders still to come, as automations (the shape every tool's
+//                                          share, platform/api/dot-manifest.mjs): Dot lists them with the house's and
+//                                          its scheduled asks
 //   GET    /share-options                  -> { people: [{ sub, name }], groups: [{ id, name }] }   who a list can be shared with
 //   GET    /dot                            this tool's description for Dot (platform/api/dot-manifest.mjs)
 // A conflicting write gets 409 and the current version. Dot may change lists the person can edit,
@@ -32,7 +35,7 @@ import { verifyAccessToken } from './verify-token.mjs';
 import { validateManifest } from './dot-manifest.mjs';
 import { makePeople } from './people.mjs';
 import { CHANNELS, ID, atLeast, levelOf, parseItem, parseList, parseShare, reminderKey, settle } from './model.mjs';
-import { describe } from './repeat.mjs';
+import { describe, localParts } from './repeat.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const CONFIRM_MS = 2 * 60_000;
@@ -68,12 +71,47 @@ export const MANIFEST = validateManifest({
       description: 'Reminders sent to this person in the last two days, newest first, with their list and item ids. When they reply to a reminder '
         + '(“done”, “snooze an hour”), find it here.',
       path: '/reminders/recent',
+      role: 'sent',
+      input: { type: 'object', properties: {}, additionalProperties: false },
+    },
+    {
+      name: 'automations',
+      description: 'Their reminders still to come, as automations: each one’s item and list, when it’s next sent, how it repeats, and how it comes '
+        + '(text or email). Only reminders they set, on lists they can still see.',
+      path: '/automations',
+      role: 'automations',
       input: { type: 'object', properties: {}, additionalProperties: false },
     },
   ],
 });
 
-/** deps: table, group, issuer, clientIds, dotClientId, people (platform/api/people.mjs), members() -> [{ sub, name }], now() */
+const BY = { sms: 'by text', email: 'by email' };
+const clock = (hhmm) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+
+/**
+ * A reminder as an automation (the shape in dot-manifest.mjs): "Every other Tuesday at 9:00 AM: remind you
+ * “Bins out” (Chores), by text". at: when it's next sent; tz: the item's own, else the family's
+ */
+export function reminderAutomation({ listId, list, item, level, at, channel, tz }) {
+  const zone = item.repeat?.tz ?? tz;
+  const [day, time] = localParts(at, zone);
+  const when = item.repeat
+    ? `${describe(item.repeat.rule).replace(/^./, (c) => c.toUpperCase())} at ${clock(time)}`
+    : `On ${new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(`${day}T12:00:00Z`))} at ${clock(time)}`;
+  const text = item.text.length > 80 ? `${item.text.slice(0, 79)}…` : item.text;
+  return {
+    id: `${listId}.${item.sk}`, kind: 'reminder', name: text.length > 60 ? `${text.slice(0, 59)}…` : text,
+    says: `${when}: remind you “${text}” (${list.name}), ${BY[channel]}`,
+    status: 'on', mine: true, can_change: atLeast(level, 'edit'),
+    last_run: item.remind.sentAt ? { at: item.remind.sentAt, outcome: 'done' } : null, next_at: at,
+    listId, list: list.name, itemId: item.sk,
+  };
+}
+
+/** deps: table, group, issuer, clientIds, dotClientId, people (platform/api/people.mjs), members() -> [{ sub, name }], now(), timeZone (the family's) */
 export function createApi(deps) {
   const { table } = deps;
   const get = async (pk, sk) => (await db.send(new GetCommand({ TableName: table, Key: { pk, sk } }))).Item;
@@ -288,7 +326,23 @@ export function createApi(deps) {
         const sent = (await Promise.all(days.map((d) => all(`SENT#${d}`)))).flat()
           .filter((r) => r.to === sub && now.getTime() - Date.parse(r.sentAt) < RECENT_MS)
           .sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1));
-        return json(200, sent.map((r) => ({ sentAt: r.sentAt, listId: r.listId, list: r.list, itemId: r.itemId, text: r.text, channel: r.channel })));
+        // `about` and `channel` make each one the shape every tool's sent texts share (role 'sent')
+        return json(200, sent.map((r) => ({
+          sentAt: r.sentAt, listId: r.listId, list: r.list, itemId: r.itemId, text: r.text, channel: r.channel, about: `Lists reminder (${r.list})`,
+        })));
+      }
+
+      case 'GET /automations': {
+        const visible = (await all('LIST')).map((l) => ({ l, level: levelOf(person, l) })).filter((x) => x.level !== 'none');
+        const pref = (await get('PREF', sub))?.channel ?? 'sms';
+        const out = (await Promise.all(visible.map(async ({ l, level }) => (await all(`ITEMS#${l.sk}`))
+          .filter((i) => i.remind?.to === sub)
+          .map((i) => ({ i, key: reminderKey(l.sk, i.sk, i) }))
+          .filter((x) => x.key)
+          .map(({ i, key }) => reminderAutomation({
+            listId: l.sk, list: l, item: i, level, at: key.sk.split('#')[0], channel: i.remind.channel ?? pref, tz: deps.timeZone,
+          }))))).flat();
+        return json(200, out.sort((a, b) => a.next_at.localeCompare(b.next_at)));
       }
 
       default:
@@ -318,5 +372,5 @@ const env = process.env;
 export const handler = createApi({
   table: env.TABLE, group: env.GROUP, issuer: env.ISSUER,
   clientIds: [env.CLIENT_ID, env.DOT_CLIENT_ID].filter(Boolean), dotClientId: env.DOT_CLIENT_ID,
-  people: makePeople({ db, table: env.PEOPLE_TABLE }), members, now: () => new Date(),
+  people: makePeople({ db, table: env.PEOPLE_TABLE }), members, now: () => new Date(), timeZone: env.TIME_ZONE || 'America/New_York',
 });

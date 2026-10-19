@@ -2,7 +2,8 @@
 // as its owner, read-only, by text or email, never late, never for someone who left Dot.
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanSchedule, describeSchedule, makeScheduleTool, makeSchedules, nextRun } from '../api/schedules.mjs';
+import { askAutomation, cleanSchedule, describeSchedule, makeScheduleTool, makeSchedules, nextRun } from '../api/schedules.mjs';
+import { automationItem } from '../api/dot-manifest.mjs';
 import { createScheduleRunner, runText } from '../api/scheduled.mjs';
 import { pendingIn, SCHEDULED_MARK } from '../api/confirm.mjs';
 import { makeTools, WRITE_TOOLS } from '../api/tools.mjs';
@@ -95,6 +96,12 @@ test('by: how they’re talking now, if Dot can reach them that way', async () =
   await assert.rejects(noPhone.tool({ op: 'create', ...SUNDAY, by: 'sms' }), /no verified phone/);
 });
 
+// The history after the tool asked and the person answered
+const answered = (asked, reply = 'yes') => [
+  { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: asked }] },
+  ...(reply ? [{ role: 'user', content: [{ type: 'text', text: reply }] }] : []),
+];
+
 test('at most ten each; list and delete their own', async () => {
   for (let i = 0; i < 10; i++) await schedules.create(LUKE, { ...clean(), by: 'sms' }, { via: 'web' });
   await assert.rejects(schedules.create(LUKE, { ...clean(), by: 'sms' }, { via: 'web' }), /most scheduled asks one person can \(10\)/);
@@ -102,7 +109,11 @@ test('at most ten each; list and delete their own', async () => {
   const c = talk([]);
   const mine = JSON.parse(await c.tool({ op: 'list' }));
   assert.equal(mine.length, 10);
-  assert.equal(await c.tool({ op: 'delete', id: mine[0].id }), 'Deleted: it won’t run again.');
+  const asked = await c.tool({ op: 'delete', id: mine[0].id });
+  assert.match(asked, /Delete your scheduled ask “Sunday budget” \(Every Sunday at 1:00 PM, by text\)\?/, 'deleting asks first, like every change');
+  await assert.rejects(c.tool({ op: 'delete', id: mine[0].id, confirm: true }, { history: answered(asked, null) }), /Wait for the person’s reply/);
+  await assert.rejects(c.tool({ op: 'delete', id: mine[1].id, confirm: true }, { history: answered(asked) }), /Nothing like that/, 'only the one asked about');
+  assert.equal(await c.tool({ op: 'delete', id: mine[0].id, confirm: true }, { history: answered(asked) }), 'Deleted: it won’t run again.');
   assert.equal((await schedules.list(LUKE)).length, 9);
   const [amber] = await schedules.list(AMBER);
   await assert.rejects(c.tool({ op: 'delete', id: amber.id }), /No scheduled ask/, 'not someone else’s');
@@ -230,4 +241,51 @@ test('the runner’s index stays exact: one row per ask, and an out-of-date row 
   r = runner([text('Groceries: $410 of $600.')]);
   await r.run();
   assert.deepEqual(due(), [`2026-11-01T18:00:00.000Z#${LUKE}#${s.id}`], 'the run’s row is gone, the next one is there');
+});
+
+// ---- paused, resumed, and as an automation ----
+
+test('pausing takes it off the runner’s index; resuming puts it back from its next time after now', async () => {
+  const s = await schedules.create(LUKE, { ...clean(), by: 'sms' }, { via: 'web' });
+  const due = () => table.dump().filter(([k]) => k.startsWith('SCHEDDUE|')).map(([, v]) => v.sk);
+  const paused = await schedules.setEnabled(LUKE, s.id, false);
+  assert.deepEqual([paused.enabled, paused.nextAt, due()], [false, null, []]);
+  // A runner holding an old index row doesn't run it
+  const old = { pk: 'SCHEDDUE', sk: `${s.nextAt}#${LUKE}#${s.id}`, sub: LUKE, id: s.id };
+  assert.equal(await schedules.claim(old, '2026-10-25T17:00:00.000Z'), null);
+  // Even a paused row that somehow kept its time and index row isn't run
+  table.put({ ...(await schedules.get(LUKE, s.id)), nextAt: s.nextAt });
+  assert.equal(await schedules.claim(old, '2026-10-25T17:00:00.000Z'), null);
+  clock = new Date('2026-10-26T12:00:00Z'); // Monday: Sunday's has passed
+  const back = await schedules.setEnabled(LUKE, s.id, true);
+  assert.deepEqual([back.enabled, back.nextAt, due()], [true, '2026-11-01T18:00:00.000Z', [`2026-11-01T18:00:00.000Z#${LUKE}#${s.id}`]], 'no catching up on the one it missed');
+  assert.equal(await schedules.setEnabled(AMBER, s.id, false), null, 'nobody else’s');
+});
+
+test('from Dot, pausing and resuming ask first, then do exactly that', async () => {
+  const s = await schedules.create(LUKE, { ...clean(), by: 'sms' }, { via: 'web' });
+  const c = talk([]);
+  const asked = await c.tool({ op: 'pause', id: s.id });
+  assert.equal(JSON.parse(asked).ask_them, 'Pause your scheduled ask “Sunday budget” (Every Sunday at 1:00 PM, by text)?');
+  assert.equal((await schedules.get(LUKE, s.id)).enabled, undefined, 'nothing yet');
+  await assert.rejects(c.tool({ op: 'resume', id: s.id, confirm: true }, { history: answered(asked) }), /Nothing like that/, 'a yes to pausing isn’t a yes to resuming');
+  assert.equal(await c.tool({ op: 'pause', id: s.id, confirm: true }, { history: answered(asked) }), 'Paused: it won’t run until they resume it.');
+  assert.equal((await schedules.get(LUKE, s.id)).enabled, false);
+  const again = await c.tool({ op: 'resume', id: s.id });
+  assert.match(await c.tool({ op: 'resume', id: s.id, confirm: true }, { history: answered(again) }), /^Resumed\. Next: 2026-10-25T17:00:00.000Z\.$/);
+  assert.deepEqual(c.audits.map((a) => a.outcome), ['asked', 'ok', 'asked', 'ok']);
+});
+
+test('as an automation: the shape every tool’s share', async () => {
+  const s = await schedules.create(LUKE, { ...clean(), by: 'sms' }, { via: 'web' });
+  const [mine] = await schedules.list(LUKE);
+  const a = automationItem(askAutomation(mine));
+  assert.deepEqual(a, {
+    id: s.id, kind: 'ask', name: 'Sunday budget', says: 'Every Sunday at 1:00 PM, by text: “Give me an overview of this month’s budget.”',
+    status: 'on', mine: true, can_change: true, last_run: null, next_at: '2026-10-25T17:00:00.000Z',
+  });
+  assert.equal(askAutomation({ ...mine, enabled: false }).status, 'paused');
+  assert.deepEqual([askAutomation({ ...mine, nextAt: null }).status, askAutomation({ ...mine, nextAt: null }).why], ['stopped', 'its last day has passed']);
+  assert.equal(askAutomation({ ...mine, lastRun: { at: '2026-10-25T17:00:00Z', ok: false, error: 'missed: the runner was down at that time' } }).last_run.outcome, 'missed');
+  assert.equal(askAutomation({ ...mine, lastRun: { at: '2026-10-25T17:00:00Z', ok: false, error: 'no answer' } }).last_run.outcome, 'failed');
 });

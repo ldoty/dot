@@ -36,7 +36,9 @@ The routes are listed at the top of `api/api.mjs`, the rows there and in `api/sw
 `sweep.mjs` runs every minute in AWS, one at a time. It claims each due reminder (a conditional write)
 before sending, so nothing goes twice; a failed send is recorded, not retried. Texts go through the
 Dot-y number's registered campaign, never with links, only to a verified phone; email comes from
-dot@dot-y.co. Replies reach Dot, which finds the reminder through `GET /reminders/recent`.
+dot@dot-y.co. Replies reach Dot, which finds the reminder through `GET /reminders/recent` (the manifest's `sent`
+role, so it's in the note Dot reads before a reply). `GET /automations` lists each person's reminders still to
+come as automations (the shape every tool's share), for Dot's “Runs on its own”.
 
 ## Repeating
 

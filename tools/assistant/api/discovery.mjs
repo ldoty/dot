@@ -8,6 +8,8 @@
 //   3. reads each tool's manifest and offers its operations to Claude as <name>_<operation>,
 //   4. runs a call as a GET with that person's token, and logs it in the audit log.
 // Tools with no manifest (a 404 at /dot, e.g. Budget, which Dot reads with its own code) are skipped.
+// An operation with a role (dot-manifest.mjs: 'automations', 'sent') is also handed back under it, so
+// Dot can put every tool's automations in one list, and read what was texted to someone before they reply.
 import { requestPath, validateManifest } from './dot-manifest.mjs';
 
 const TTL_MS = 5 * 60_000;
@@ -37,9 +39,12 @@ export function makeDiscovery({ listApps, tokenFor, fetch = globalThis.fetch, no
     return manifest;
   }
 
-  /** The discovered tools for one person: { definitions, connected, handlers, apps } (apps: every tool they can use) */
+  /**
+   * The discovered tools for one person: { definitions, connected, handlers, apps, roles } (apps: every tool
+   * they can use; roles: { automations: [{ tool, run }], sent: [...] }, run() -> the operation's answer, parsed)
+   */
   async function forUser({ user, channel = 'web', audit = async () => {} }) {
-    const definitions = [], connected = [], handlers = {}, apps = {};
+    const definitions = [], connected = [], handlers = {}, apps = {}, roles = { automations: [], sent: [] };
     for (const app of await published()) {
       let token;
       try {
@@ -72,9 +77,10 @@ export function makeDiscovery({ listApps, tokenFor, fetch = globalThis.fetch, no
           await record('ok');
           return text.length > MAX_CHARS ? `${text.slice(0, MAX_CHARS)}\n[cut: the answer was ${text.length} characters]` : text;
         };
+        if (op.role && roles[op.role]) roles[op.role].push({ tool: m.title, run: async () => JSON.parse(await handlers[name]({})) });
       }
     }
-    return { definitions, connected, handlers, apps };
+    return { definitions, connected, handlers, apps, roles };
   }
 
   return { forUser };

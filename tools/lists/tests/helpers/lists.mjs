@@ -17,7 +17,7 @@ export const KID = '11111111-1111-1111-1111-111111111111';
 export const ROUTES = [
   'GET /lists', 'POST /lists', 'GET /lists/{id}', 'PUT /lists/{id}', 'DELETE /lists/{id}',
   'PUT /lists/{id}/items/{itemId}', 'DELETE /lists/{id}/items/{itemId}',
-  'GET /prefs', 'PUT /prefs', 'GET /reminders/recent', 'GET /share-options', 'GET /dot',
+  'GET /prefs', 'PUT /prefs', 'GET /reminders/recent', 'GET /automations', 'GET /share-options', 'GET /dot',
 ];
 
 export const clock = { now: new Date('2026-10-19T14:00:00Z') };
@@ -26,7 +26,7 @@ export const handler = createApi({
   clientIds: ['lists-client', 'lists-via-dot'], dotClientId: 'lists-via-dot',
   people: makePeople({ db: DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' })), table: 'family-people', ttlMs: 0 }),
   members: async () => [{ sub: LUKE, name: 'Luke' }, { sub: AMBER, name: 'amber@x.test' }, { sub: KID, name: 'Kid' }],
-  now: () => clock.now,
+  now: () => clock.now, timeZone: 'America/New_York',
 });
 
 export const outbox = { texts: [], emails: [], fail: null };

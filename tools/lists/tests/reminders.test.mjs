@@ -185,3 +185,28 @@ test('repeats need something to repeat from, and schedule needs a reminder', asy
   assert.equal((await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'x', due: '2026-11-01', repeat: { rule: 'FREQ=HOURLY', tz: NY } })).status, 400);
   assert.equal((await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'x', due: '2026-11-01', repeat: { rule: 'FREQ=WEEKLY', tz: 'Mars/Olympus' } })).status, 400);
 });
+
+// ---- as automations, and as sent texts (the shapes every tool shares) ----
+
+test('reminders still to come are their automations: in words, with when next, only their own', async () => {
+  const { automationItem, sentItem } = await import('../api/dot-manifest.mjs');
+  const l = await newList('Chores');
+  await call('PUT', `/lists/${l.id}/items/i00001`, { text: 'Bins out', remind: at('2026-10-20T23:00:00Z'), repeat: weekly('schedule') });
+  await call('PUT', `/lists/${l.id}/items/i00002`, { text: 'Call the dentist', remind: { at: '2026-10-21T13:00:00Z', channel: 'email' } });
+  await call('PUT', `/lists/${l.id}/items/i00003`, { text: 'No reminder' });
+  await call('PUT', `/lists/${l.id}/items/i00004`, { text: 'Done already', done: true, remind: at('2026-10-21T13:00:00Z') });
+  let mine = (await call('GET', '/automations')).body;
+  assert.deepEqual(mine.map((a) => [a.id, a.says, a.next_at, a.last_run]), [
+    [`${l.id}.i00001`, 'Every week at 7:00 PM: remind you “Bins out” (Chores), by text', '2026-10-20T23:00:00.000Z', null],
+    [`${l.id}.i00002`, 'On Wed, Oct 21 at 9:00 AM: remind you “Call the dentist” (Chores), by email', '2026-10-21T13:00:00.000Z', null],
+  ]);
+  assert.ok(mine.every((a) => automationItem(a)?.kind === 'reminder' && a.status === 'on' && a.can_change), 'the shared shape');
+  // Once sent, a one-off is gone; a schedule-mode repeat shows its next one and that it ran
+  await minute('2026-10-21T13:00:30Z');
+  mine = (await call('GET', '/automations')).body;
+  assert.deepEqual(mine.map((a) => [a.name, a.next_at, a.last_run?.outcome]), [['Bins out', '2026-10-27T23:00:00.000Z', 'done']]);
+  await call('PUT', `/lists/${l.id}`, { name: 'Chores', layout: 'checklist', columns: l.columns, share: [{ who: `sub:${AMBER}`, level: 'edit' }], rev: l.rev });
+  assert.deepEqual((await call('GET', '/automations', undefined, token(AMBER))).body, [], 'on a list they share, someone else’s reminder still isn’t theirs');
+  const sent = (await call('GET', '/reminders/recent')).body;
+  assert.ok(sent.length && sent.every((s) => sentItem(s)?.about === 'Lists reminder (Chores)'), 'sent texts in the shared shape');
+});

@@ -11,7 +11,10 @@
 //   DELETE /notes/{scope}/{id}
 //          personal notes are only ever your own; household notes are for admins to edit
 //   GET    /schedules           -> your scheduled asks (schedules.mjs), with what each says and when it runs next
+//   PUT    /schedules/{id}      { enabled } -> pause or resume one of yours
 //   DELETE /schedules/{id}
+//   GET    /automations         -> { automations, unavailable }: everything that runs on its own for you, from every
+//                                  tool, in one shape (automations.mjs), read with your own access
 // Every request needs a family_assistant access token, verified here. Dot then acts as that
 // person: their name and calendars (PEOPLE), and their own access to other tools (delegation):
 // Budget through read_budget, House's lights through house_control, Lists through lists_change, and any family tool that
@@ -31,6 +34,7 @@ import { makeHouse } from './house.mjs';
 import { makeLists } from './lists.mjs';
 import { makeMemoryTools, makeNotes, NOTE_ID } from './memory.mjs';
 import { cognitoContact, makeScheduleTool, makeSchedules, SCHED_ID } from './schedules.mjs';
+import { makeAutomationsView } from './automations.mjs';
 import { makeDiscovery } from './discovery.mjs';
 import { makeCalendars } from './calendars.mjs';
 import { makeTools } from './tools.mjs';
@@ -124,7 +128,10 @@ export function liveDeps(env = process.env) {
       const calApp = discovered.apps?.family_calendars;
       const calendar = calApp && makeCalendars({ tokenFor, apiUrl: calApp.api_url, clientId: calApp.client_id, user, channel, audit });
       const mine = calendar ? await calendar.listCalendars().catch((e) => { console.warn('calendars unavailable', e.message); return []; }) : [];
+      const automations = makeAutomationsView({ roles: discovered.roles, schedules, userId });
       return {
+        /** What tools sent them after this time, for a text or email turn's note */
+        sent: (sinceIso) => automations.sent(sinceIso),
         person: { name: me.name },
         notes: await notes.forPerson(userId),
         tools: makeTools({
@@ -139,10 +146,18 @@ export function liveDeps(env = process.env) {
           lists: listsApp && makeLists({ tokenFor, apiUrl: listsApp.api_url, clientId: listsApp.client_id, user, channel, audit, timeZone: env.TIME_ZONE }),
           memory: makeMemoryTools({ notes, userId, name: me.name, channel, audit }),
           schedule: makeScheduleTool({ schedules, userId, channel, timeZone: env.TIME_ZONE, contact: () => cognitoContact(env, userId), audit }),
+          automations,
           readOnly,
           discovered,
         }),
       };
+    },
+    /** Everything that runs on its own for them, for the page (read through discovery, as them) */
+    async automationsFor(claims) {
+      const userId = claims.sub || claims.username;
+      const audit = (entry) => store.addAudit({ user: userId, username: claims.username, channel: 'web', ...entry });
+      const discovered = await discovery.forUser({ user: { sub: claims.sub, username: claims.username }, channel: 'web', audit });
+      return makeAutomationsView({ roles: discovered.roles, schedules, userId }).list();
     },
     model: env.MODEL,
     timeZone: env.TIME_ZONE,
@@ -177,7 +192,22 @@ export function createHandler(depsOrFactory) {
     }
     // Scheduled asks: each person's own, never anyone else's
     if (method === 'GET' && path === '/schedules') return json(200, await deps.schedules.list(userId));
+    if (method === 'GET' && path === '/automations') return json(200, await deps.automationsFor(claims));
     const schedMatch = /^\/schedules\/([a-z0-9]{9,21})$/.exec(path);
+    if (schedMatch && method === 'PUT') {
+      if (!SCHED_ID.test(schedMatch[1])) return json(400, { error: 'bad id' });
+      let body;
+      try {
+        body = JSON.parse(event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString() : event.body || '');
+      } catch {
+        return json(400, { error: 'bad json' });
+      }
+      if (typeof body?.enabled !== 'boolean') return json(400, { error: 'enabled: true or false' });
+      const s = await deps.schedules.setEnabled(userId, schedMatch[1], body.enabled);
+      if (!s) return json(404, { error: 'not found' });
+      await deps.store.addAudit({ user: userId, username: claims.username, channel: 'web', tool: 'schedule', action: `${body.enabled ? 'resume' : 'pause'} ${schedMatch[1]} (page)`, outcome: 'ok' });
+      return json(200, s);
+    }
     if (schedMatch && method === 'DELETE') {
       if (!SCHED_ID.test(schedMatch[1])) return json(400, { error: 'bad id' });
       if (!(await deps.schedules.remove(userId, schedMatch[1]))) return json(404, { error: 'not found' });

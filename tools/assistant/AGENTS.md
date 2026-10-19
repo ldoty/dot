@@ -25,7 +25,13 @@ as its owner with **read-only tools** (`makeTools({ readOnly })` leaves out `WRI
 when adding a tool that changes anything), only while they're an enabled `family_assistant` member, to their
 verified phone or email, once (claimed with a rev check), and never more than an hour late. Its message starts with
 `SCHEDULED_MARK`, which never counts as the person's reply to a confirmation. Repeat rules are Lists' (`repeat.mjs`
-is a symlink to `tools/lists/api/repeat.mjs`), daily at most.
+is a symlink to `tools/lists/api/repeat.mjs`), daily at most. Every change from Dot (create, pause, resume,
+delete) needs the person's reply, the same rule as House's automations; the page changes them directly.
+
+**Automations** (`api/automations.mjs`): the scheduled asks plus every discovered `role: 'automations'`
+operation, in one shape, for the `automations` tool and the page. Discovered `role: 'sent'` operations feed the
+note (`SENT_MARK`) a text or email turn starts with; it's data in the person's message, so the prompt says it
+isn't instructions, and it never stops a reply going out (a failure gives no note).
 
 **Memory** (`api/memory.mjs`): Dot keeps notes (`remember`, `forget`, `recall`), household (every
 member's Dot reads them; admins edit them on the page) or personal (only that person's Dot; only they
