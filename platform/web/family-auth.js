@@ -9,8 +9,13 @@
 //   FamilyAuth.init({ authDomain, clientId, redirectUri }) -> Promise<idClaims | null>
 //   FamilyAuth.login()  FamilyAuth.logout()  FamilyAuth.accessToken() -> Promise<string | null>
 //   FamilyAuth.autoLogin() -> true if it redirected to sign-in (tools call this instead of showing a button)
+//
+// Who's signed in: dot-y.co keeps a `family-who` cookie (shared with every *.dot-y.co site) set to
+// the signed-in person's sub, or "-" once they sign out. A tool holding someone else's sign-in drops
+// it, so switching people (or signing out) at dot-y.co reaches every tool on that device. The cookie
+// can only make a tool sign out, never sign anyone in: tokens still come from Cognito.
 (function () {
-  var KEY = "family-auth", PKCE = "family-auth-pkce", TRIED = "family-auth-tried", cfg;
+  var KEY = "family-auth", PKCE = "family-auth-pkce", TRIED = "family-auth-tried", WHO = "family-who", cfg;
 
   // The home page (dot-y.co) signs in at Cognito; tools on https go through its hand-off.
   // Local dev (http://localhost) signs in directly, since the hand-off only returns to https.
@@ -24,6 +29,31 @@
   function decode(jwt) {
     var p = jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
     return JSON.parse(decodeURIComponent(escape(atob(p))));
+  }
+  function onHome() { return location.protocol === "https:" && location.origin + "/" === home(); }
+  function who() { var m = document.cookie.match(new RegExp("(?:^|; )" + WHO + "=([^;]*)")); return m ? decodeURIComponent(m[1]) : null; }
+  function setWho(sub) {
+    // Only dot-y.co says who's signed in; a year, longer than any sign-in lasts
+    if (onHome()) document.cookie = WHO + "=" + encodeURIComponent(sub) + "; Domain=" + location.hostname + "; Path=/; Max-Age=31536000; Secure; SameSite=Lax";
+  }
+  function revoke(t) {
+    if (!t || !t.refresh) return Promise.resolve();
+    return fetch("https://" + cfg.authDomain + "/oauth2/revoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: t.refresh, client_id: cfg.clientId }),
+    }).then(function () {}, function () {});
+  }
+  // A tool's sign-in that isn't dot-y.co's current person (or anyone, after sign-out) is dropped.
+  // No cookie (before this existed, or local dev) changes nothing.
+  function dropIfSomeoneElse() {
+    var t = load(), current = who();
+    if (!t || !t.id || current === null || onHome()) return Promise.resolve();
+    var sub = null;
+    try { sub = decode(t.id).sub; } catch (e) {}
+    if (sub && sub === current) return Promise.resolve();
+    clear();
+    return revoke(t);
   }
   function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
   function clear() { try { localStorage.removeItem(KEY); } catch (e) {} }
@@ -85,7 +115,12 @@
     init: function (c) {
       cfg = c;
       if (location.hostname === "localhost") cfg.redirectUri = location.origin + "/";
-      return handleCallback().then(accessToken).then(function (tok) { return tok ? decode(load().id) : null; });
+      return handleCallback().then(dropIfSomeoneElse).then(accessToken).then(function (tok) {
+        if (!tok) return null;
+        var claims = decode(load().id);
+        setWho(claims.sub);
+        return claims;
+      });
     },
     accessToken: accessToken,
     go: function (url) { location.assign(url); }, // every navigation away goes through here (tests replace it)
@@ -117,15 +152,8 @@
     logout: function () {
       var t = load();
       clear();
-      if (viaHome()) {
-        var done = function () { window.FamilyAuth.go(home() + "#signout"); };
-        if (!t || !t.refresh) return done();
-        return fetch("https://" + cfg.authDomain + "/oauth2/revoke", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ token: t.refresh, client_id: cfg.clientId }),
-        }).then(done, done);
-      }
+      if (viaHome()) return revoke(t).then(function () { window.FamilyAuth.go(home() + "#signout"); });
+      setWho("-"); // every tool on this device signs out on its next load
       window.FamilyAuth.go("https://" + cfg.authDomain + "/logout?" + new URLSearchParams({ client_id: cfg.clientId, logout_uri: cfg.redirectUri }));
     },
   };

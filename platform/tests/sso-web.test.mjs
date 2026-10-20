@@ -146,3 +146,51 @@ test('handoff: not a member -> back to the tool with the reason', async () => {
   const back = new URL(went[0]);
   assert.equal(new URLSearchParams(back.hash.slice(1)).get('sso_error'), "You don't have access to biomap. Ask an admin to add you.");
 });
+
+// --- switching people on one device: the family-who cookie ---
+
+const signedIn = (sub) => ({ 'family-auth': { id: accessToken({ clientId: 'biomap-client', sub }), access: 'tool-access', refresh: `refresh-${sub}`, exp: Date.now() + 3600e3 } });
+const setWho = (w, v) => { w.document.cookie = `family-who=${v}; Domain=dot-y.co; Path=/`; };
+
+test('a tool signed in as someone other than dot-y.co’s person drops that sign-in and revokes it', async () => {
+  const { w, calls } = page('https://biomap.dot-y.co/', { storage: signedIn('luke-sub'), routes: { 'https://auth.dot-y.co/oauth2/revoke': {} } });
+  setWho(w, 'tempi-sub');
+  assert.equal(await w.FamilyAuth.init(TOOL), null);
+  assert.equal(w.localStorage.getItem('family-auth'), null);
+  assert.equal(calls.find((c) => c.key.endsWith('/revoke')).body.get('token'), 'refresh-luke-sub');
+});
+
+test('after signing out at dot-y.co, every tool drops its sign-in', async () => {
+  const { w } = page('https://biomap.dot-y.co/', { storage: signedIn('luke-sub'), routes: { 'https://auth.dot-y.co/oauth2/revoke': {} } });
+  setWho(w, '-');
+  assert.equal(await w.FamilyAuth.init(TOOL), null);
+  assert.equal(w.localStorage.getItem('family-auth'), null);
+});
+
+test('the same person, or no cookie yet, keeps the tool signed in', async () => {
+  for (const cookie of ['luke-sub', null]) {
+    const { w, calls } = page('https://biomap.dot-y.co/', { storage: signedIn('luke-sub') });
+    if (cookie) setWho(w, cookie);
+    const user = await w.FamilyAuth.init(TOOL);
+    assert.equal(user?.sub, 'luke-sub', String(cookie));
+    assert.equal(calls.length, 0);
+  }
+});
+
+test('dot-y.co records who signed in, and "-" when they sign out', async () => {
+  const home = { ...AUTH, clientId: 'home-client', redirectUri: 'https://dot-y.co/' };
+  const storage = { 'family-auth': { id: accessToken({ clientId: 'home-client', sub: 'tempi-sub' }), access: 'a', refresh: 'r', exp: Date.now() + 3600e3 } };
+  const { w, went } = page('https://dot-y.co/', { storage });
+  setWho(w, 'luke-sub');
+  assert.equal((await w.FamilyAuth.init(home)).sub, 'tempi-sub');
+  assert.match(w.document.cookie, /family-who=tempi-sub/);
+  w.FamilyAuth.logout();
+  assert.match(w.document.cookie, /family-who=-/);
+  assert.match(went[0], /^https:\/\/auth\.dot-y\.co\/logout\?/);
+});
+
+test('a tool never sets who is signed in', async () => {
+  const { w } = page('https://biomap.dot-y.co/', { storage: signedIn('luke-sub') });
+  await w.FamilyAuth.init(TOOL);
+  assert.doesNotMatch(w.document.cookie, /family-who/);
+});
