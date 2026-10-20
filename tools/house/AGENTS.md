@@ -51,7 +51,8 @@ Home Assistant for dot-y.co. Read `README.md` for the pieces, routes and rows.
 People in Home Assistant, and the phone each follows (UniFi device trackers, enabled by hand; the
 rest of UniFi's client trackers stay disabled): `person.luke_doty` ← `device_tracker.lukes_iphone_2`,
 `person.amber_brackett` ← `device_tracker.iphone` (a private Wi-Fi address: if her iPhone rotates it,
-link the new tracker). A person's home/away is someone's whereabouts: grant `read` on it on purpose.
+link the new tracker), `person.tempi` ← `device_tracker.watch` (her Apple Watch, also a private address;
+a watch often stays off Wi-Fi while its iPhone is near, so she can read as away when home). A person's home/away is someone's whereabouts: grant `read` on it on purpose.
 
 What syncs by itself: states, names, and areas (grants follow a device that moves). What doesn't, on
 purpose: a new area or a new domain appears only once it's in `relay/ceiling.json` (then `deploy-relay.sh`).
