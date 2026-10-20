@@ -89,6 +89,9 @@ main { min-width: 0; }
 .page { background: var(--sheet); border: 1px solid var(--hair); border-radius: 16px; padding: clamp(20px, 4vw, 44px); display: flex; flex-direction: column; gap: 28px; }
 .page > * { max-width: 72ch; }
 .page > .wide { max-width: none; }
+/* Only the section you're on shows. This page doesn't load family.css, whose rule this is,
+   and without it .page's display: flex shows every section stacked under Welcome. */
+[hidden] { display: none !important; }
 
 .eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: var(--t-xs); letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 6px; border-radius: 99px; border: 1px solid var(--hair); letter-spacing: 0.04em; text-transform: none; font-weight: 700; color: var(--ink); }

@@ -86,3 +86,10 @@ test('the menu moves between sections, and Back returns to the last one instead 
   assert.equal(shown(), 'p-m3');
   dom.window.close();
 });
+
+test('only the section you pick is shown, not every section stacked under Welcome', async () => {
+  const { d, w } = await open();
+  d.querySelector('#nav button[data-go="m3"]').click();
+  const shown = [...d.querySelectorAll('.page')].filter((p) => w.getComputedStyle(p).display !== 'none').map((p) => p.id);
+  assert.deepEqual(shown, ['p-m3']);
+});
