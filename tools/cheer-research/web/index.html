@@ -59,6 +59,21 @@ nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: 
 .points .src { display: block; margin-top: 2px }
 .legend-row { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 13px; color: var(--muted); align-items: center }
 
+/* structures: the forms a company can take, and companies that chose one */
+.grid.wide { grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)) }
+.facts { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 6px 10px; margin: 0; font-size: 14px }
+.facts dt { color: var(--muted); font-size: 13px; padding-top: 1px }
+.facts dd { margin: 0 }
+@media (max-width: 420px) { .facts { grid-template-columns: minmax(0, 1fr) } .facts dd { margin-bottom: 6px } }
+.company .mission { font-size: 15px }
+.card details { font-size: 14px }
+.card summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 600 }
+.card details[open] summary { margin-bottom: 8px }
+.card details p, .card details .facts { margin: 0 0 8px }
+blockquote { margin: 0 0 8px; padding: 8px 12px; border-left: 3px solid var(--line); background: var(--raised); border-radius: 0 var(--r-sm) var(--r-sm) 0 }
+blockquote cite { display: block; margin-top: 4px; font-size: 13px; color: var(--muted); font-style: normal }
+.lesson { border-top: 1px solid var(--line); padding-top: 8px; font-size: 14px; margin-top: auto }
+
 /* money */
 .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface) }
 table { border-collapse: collapse; width: 100%; font-size: 14px }
@@ -179,12 +194,19 @@ window.startGuide = function (G, initial) {
   function lbl(l) { return '<span class="tag ' + l + '" title="' + LABEL[l] + '">' + l + "</span>"; }
   function sources(src) { return src && src.length ? '<span class="src">' + src.map(function (s) { return '<a href="' + esc(s) + '" target="_blank" rel="noopener">' + esc(s.replace(/^https?:\/\/(www\.)?/, "").split("/")[0]) + "</a>"; }).join(" · ") + "</span>" : ""; }
 
+  // Structures: the forms a company can take and the companies that chose them, with their own chapters
+  // (section "structures"), which the guide leaves out. A guide built without them has no such tab.
+  var ST = G.structure || null;
+  var GUIDE_CHAPTERS = G.chapters.filter(function (c) { return c.section !== "structures"; });
+  var TAB_NAMES = [["study", "Study"], ["guide", "Guide"], ["structures", "Structures"], ["players", "Players"], ["money", "Money"], ["timing", "Timing"], ["ask", "Ask"]]
+    .filter(function (t) { return t[0] !== "structures" || ST; });
+
   $("#app").innerHTML =
     '<header class="top"><div><div class="eyebrow">Market research</div><h1>Youth Activities Research</h1>' +
-    "<p>" + esc(G.thesis.title) + ". The youth activities market, from cheer and dance out: who’s in it, who owns them, who bills what where, and a deck to learn it.</p></div>" +
+    "<p>" + esc(G.thesis.title) + ". The youth activities market, from cheer and dance out: who’s in it, who owns them, who bills what where, " + (ST ? "how a company can be owned so its mission lasts, " : "") + "and a deck to learn it.</p></div>" +
     '<div class="chips"><span class="tag">' + G.cards.length + " cards</span><span class=\"tag\">" + G.players.length + " players</span><span class=\"tag\">" + G.flows.length + " money flows</span></div></header>" +
     '<nav class="tabs" role="tablist">' +
-    [["study", "Study"], ["guide", "Guide"], ["players", "Players"], ["money", "Money"], ["timing", "Timing"], ["ask", "Ask"]].map(function (t) {
+    TAB_NAMES.map(function (t) {
       return '<button role="tab" type="button" data-tab="' + t[0] + '" aria-selected="false">' + t[1] + "</button>";
     }).join("") + "</nav>" +
     '<section id="tab-study" role="tabpanel" hidden><div class="study"><aside class="panel">' +
@@ -195,6 +217,7 @@ window.startGuide = function (G, initial) {
     '<div id="resetConfirm" hidden class="chips"><span class="muted" style="font-size:13px;align-self:center">Clear progress?</span><button class="chip" id="resetYes" type="button">Clear</button><button class="chip" id="resetNo" type="button">Keep</button></div>' +
     '</aside><div class="stage" id="stage"></div></div></section>' +
     '<section id="tab-guide" role="tabpanel" hidden><div id="guide"></div></section>' +
+    (ST ? '<section id="tab-structures" role="tabpanel" hidden><div id="structures"></div></section>' : "") +
     '<section id="tab-players" role="tabpanel" hidden><div class="bar"><input class="search" id="q" type="search" placeholder="Search names, owners, facts" aria-label="Search players"><div class="chips" id="roleChips"></div></div>' +
     '<div class="bar"><div class="chips" id="kindChips"></div></div><div id="playerList"></div></section>' +
     '<section id="tab-money" role="tabpanel" hidden><div id="money"></div></section>' +
@@ -203,7 +226,7 @@ window.startGuide = function (G, initial) {
     '<p class="foot">' + esc(G.note) + "</p>";
 
   // ---------- tabs
-  var TABS = ["study", "guide", "players", "money", "timing", "ask"];
+  var TABS = TAB_NAMES.map(function (t) { return t[0]; });
   function showTab(name) {
     document.querySelectorAll("nav.tabs button").forEach(function (b) { b.setAttribute("aria-selected", b.getAttribute("data-tab") === name ? "true" : "false"); });
     document.querySelectorAll("[role=tabpanel]").forEach(function (s) { s.hidden = s.id !== "tab-" + name; });
@@ -219,17 +242,65 @@ window.startGuide = function (G, initial) {
     var h = '<div class="thesis"><div><div class="eyebrow">The thesis</div><h2 style="font-size:30px;margin-top:4px">' + esc(t.title) + "</h2></div>" +
       '<p class="intro">' + esc(t.intro) + '</p><div class="legs">' + t.legs.map(function (l) { return '<div class="leg"><b>' + esc(l.name) + "</b>" + esc(l.what) + "</div>"; }).join("") + "</div>" +
       '<div><div class="eyebrow">The deadline</div>' + esc(t.deadline) + "</div></div>" +
-      '<div class="section-h"><div class="chips" id="chapterChips">' + G.chapters.map(function (c) { return '<button class="chip" type="button" data-ch="' + c.id + '">' + esc(c.title) + "</button>"; }).join("") + "</div></div>" +
-      '<div class="legend-row">' + ["C", "R", "E"].map(function (l) { return lbl(l) + " " + LABEL[l]; }).join("") + "</div>";
-    G.chapters.forEach(function (c) {
-      h += '<article class="chapter" id="ch-' + c.id + '"><div class="eyebrow">' + esc(c.eyebrow) + "</div><h2>" + esc(c.title) + "</h2><p>" + esc(c.summary) + '</p><ul class="points">' +
-        c.points.map(function (p) { return "<li>" + lbl(p.label) + "<div>" + esc(p.text) + sources(p.src) + "</div></li>"; }).join("") + "</ul></article>";
-    });
+      '<div class="section-h"><div class="chips jump">' + GUIDE_CHAPTERS.map(function (c) { return '<button class="chip" type="button" data-ch="' + c.id + '">' + esc(c.title) + "</button>"; }).join("") + "</div></div>" +
+      legend() + GUIDE_CHAPTERS.map(chapter).join("");
     $("#guide").innerHTML = h;
-    $("#chapterChips").addEventListener("click", function (e) {
-      var b = e.target.closest("[data-ch]"); if (!b) return;
-      var el = document.getElementById("ch-" + b.getAttribute("data-ch")); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth" });
+  })();
+  function legend() { return '<div class="legend-row">' + ["C", "R", "E"].map(function (l) { return lbl(l) + " " + LABEL[l]; }).join("") + "</div>"; }
+  function chapter(c) {
+    return '<article class="chapter" id="ch-' + c.id + '"><div class="eyebrow">' + esc(c.eyebrow) + "</div><h2>" + esc(c.title) + "</h2><p>" + esc(c.summary) + '</p><ul class="points">' +
+      c.points.map(function (p) { return "<li>" + lbl(p.label) + "<div>" + esc(p.text) + sources(p.src) + "</div></li>"; }).join("") + "</ul></article>";
+  }
+  // Chapter chips (and the structures tab's section chips) scroll to what they name
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest(".jump [data-ch]"); if (!b) return;
+    var el = document.getElementById("ch-" + b.getAttribute("data-ch")); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth" });
+  });
+
+  // ---------- structures
+  var FORM = {}; if (ST) ST.forms.forEach(function (f) { FORM[f.id] = f; });
+  S.sgroup = S.sgroup || "";
+  function renderCompanies() {
+    var q = ($("#sq").value || "").trim().toLowerCase();
+    var list = ST.companies.filter(function (c) {
+      if (S.sgroup && c.group !== S.sgroup) return false;
+      return !q || [c.name, c.structure, c.founders, c.mission, c.why, c.how, c.outcome].join(" ").toLowerCase().indexOf(q) >= 0;
     });
+    $("#groupChips").innerHTML = Object.keys(ST.groups).map(function (k) { return '<button class="chip" type="button" data-group="' + k + '" aria-pressed="' + (S.sgroup === k) + '">' + esc(ST.groups[k]) + "</button>"; }).join("");
+    $("#companyList").innerHTML = list.length ? '<div class="grid wide">' + list.map(function (c) {
+      var when = [c.founded ? "Founded " + c.founded : "", c.founders].filter(Boolean).join(" · ");
+      var qt = c.quote ? "<blockquote>“" + esc(c.quote.text) + "”<cite>" + esc(c.quote.by) + " " + sources([c.quote.src]) + "</cite></blockquote>" : "";
+      return '<article class="card company"><div class="tags"><span class="tag plain">' + esc(ST.groups[c.group]) + "</span>" +
+        (c.structureIds || []).map(function (id) { return '<span class="tag">' + esc(FORM[id].name) + "</span>"; }).join("") + lbl(c.label) + "</div>" +
+        "<h3>" + esc(c.name) + "</h3>" + (when ? '<div class="muted" style="font-size:14px">' + esc(when) + "</div>" : "") +
+        '<div class="muted" style="font-size:14px">' + esc(c.structure) + "</div>" +
+        (c.mission ? '<div class="mission">' + esc(c.mission) + "</div>" : "") +
+        "<details><summary>Why, how, and how it went</summary>" +
+        (c.why ? "<p><b>Why.</b> " + esc(c.why) + "</p>" : "") + qt +
+        (c.how ? "<p><b>How it works.</b> " + esc(c.how) + "</p>" : "") +
+        (c.outcome ? "<p><b>How it went.</b> " + esc(c.outcome) + "</p>" : "") + sources(c.src) + "</details>" +
+        (c.lesson ? '<div class="lesson"><b>Lesson.</b> ' + esc(c.lesson) + "</div>" : "") + "</article>";
+    }).join("") + "</div>" : '<p class="muted">No company matches. Try a name or a structure, or clear the filter.</p>';
+  }
+  if (ST) (function () {
+    var chapters = G.chapters.filter(function (c) { return c.section === "structures"; });
+    var row = function (k, v) { return v ? "<dt>" + k + "</dt><dd>" + esc(v) + "</dd>" : ""; };
+    $("#structures").innerHTML = '<div class="thesis"><div><div class="eyebrow">Business structure</div><h2 style="font-size:30px;margin-top:4px">' + esc(ST.title) + "</h2></div>" +
+      '<p class="intro">' + esc(ST.intro) + "</p></div>" +
+      '<div class="section-h"><div class="chips jump"><button class="chip" type="button" data-ch="forms">The forms</button><button class="chip" type="button" data-ch="companies">Companies</button>' +
+      chapters.map(function (c) { return '<button class="chip" type="button" data-ch="' + c.id + '">' + esc(c.title) + "</button>"; }).join("") + "</div></div>" + legend() +
+      '<article class="chapter" id="ch-forms"><div class="eyebrow">Legal forms, certifications and ownership</div><h2>The forms</h2><p>' + esc(ST.formsSummary) + "</p>" +
+      '<div class="grid wide">' + ST.forms.map(function (f) {
+        var more = row("Taxes", f.taxes) + row("Venture capital", f.raise) + row("Selling it", f.sell) + row("The mission", f.mission) + row("Examples", (f.examples || []).join("; "));
+        return '<article class="card form" id="form-' + f.id + '"><div class="tags"><span class="tag plain">' + esc(f.kind) + "</span>" + lbl(f.label) + "</div><h3>" + esc(f.name) + '</h3><div style="font-size:14px">' + esc(f.what) + "</div>" +
+          (f.you ? '<dl class="facts">' + row("For you", f.you) + "</dl>" : "") + (more || f.src && f.src.length ? '<details><summary>Taxes, money, selling it and the mission</summary>' + (more ? '<dl class="facts">' + more + "</dl>" : "") + sources(f.src) + "</details>" : "") + "</article>";
+      }).join("") + "</div></article>" +
+      '<article class="chapter" id="ch-companies"><div class="eyebrow">Who chose what, and why</div><h2>Companies</h2><p>' + esc(ST.companiesSummary) + "</p>" +
+      '<div class="bar"><input class="search" id="sq" type="search" placeholder="Search companies, founders, structures" aria-label="Search companies"><div class="chips" id="groupChips"></div></div><div id="companyList"></div></article>' +
+      chapters.map(chapter).join("");
+    $("#sq").addEventListener("input", renderCompanies);
+    $("#groupChips").addEventListener("click", function (e) { var b = e.target.closest("[data-group]"); if (!b) return; var k = b.getAttribute("data-group"); S.sgroup = S.sgroup === k ? "" : k; save(); renderCompanies(); });
+    renderCompanies();
   })();
 
   // ---------- players
@@ -390,7 +461,10 @@ window.startGuide = function (G, initial) {
   // ---------- study
   // A deck per chapter that has cards, everything at once, and one built from the players: who owns it?
   var OWNERS = G.players.filter(function (p) { return !/^(Private|Nonprofit|Independent|Public)/.test(p.owner); });
-  var DECKS = [["all", "Everything"]].concat(G.chapters.filter(function (c) { return G.cards.some(function (k) { return k.topic === c.id; }); }).map(function (c) { return [c.id, c.title]; }), [["owners", "Who owns it?"]]);
+  // And one from the structures tab's companies: which structure did it choose? (its first)
+  var CHOSE = ST ? ST.companies.filter(function (c) { return c.structureIds && c.structureIds.length; }) : [];
+  var DECKS = [["all", "Everything"]].concat(G.chapters.filter(function (c) { return G.cards.some(function (k) { return k.topic === c.id; }); }).map(function (c) { return [c.id, c.title]; }), [["owners", "Who owns it?"]],
+    CHOSE.length ? [["structure", "Which structure?"]] : []);
   var MODES = [["choose", "Multiple choice"], ["flip", "Flip card"]];
   var st = S.study, boxes = S.boxes;
   if (!DECKS.some(function (d) { return d[0] === st.deck; })) st.deck = "all";
@@ -398,6 +472,10 @@ window.startGuide = function (G, initial) {
   function buildCards() {
     if (st.deck === "owners") return OWNERS.map(function (p) {
       return { id: "owner:" + p.id, kind: "Who owns it?", front: { q: p.name, sub: G.kinds[p.kind] }, back: { a: p.owner, sub: p.what }, answer: p.owner, pool: OWNERS.map(function (o) { return o.owner; }) };
+    });
+    if (st.deck === "structure") return CHOSE.map(function (c) {
+      var f = FORM[c.structureIds[0]];
+      return { id: "structure:" + c.id, kind: "Which structure?", front: { q: c.name, sub: [c.founded, c.founders].filter(Boolean).join(" · ") }, back: { a: f.name, sub: c.structure }, answer: f.name, pool: ST.forms.map(function (x) { return x.name; }) };
     });
     return G.cards.filter(function (c) { return st.deck === "all" || c.topic === st.deck; }).map(function (c) {
       var same = G.cards.filter(function (k) { return k.topic === c.topic; });

@@ -42,6 +42,28 @@ def build(private=PRIVATE):
         check(0 <= f['low'] <= f['mid'] <= f['high'], f"{f['id']}: low <= mid <= high")
         check(f.get('label') in LABELS, f"{f['id']}: no C/R/E label")
 
+    # Structures (optional): the forms a company can take and companies that chose them. Their chapters are
+    # marked section "structures" and show on that tab instead of the guide.
+    for c in g['chapters']:
+        check(c.get('section') in (None, 'structures'), f"{c['id']}: unknown section {c.get('section')}")
+    s = g.get('structure')
+    if s:
+        forms = [f['id'] for f in s['forms']]
+        check(len(set(forms)) == len(forms), 'duplicate structure form id')
+        for f in s['forms']:
+            check(f.get('label') in LABELS, f"{f['id']}: no C/R/E label")
+        cids = [c['id'] for c in s['companies']]
+        check(len(set(cids)) == len(cids), 'duplicate company id')
+        for c in s['companies']:
+            check(c['group'] in s['groups'], f"{c['id']}: unknown group {c['group']}")
+            for sid in c.get('structureIds', []):
+                check(sid in forms, f"{c['id']}: unknown structure {sid}")
+            check(c.get('label') in LABELS, f"{c['id']}: no C/R/E label")
+            q = c.get('quote')
+            check(q is None or (q.get('text') and q.get('by') and q.get('src')), f"{c['id']}: a quote needs text, by and src")
+    else:
+        check(not any(c.get('section') for c in g['chapters']), 'structures chapters without a structure section')
+
     seen = set()
     for card in g['cards']:
         check(card['topic'] in topics, f"card topic {card['topic']} is not a chapter: {card['q']}")
@@ -57,4 +79,5 @@ if __name__ == '__main__':
     out = os.path.join(PRIVATE, 'guide.json')
     open(out, 'w').write(text)
     print(f"{out}: {len(guide['chapters'])} chapters, {len(guide['players'])} players, "
-          f"{len(guide['flows'])} flows, {len(guide['cards'])} cards, {len(text.encode()):,} bytes")
+          f"{len(guide['flows'])} flows, {len(guide['cards'])} cards, "
+          f"{len(guide.get('structure', {}).get('companies', []))} companies, {len(text.encode()):,} bytes")

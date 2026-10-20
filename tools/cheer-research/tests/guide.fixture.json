@@ -5,7 +5,8 @@
   "chapters": [
     { "id": "alpha", "title": "Alpha chapter", "eyebrow": "Players", "summary": "Who makes widgets.", "points": [{ "text": "Acme Events runs 40 widget shows.", "label": "C", "src": ["https://example.com/acme"] }, { "text": "Widgets may double by 2030.", "label": "E" }] },
     { "id": "beta", "title": "Beta chapter", "eyebrow": "Money", "summary": "Who pays.", "points": [{ "text": "Families pay the gym.", "label": "R" }] },
-    { "id": "calendar", "title": "Seasons", "eyebrow": "Timing", "summary": "When.", "points": [{ "text": "Widget season opens in May.", "label": "C" }] }
+    { "id": "calendar", "title": "Seasons", "eyebrow": "Timing", "summary": "When.", "points": [{ "text": "Widget season opens in May.", "label": "C" }] },
+    { "id": "gamma", "section": "structures", "title": "Gamma lessons", "eyebrow": "Patterns", "summary": "What lasts.", "points": [{ "text": "Control keeps a mission.", "label": "E" }] }
   ],
   "players": [
     { "id": "acme", "name": "Acme Events", "kind": "events", "role": "gatekeeper", "owner": "Bigfund Capital", "what": "Runs widget shows.", "label": "C" },
@@ -43,6 +44,23 @@
     { "id": "alpha:a3", "topic": "alpha", "q": "Who owns Zed?", "a": "Smallfund Partners" },
     { "id": "alpha:a4", "topic": "alpha", "q": "Who’s the owners’ club?", "a": "Widget Guild" },
     { "id": "beta:b1", "topic": "beta", "q": "Who pays the gym?", "a": "Families", "sub": "Monthly." },
-    { "id": "beta:b2", "topic": "beta", "q": "Net take?", "a": "0.5%" }
-  ]
+    { "id": "beta:b2", "topic": "beta", "q": "Net take?", "a": "0.5%" },
+    { "id": "gamma:g1", "topic": "gamma", "q": "What keeps a widget mission?", "a": "Control" }
+  ],
+  "structure": {
+    "title": "Built to last", "intro": "How a widget company can keep its purpose.",
+    "formsSummary": "The shapes a widget company can take.", "companiesSummary": "Who chose which, and why.",
+    "groups": { "steward": "Held in trust", "caution": "Where it didn’t hold", "capital": "Patient capital" },
+    "forms": [
+      { "id": "widget-corp", "name": "Widget corporation", "kind": "legal form", "what": "The usual widget company.", "taxes": "Taxed twice.", "raise": "Yes.", "sell": "The board decides.", "mission": "Not protected.", "examples": ["Bigfund’s widgets"], "label": "C", "src": ["https://example.com/corp"] },
+      { "id": "guild-trust", "name": "Guild trust", "kind": "trust", "what": "A trust holds the votes.", "taxes": "Taxed once.", "raise": "Rarely.", "sell": "Only with the trust’s yes.", "mission": "Locked.", "examples": ["Treehouse Widgets"], "you": "Worth a look.", "label": "C", "src": ["https://example.com/trust"] },
+      { "id": "widget-coop", "name": "Widget co-op", "kind": "ownership model", "what": "Owned by its members.", "label": "R", "src": [] },
+      { "id": "widget-seal", "name": "Widget seal", "kind": "certification", "what": "A badge, not a legal form.", "label": "C" }
+    ],
+    "companies": [
+      { "id": "treehouse", "name": "Treehouse Widgets", "group": "steward", "structure": "Held by a guild trust", "structureIds": ["guild-trust"], "founded": 1950, "founders": "Ada Widget", "why": "So it could never be sold.", "quote": { "text": "Widgets for everyone, forever.", "by": "Ada Widget", "src": "https://example.com/ada" }, "mission": "Widgets for every gym.", "how": "The trust holds the votes.", "outcome": "Seventy years and counting.", "lesson": "Lock it early.", "label": "C", "src": ["https://example.com/treehouse"] },
+      { "id": "sellout", "name": "Sellout Sprockets", "group": "caution", "structure": "Sold to Bigfund", "structureIds": ["widget-seal", "widget-corp"], "founded": 1990, "founders": "Bo Sprocket", "why": "A seal felt like enough.", "quote": null, "mission": "Kind sprockets.", "how": "Nothing held it.", "outcome": "Sold twice.", "lesson": "A seal isn’t control.", "label": "R", "src": ["https://example.com/sellout"] },
+      { "id": "slowfund", "name": "Slowfund", "group": "capital", "structure": "Holds for good", "founded": 2016, "founders": "Cy Slow", "how": "No debt.", "outcome": "Ten businesses.", "lesson": "Patience pays.", "label": "C", "src": ["https://example.com/slow"] }
+    ]
+  }
 }

@@ -39,7 +39,8 @@ test('refuses missing, forged, wrong-group and other-tool tokens', async () => {
 test('serves the guide to members', async () => {
   const r = await call('GET', '/guide');
   assert.equal(r.status, 200);
-  assert.equal(r.body.guide.cards.length, 6);
+  assert.equal(r.body.guide.cards.length, 7);
+  assert.equal(r.body.guide.structure.companies[0].name, 'Treehouse Widgets');
   assert.equal(r.body.guide.players[0].name, 'Acme Events');
 });
 

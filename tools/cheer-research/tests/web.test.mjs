@@ -10,7 +10,7 @@ const GUIDE = JSON.parse(readFileSync(new URL('./guide.fixture.json', import.met
 const KEY = 'cheer-research-v1';
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function open({ server = null, status = 200 } = {}) {
+async function open({ server = null, status = 200, guide = GUIDE } = {}) {
   const puts = [];
   const dom = new JSDOM(HTML, {
     runScripts: 'dangerously', url: 'https://cheer-research.dot-y.co/', pretendToBeVisual: true,
@@ -19,7 +19,7 @@ async function open({ server = null, status = 200 } = {}) {
       w.fetch = async (url, o = {}) => {
         const res = (s, body) => ({ ok: s < 300, status: s, json: async () => JSON.parse(JSON.stringify(body)) });
         if (url === 'config.json') return res(200, { apiUrl: 'https://api.test' });
-        if (url.endsWith('/guide')) return res(status, status === 200 ? { guide: GUIDE } : {});
+        if (url.endsWith('/guide')) return res(status, status === 200 ? { guide } : {});
         if (url.endsWith('/progress') && (o.method || 'GET') === 'GET') return server ? res(200, { progress: server }) : res(404, {});
         if (url.endsWith('/progress')) { puts.push(JSON.parse(o.body)); return res(200, {}); }
         throw new Error('unexpected ' + url);
@@ -33,13 +33,14 @@ const tab = (d, name) => d.querySelector(`nav.tabs [data-tab="${name}"]`).click(
 const type = (d, w, k, v) => { const el = d.querySelector(`[data-k="${k}"]`); el.value = v; el.dispatchEvent(new w.Event('input', { bubbles: true })); };
 
 test('the public page has none of the research', () => {
-  for (const s of ['Acme Events', 'Widget Guild', 'Bigfund']) assert.ok(!HTML.includes(s));
+  for (const s of ['Acme Events', 'Widget Guild', 'Bigfund', 'Treehouse Widgets', 'Guild trust']) assert.ok(!HTML.includes(s));
   // With the real guide built locally, check none of its players or cards leaked into the page.
   const real = new URL('../private/guide.json', import.meta.url);
   if (existsSync(real)) {
     const g = JSON.parse(readFileSync(real, 'utf8'));
     for (const p of g.players) assert.ok(!HTML.includes(p.name), `${p.name} is in web/index.html`);
     for (const c of g.cards) assert.ok(!HTML.includes(c.q), `card “${c.q}” is in web/index.html`);
+    for (const c of g.structure?.companies ?? []) assert.ok(!HTML.includes(c.name), `${c.name} is in web/index.html`);
   }
 });
 
@@ -47,8 +48,8 @@ test('opens on the study deck with four choices', async () => {
   const { d, dom } = await open();
   assert.equal(d.getElementById('tab-study').hidden, false);
   assert.equal(d.querySelectorAll('.choice').length, 4);
-  assert.match(d.getElementById('legend').textContent, /0 known.*6 new or missed/);
-  assert.deepEqual([...d.querySelectorAll('#deckChips .chip')].map((c) => c.textContent), ['Everything', 'Alpha chapter', 'Beta chapter', 'Who owns it?'], 'chapters without cards get no deck');
+  assert.match(d.getElementById('legend').textContent, /0 known.*7 new or missed/);
+  assert.deepEqual([...d.querySelectorAll('#deckChips .chip')].map((c) => c.textContent), ['Everything', 'Alpha chapter', 'Beta chapter', 'Gamma lessons', 'Who owns it?', 'Which structure?'], 'chapters without cards get no deck');
   dom.window.close();
 });
 
@@ -103,10 +104,65 @@ test('the guide shows the thesis and labeled chapters with sources', async () =>
   const { d, dom } = await open();
   tab(d, 'guide');
   assert.match(d.querySelector('.thesis').textContent, /Follow the widgets.*Payments.*Before the widget season/);
-  assert.equal(d.querySelectorAll('.chapter').length, 3);
+  assert.equal(d.querySelectorAll('#guide .chapter').length, 3, 'the structures tab’s chapters aren’t here');
+  assert.equal(d.querySelector('#guide #ch-gamma'), null);
   const first = d.querySelector('#ch-alpha .points li');
   assert.equal(first.querySelector('.tag').textContent, 'C');
   assert.equal(first.querySelector('.src a').textContent, 'example.com');
+  dom.window.close();
+});
+
+test('structures: the forms, the companies that chose them, and their chapters', async () => {
+  const { d, w, puts, dom } = await open();
+  tab(d, 'structures');
+  assert.deepEqual([...d.querySelectorAll('nav.tabs button')].map((b) => b.textContent), ['Study', 'Guide', 'Structures', 'Players', 'Money', 'Timing', 'Ask']);
+  assert.match(d.querySelector('#structures .thesis').textContent, /Built to last.*keep its purpose/);
+  assert.deepEqual([...d.querySelectorAll('.form h3')].map((n) => n.textContent), ['Widget corporation', 'Guild trust', 'Widget co-op', 'Widget seal']);
+  const trust = d.getElementById('form-guild-trust');
+  assert.match(trust.textContent, /For youWorth a look\..*Venture capitalRarely\..*Selling itOnly with the trust’s yes\./, 'what it means for you first, the rest folded');
+  assert.ok(trust.querySelector('details .facts'));
+  assert.equal(d.querySelector('#form-widget-coop details'), null, 'nothing more to show: no fold');
+  assert.equal(d.querySelectorAll('#form-widget-seal dt').length, 0, 'a missing fact gets no row');
+  const names = () => [...d.querySelectorAll('.company h3')].map((n) => n.textContent);
+  assert.deepEqual(names(), ['Treehouse Widgets', 'Sellout Sprockets', 'Slowfund']);
+  const tree = d.querySelector('.company');
+  assert.deepEqual([...tree.querySelectorAll('.tags .tag')].map((t) => t.textContent), ['Held in trust', 'Guild trust', 'C']);
+  assert.match(tree.textContent, /Founded 1950 · Ada Widget.*Widgets for every gym\..*“Widgets for everyone, forever\.”Ada Widget.*Lesson\. Lock it early\./);
+  assert.equal(tree.querySelector('blockquote a').textContent, 'example.com');
+  assert.equal(d.querySelectorAll('.company blockquote').length, 1, 'no quote, no quote box');
+  d.querySelector('[data-group="caution"]').click();
+  assert.deepEqual(names(), ['Sellout Sprockets']);
+  d.querySelector('[data-group="caution"]').click();
+  const q = d.getElementById('sq'); q.value = 'cy slow'; q.dispatchEvent(new w.Event('input'));
+  assert.deepEqual(names(), ['Slowfund']);
+  q.value = 'nobody'; q.dispatchEvent(new w.Event('input'));
+  assert.match(d.getElementById('companyList').textContent, /No company matches/);
+  assert.ok(d.querySelector('#structures #ch-gamma'), 'its chapters show here');
+  d.querySelector('[data-group="steward"]').click();
+  await wait(1200);
+  assert.equal(puts.at(-1).progress.sgroup, 'steward');
+  dom.window.close();
+});
+
+test('the which-structure deck asks each company’s first structure', async () => {
+  const { d, dom } = await open({ server: { study: { deck: 'structure', mode: 'choose' } } });
+  for (let i = 0; i < 6; i++) {
+    const name = d.querySelector('.face.front .q').textContent;
+    assert.notEqual(name, 'Slowfund', 'one without a structure isn’t a card');
+    const want = { 'Treehouse Widgets': 'Guild trust', 'Sellout Sprockets': 'Widget seal' }[name];
+    assert.equal(d.querySelectorAll('.choice').length, 4);
+    d.querySelector(`.choice[data-o="${want}"]`).click();
+    assert.equal(d.getElementById('fb').textContent, 'Right.');
+    d.getElementById('nextBtn').click();
+  }
+  dom.window.close();
+});
+
+test('a guide without structures has no such tab', async () => {
+  const { structure, ...rest } = GUIDE;
+  const { d, dom } = await open({ guide: { ...rest, chapters: rest.chapters.filter((c) => !c.section), cards: rest.cards.filter((c) => c.topic !== 'gamma') } });
+  assert.equal(d.querySelector('[data-tab="structures"]'), null);
+  assert.ok(!d.querySelector('#deckChips').textContent.includes('Which structure?'));
   dom.window.close();
 });
 

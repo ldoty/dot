@@ -5,7 +5,9 @@
 Luke’s field guide to the youth activities market, starting from cheer and dance, for a planned SaaS: the thesis, chapters on the
 segments, Varsity, private equity, software rivals, money flows, owners, timing, distribution, risk and
 revenue paths; the players and who owns them; who bills what, where, with a calculator for one gym; the
-questions to ask the first client and contacts; and flashcards.
+questions to ask the first client and contacts; **Structures** (how a company can be owned so its mission lasts: legal
+forms, certifications and ownership models, companies that chose each and why, patient capital, and what it could mean
+here); and flashcards.
 
 The guide is private business research, so it is **not in git**. It lives in `private/` (gitignored), is
 built into `private/guide.json`, bundled into the Lambda at deploy, and served only to members (`GET /guide`).
@@ -20,6 +22,11 @@ repo root’s gitignored `private/research/`.
 | `private/content.json` | Written by hand from the report: thesis, chapters, players, flows, calculator defaults, questions, cards |
 | `infra/` | OpenTofu root (state key `tools/cheer-research/terraform.tfstate`) |
 | `tests/` | `*.test.mjs` run in `npm test` against an invented `guide.fixture.json`; `*.live.mjs` in `npm run test:live` |
+
+Structures is `structure` in `content.json`: `forms` (each with what it means for this company), `companies` (each in a
+`group`, with the forms it uses as `structureIds`, why its founders chose it, a verbatim `quote` with its source or
+`null`, how it works, how it went and a lesson) and the tab's own chapters, marked `"section": "structures"` so the
+guide leaves them out. Its study decks are those chapters plus “Which structure?” (a company's first form).
 
 Every point, player and flow carries an evidence label: **C** a cited source states it (often one gym or
 vendor), **R** one secondary or opinion source, **E** an estimate. Cards get a stable id from their topic and
