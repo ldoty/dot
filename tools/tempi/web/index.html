@@ -375,7 +375,10 @@ window.startCourse = function (initial) {
   var pages = Array.prototype.slice.call(document.querySelectorAll(".page"));
   var navBtns = Array.prototype.slice.call(document.querySelectorAll("#nav button"));
   var ids = pages.map(function (p) { return p.id.slice(2); });
-  function go(id, noScroll) {
+  // A section you pick is a step in the browser's history, so Back (or a phone's swipe back)
+  // returns to the last section instead of leaving the course. how: "push" (picked), "replace"
+  // (opening the course) or "none" (Back or Forward already changed the address).
+  function go(id, noScroll, how) {
     if (ids.indexOf(id) < 0) id = "start";
     pages.forEach(function (p) { p.hidden = p.id !== "p-" + id; });
     navBtns.forEach(function (b) {
@@ -384,13 +387,17 @@ window.startCourse = function (initial) {
     });
     if (id === "journal") renderJournal();
     S.last = id; save();
-    try { history.replaceState(null, "", "#" + id); } catch (e) {}
+    try {
+      if (how === "replace") history.replaceState(null, "", "#" + id);
+      else if (how !== "none" && location.hash !== "#" + id) history.pushState(null, "", "#" + id);
+    } catch (e) {}
     if (!noScroll) { var m = document.getElementById("main"); var top = m.getBoundingClientRect().top + window.scrollY - 16; if (window.scrollY > top) window.scrollTo(0, top); }
   }
   document.addEventListener("click", function (e) {
     var t = e.target.closest("[data-go]");
     if (t) { e.preventDefault(); go(t.dataset.go); }
   });
+  window.addEventListener("popstate", function () { go((location.hash || "").slice(1), false, "none"); });
 
   // ---------- completion + progress ----------
   var putties = document.getElementById("putties");
@@ -671,7 +678,7 @@ window.startCourse = function (initial) {
   // ---------- boot ----------
   renderProgress();
   var h = (location.hash || "").slice(1);
-  go(ids.indexOf(h) >= 0 ? h : (S.last && ids.indexOf(S.last) >= 0 ? S.last : "start"), true);
+  go(ids.indexOf(h) >= 0 ? h : (S.last && ids.indexOf(S.last) >= 0 ? S.last : "start"), true, "replace");
 };
 </script>
 </body>

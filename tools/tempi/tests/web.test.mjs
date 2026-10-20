@@ -67,3 +67,22 @@ test('tells non-members they lack access', async () => {
   assert.match(d.getElementById('gate-msg').textContent, /doesn’t have access/);
   dom.window.close();
 });
+
+test('the menu moves between sections, and Back returns to the last one instead of leaving', async () => {
+  const { d, w, dom } = await open();
+  const shown = () => d.querySelector('.page:not([hidden])').id;
+  assert.equal(shown(), 'p-start');
+  d.querySelector('#nav button[data-go="m3"]').click();
+  assert.equal(shown(), 'p-m3');
+  assert.equal(d.querySelector('#nav button[aria-current="page"]').dataset.go, 'm3');
+  d.querySelector('#p-m3 .foot [data-go="m4"]').click();
+  assert.equal(shown(), 'p-m4');
+  w.history.back(); await wait(20);
+  assert.equal(shown(), 'p-m3');
+  assert.equal(w.location.hash, '#m3');
+  w.history.back(); await wait(20);
+  assert.equal(shown(), 'p-start');
+  w.history.forward(); await wait(20);
+  assert.equal(shown(), 'p-m3');
+  dom.window.close();
+});
