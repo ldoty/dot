@@ -3,6 +3,8 @@
 # group by id. Who may use a tool at all stays with that tool's Cognito group: nothing here can
 # change it (the API may only list users).
 #
+# Also keeps each person's arrangement of the dot-y.co home page (GET/PUT /home, their own only).
+#
 # Publishes /family/people/table-arn (tools grant themselves read on it) and /family/people/api-url
 # (core's dot-y.co/family page). Apply this before core.
 
@@ -42,10 +44,11 @@ locals {
   pool_id = data.aws_ssm_parameter.user_pool_id.value
   issuer  = "https://cognito-idp.${data.aws_region.current.region}.amazonaws.com/${local.pool_id}"
   origins = ["https://dot-y.co", "http://localhost:5173"]
-  routes  = ["GET /people", "PUT /people/{sub}", "PUT /groups/{id}", "DELETE /groups/{id}"]
+  routes  = ["GET /people", "PUT /people/{sub}", "PUT /groups/{id}", "DELETE /groups/{id}", "GET /home", "PUT /home"]
 }
 
-# Rows: GROUP / <id> { name, members, rev }, PERSON / <sub> { name } (platform/api/people.mjs)
+# Rows: GROUP / <id> { name, members, rev }, PERSON / <sub> { name } (platform/api/people.mjs),
+#       HOME / <sub> { sections, rev }: that person's arrangement of the dot-y.co home page
 resource "aws_dynamodb_table" "people" {
   name                        = "family-people"
   billing_mode                = "PAY_PER_REQUEST"

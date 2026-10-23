@@ -7,7 +7,8 @@
 <link rel="icon" type="image/svg+xml" href="/style/favicon.svg">
 <link rel="stylesheet" href="/style/family.css">
 <style>
-/* Layout: one centered column. Hero (title + arch illustration) on top, then the signed-in person's tool tiles. */
+/* Layout: one centered column. Hero (title + arch illustration) on top, then the signed-in person's tool tiles,
+   in sections they arrange themselves (Arrange: drag tiles and sections, name them; saved to their account). */
 .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px }
 .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 40px }
 .brand { font: 600 15px var(--display); letter-spacing: .02em; display: flex; align-items: center; gap: 8px }
@@ -17,6 +18,26 @@
 .hero svg { width: 100%; height: auto }
 .hero .lede { margin: 16px 0 24px }
 .tools { padding-top: 36px; display: grid; gap: 16px }
+.tools-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+.tools-head .status { color: var(--muted); font-size: 14px; margin-right: auto }
+.tools-head .status.warn { color: var(--ember) }
+.sections { display: grid; gap: 32px }
+.section { display: grid; gap: 16px }
+.section-head { display: flex; align-items: center; gap: 8px }
+.section-head h2 { margin: 0 }
+.section-head input { flex: 1; min-width: 0; background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 8px 10px; color: var(--ink); font: 500 20px var(--display) }
+.section-head input:focus { border-color: var(--pool); outline: none }
+.handle, .x { border: 0; background: none; color: var(--muted); cursor: grab; font-size: 18px; padding: 4px 6px; touch-action: none }
+.x { cursor: pointer; touch-action: auto }
+.x:hover { color: var(--ember) }
+/* Arranging: each section is a drop zone, even when empty; tiles stop being links and pick up */
+.arranging .section { border: 1.5px dashed var(--line); border-radius: var(--r-md); padding: 14px }
+.arranging .tiles { min-height: 90px }
+.arranging .tiles:empty::before { content: "Drop tools here"; color: var(--muted); font-size: 14.5px; align-self: center; justify-self: center; grid-column: 1 / -1 }
+.arranging .tile { cursor: grab; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none }
+.lifted { position: fixed; z-index: 10; pointer-events: none; box-shadow: 0 10px 30px rgb(0 0 0 / .14); cursor: grabbing; margin: 0 }
+.placeholder { border: 1.5px dashed var(--pool); border-radius: var(--r-md); background: color-mix(in srgb, var(--pool) 6%, var(--surface)) }
+.add-section { justify-self: start }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px }
 .tile { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 14px; align-items: start; color: inherit; text-decoration: none; transition: border-color .15s }
 .tile:hover { border-color: var(--pool) }
@@ -57,8 +78,12 @@ footer button { background: none; border: 0; color: var(--pool); cursor: pointer
   </div>
 
   <section class="tools" id="tools" hidden>
-    <h2>Your tools</h2>
-    <div class="tiles" id="tiles"></div>
+    <div class="tools-head">
+      <span class="status" id="status"></span>
+      <button class="btn ghost" id="arrange" hidden>Arrange</button>
+    </div>
+    <div class="sections" id="sections"></div>
+    <button class="btn ghost add-section" id="add-section" hidden>Add a section</button>
     <p class="empty" id="empty" hidden>No tools for you yet. Ask Luke to add you to one.</p>
   </section>
 
@@ -99,19 +124,195 @@ footer button { background: none; border: 0; color: var(--pool); cursor: pointer
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
   function fail(msg) { var e = $("error"); e.textContent = msg; e.hidden = false; }
 
-  function showTools(claims, apps) {
+  // The person's arrangement: sections of tiles, each tile named by its tool's group. Kept per person by the
+  // family API (GET/PUT /home); a tool they've gained since goes at the end of the first section, one they've
+  // lost just isn't shown. With nothing saved (or the API unreachable) it's one section of every tool.
+  var apiUrl = null, canSave = false, mine = [], sections = [], rev = 0, arranging = false, saving = null, again = false;
+
+  function sid() { return "s" + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4); }
+  function byGroup(g) { for (var i = 0; i < mine.length; i++) if (mine[i].group === g) return mine[i]; return null; }
+  function status(text, warn) { var e = $("status"); e.textContent = text || ""; e.className = "status" + (warn ? " warn" : ""); }
+
+  function arrange(saved) {
+    var placed = {};
+    sections = (saved || []).map(function (s) {
+      var tiles = s.tiles.filter(function (g) { return byGroup(g) && !placed[g]; });
+      tiles.forEach(function (g) { placed[g] = true; });
+      return { id: s.id, name: s.name, tiles: tiles };
+    });
+    if (!sections.length) sections.push({ id: sid(), name: "Your tools", tiles: [] });
+    mine.forEach(function (a) { if (!placed[a.group]) sections[0].tiles.push(a.group); });
+  }
+
+  function tile(a) {
+    return '<a class="card tile" data-tile="' + esc(a.group) + '" href="' + esc(a.url) + '">' + icon(a.icon) + "<h3>" + esc(a.title) + "</h3><p>" + esc(a.description) + '</p><span class="go">Open →</span></a>';
+  }
+  function render() {
+    $("tools").classList.toggle("arranging", arranging);
+    $("sections").innerHTML = sections.map(function (s) {
+      // An empty section only shows while arranging, as somewhere to drop tiles
+      if (!arranging && !s.tiles.length) return "";
+      var head = arranging
+        ? '<div class="section-head"><button class="handle" data-handle aria-label="Move section" title="Drag to move">⠿</button><input data-name maxlength="40" value="' + esc(s.name) + '" placeholder="Section name" aria-label="Section name">' +
+          (sections.length > 1 ? '<button class="x" data-remove aria-label="Remove section" title="Remove section (its tools move up)">&times;</button>' : "") + "</div>"
+        : s.name ? '<div class="section-head"><h2>' + esc(s.name) + "</h2></div>" : "";
+      return '<section class="section" data-section="' + esc(s.id) + '">' + head + '<div class="tiles">' + s.tiles.map(function (g) { return tile(byGroup(g)); }).join("") + "</div></section>";
+    }).join("");
+    $("arrange").textContent = arranging ? "Done" : "Arrange";
+    $("arrange").hidden = !mine.length || !canSave; // without the API the tiles still work; arranging needs somewhere to save
+    $("add-section").hidden = !arranging;
+    $("empty").hidden = mine.length > 0;
+  }
+
+  // The page as it stands, back into sections (after a drag, the DOM is the truth)
+  function readPage() {
+    var names = {};
+    sections.forEach(function (s) { names[s.id] = s.name; });
+    sections = [].map.call(document.querySelectorAll("#sections [data-section]"), function (el) {
+      var input = el.querySelector("[data-name]");
+      return {
+        id: el.dataset.section,
+        name: input ? input.value.trim() : names[el.dataset.section],
+        tiles: [].map.call(el.querySelectorAll("[data-tile]"), function (t) { return t.dataset.tile; }),
+      };
+    });
+  }
+
+  function api(method, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      return fetch(apiUrl + "/home", { method: method, headers: { authorization: "Bearer " + tok, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+    });
+  }
+  // One save at a time, always of the latest arrangement; a 409 means another device saved first: show theirs
+  function save() {
+    if (saving) { again = true; return saving; }
+    status("Saving…");
+    var sent = sections.map(function (s) { return { id: s.id, name: s.name, tiles: s.tiles.slice() }; });
+    saving = api("PUT", { sections: sent, rev: rev }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (out) {
+        if (res.ok) { rev = out.rev; status(again ? "Saving…" : "Saved"); return; }
+        if (res.status === 409 && out.current) {
+          again = false; rev = out.current.rev; arrange(out.current.sections); render();
+          status("Changed on another device just now. Here’s that version.", true); return;
+        }
+        again = false; status("Couldn’t save that (" + res.status + ").", true);
+      });
+    }).catch(function () { again = false; status("Couldn’t reach dot-y.co. Your changes aren’t saved.", true); })
+      .then(function () { saving = null; if (again) { again = false; return save(); } });
+    return saving;
+  }
+
+  function showTools(claims, apps, home) {
     var groups = claims["cognito:groups"] || [];
-    var mine = apps.filter(function (a) { return a.group === "*" || groups.indexOf(a.group) >= 0; });
+    mine = apps.filter(function (a) { return a.group === "*" || groups.indexOf(a.group) >= 0; });
     $("eyebrow").textContent = "Signed in as " + claims.email;
     $("title").innerHTML = "Welcome home, <em>" + esc(claims.given_name || "friend") + "</em>";
     $("lede").hidden = true;
-    $("tiles").innerHTML = mine.map(function (a) {
-      return '<a class="card tile" href="' + esc(a.url) + '">' + icon(a.icon) + "<h3>" + esc(a.title) + "</h3><p>" + esc(a.description) + '</p><span class="go">Open →</span></a>';
-    }).join("");
-    $("empty").hidden = mine.length > 0;
+    rev = home ? home.rev : 0;
+    arrange(home && home.sections);
+    canSave = !!home;
+    render();
     $("tools").hidden = false;
     $("signout").hidden = false;
   }
+
+  $("arrange").onclick = function () {
+    if (arranging) readPage();
+    arranging = !arranging;
+    status(arranging ? "Drag tools and sections into place. On a phone, hold a tool a moment first." : "");
+    render();
+  };
+  $("add-section").onclick = function () {
+    readPage();
+    var s = { id: sid(), name: "", tiles: [] };
+    sections.push(s);
+    render();
+    document.querySelector('[data-section="' + s.id + '"] [data-name]').focus();
+    save();
+  };
+  $("sections").addEventListener("change", function (e) {
+    if (e.target.matches("[data-name]")) { readPage(); save(); }
+  });
+  $("sections").addEventListener("click", function (e) {
+    // While arranging, tiles are things to move, not links
+    if (arranging && e.target.closest("[data-tile]")) { e.preventDefault(); return; }
+    var x = e.target.closest("[data-remove]");
+    if (!x) return;
+    readPage();
+    var i = sections.findIndex(function (s) { return s.id === x.closest("[data-section]").dataset.section; });
+    var into = sections[i === 0 ? 1 : i - 1];
+    into.tiles = into.tiles.concat(sections[i].tiles); // its tools move to the section above (or below, for the first)
+    sections.splice(i, 1);
+    render();
+    save();
+  });
+
+  // Dragging, with pointer events so it works with a mouse, a pen or a finger. A finger has to rest a moment on
+  // a tile before it lifts, so a swipe across the tiles still scrolls the page.
+  var drag = null, hold = null;
+  function lift(el, kind, e) {
+    var r = el.getBoundingClientRect();
+    var ph = document.createElement("div");
+    ph.className = "placeholder";
+    ph.style.height = r.height + "px";
+    el.parentNode.insertBefore(ph, el);
+    el.classList.add("lifted");
+    el.style.width = r.width + "px";
+    drag = { el: el, ph: ph, kind: kind, dx: e.clientX - r.left, dy: e.clientY - r.top };
+    follow(e);
+  }
+  function follow(e) {
+    drag.el.style.left = e.clientX - drag.dx + "px";
+    drag.el.style.top = e.clientY - drag.dy + "px";
+    if (e.clientY < 48) window.scrollBy(0, -12);
+    else if (e.clientY > window.innerHeight - 48) window.scrollBy(0, 12);
+    var over = document.elementFromPoint(e.clientX, e.clientY);
+    if (!over || !$("sections").contains(over)) return;
+    if (drag.kind === "tile") {
+      var t = over.closest("[data-tile]"), zone = over.closest(".tiles");
+      if (t && t !== drag.el) {
+        var r = t.getBoundingClientRect();
+        t.parentNode.insertBefore(drag.ph, e.clientX < r.left + r.width / 2 ? t : t.nextSibling);
+      } else if (zone && !t && drag.ph.parentNode !== zone) {
+        zone.appendChild(drag.ph);
+      }
+    } else {
+      var s = over.closest("[data-section]");
+      if (s && s !== drag.el) {
+        var b = s.getBoundingClientRect();
+        s.parentNode.insertBefore(drag.ph, e.clientY < b.top + b.height / 2 ? s : s.nextSibling);
+      }
+    }
+  }
+  function drop() {
+    var before = JSON.stringify(sections);
+    drag.ph.parentNode.replaceChild(drag.el, drag.ph);
+    drag.el.classList.remove("lifted");
+    drag.el.style.width = drag.el.style.left = drag.el.style.top = "";
+    drag = null;
+    readPage();
+    if (JSON.stringify(sections) !== before) save();
+  }
+  $("sections").addEventListener("pointerdown", function (e) {
+    if (!arranging || drag || e.button > 0) return;
+    var handle = e.target.closest("[data-handle]");
+    var el = handle ? handle.closest("[data-section]") : e.target.closest("[data-tile]");
+    if (!el) return;
+    if (handle || e.pointerType !== "touch") { e.preventDefault(); lift(el, handle ? "section" : "tile", e); return; }
+    var at = { x: e.clientX, y: e.clientY };
+    hold = { at: at, timer: setTimeout(function () { hold = null; lift(el, "tile", { clientX: at.x, clientY: at.y }); }, 250) };
+  });
+  document.addEventListener("pointermove", function (e) {
+    if (hold && Math.abs(e.clientX - hold.at.x) + Math.abs(e.clientY - hold.at.y) > 8) { clearTimeout(hold.timer); hold = null; }
+    if (drag) follow(e);
+  });
+  function end() { if (hold) { clearTimeout(hold.timer); hold = null; } if (drag) drop(); }
+  document.addEventListener("pointerup", end);
+  document.addEventListener("pointercancel", end);
+  // Our drag, not the browser's dragging of a link
+  $("sections").addEventListener("dragstart", function (e) { if (arranging) e.preventDefault(); });
+  // Once a tile is lifted, a moving finger drags it instead of scrolling the page
+  document.addEventListener("touchmove", function (e) { if (drag) e.preventDefault(); }, { passive: false });
 
   fetch("/config.json").then(function (r) { return r.json(); }).then(function (cfg) {
     $("signin").onclick = function () { FamilyAuth.login(); };
@@ -120,7 +321,12 @@ footer button { background: none; border: 0; color: var(--pool); cursor: pointer
     if (location.hash === "#signout") { history.replaceState(null, "", location.pathname); return FamilyAuth.init(cfg).then(function () { FamilyAuth.logout(); }); }
     return FamilyAuth.init(cfg).then(function (claims) {
       if (!claims) { $("signin").hidden = false; return; }
-      return fetch("/apps.json").then(function (r) { return r.ok ? r.json() : []; }).then(function (apps) { showTools(claims, apps); });
+      var apps = fetch("/apps.json").then(function (r) { return r.ok ? r.json() : []; });
+      var home = fetch("/family-config.json").then(function (r) { return r.json(); }).then(function (c) {
+        apiUrl = c.apiUrl;
+        return api("GET");
+      }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+      return Promise.all([apps, home]).then(function (r) { showTools(claims, r[0], r[1]); });
     });
   }).catch(function (e) { fail(e.message); $("signin").hidden = false; });
 })();

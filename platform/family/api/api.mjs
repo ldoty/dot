@@ -1,6 +1,9 @@
 // The family's groups and display names (dot-y.co/family), for family admins only. Tools read the
-// same table through platform/api/people.mjs; this is the only writer. Routes (a dot-y.co token,
-// whose groups include family_admin; dot-y.co's tokens carry all of a person's groups):
+// same table through platform/api/people.mjs; this is the only writer. Also each person's own
+// arrangement of the dot-y.co home page. Routes (a dot-y.co token; dot-y.co's tokens carry all of
+// a person's groups, and every route but /home needs family_admin among them):
+//   GET    /home            -> { sections: [{ id, name, tiles: [tool group] }] | null, rev }   the caller's own
+//   PUT    /home            { sections, rev } -> the same       rev 0: first save; 409 + current if it changed
 //   GET    /people          -> { people: [{ sub, name, email, displayName }], groups: [{ id, name, members, rev }] }
 //                              people: every account in the user pool (Cognito), with any display name set here
 //   PUT    /people/{sub}    { name } -> { sub, name }            '' clears it (tools fall back to Cognito's)
@@ -17,11 +20,32 @@ import { GROUP_ID } from './people.mjs';
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const SUB = /^[0-9a-f-]{36}$/;
 const NAME = /^[a-z0-9][a-z0-9 _-]{0,39}$/i;
+// Home page sections: ids the page makes up, tiles named by their tool's Cognito group (apps.json).
+// Only shapes are checked: the page shows a tile only if the person is in its group, whatever's saved.
+const SECTION_ID = /^s[a-z0-9]{4,20}$/;
+const TILE = /^[a-z0-9_*:-]{1,64}$/i;
 
 const json = (statusCode, body) => ({
   statusCode, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
 });
 const groupOut = (g) => ({ id: g.sk, name: g.name, members: g.members ?? [], rev: g.rev });
+const homeOut = (h) => ({ sections: h?.sections ?? null, rev: h?.rev ?? 0 });
+
+function badSections(sections) {
+  if (!Array.isArray(sections) || sections.length > 30) return 'sections: a list, up to 30';
+  const ids = new Set(), tiles = new Set();
+  for (const s of sections) {
+    if (!s || typeof s !== 'object' || !SECTION_ID.test(s.id ?? '') || ids.has(s.id)) return 'bad section id';
+    if (typeof s.name !== 'string' || s.name.trim().length > 40) return 'section name: up to 40 characters';
+    if (!Array.isArray(s.tiles) || s.tiles.length > 100) return 'bad tiles';
+    for (const t of s.tiles) {
+      if (typeof t !== 'string' || !TILE.test(t) || tiles.has(t)) return 'bad tiles'; // a tile sits in one place
+      tiles.add(t);
+    }
+    ids.add(s.id);
+  }
+  return null;
+}
 
 /** deps: table, issuer, clientId (dot-y.co's), users() -> [{ sub, name, email }], now() */
 export function createApi(deps) {
@@ -39,9 +63,12 @@ export function createApi(deps) {
   }
 
   return async (event) => {
+    // Anyone signed in at dot-y.co may arrange their own home page (keyed by their own sub);
+    // everything else is for family admins.
+    const own = event.routeKey === 'GET /home' || event.routeKey === 'PUT /home';
     let claims;
     try {
-      claims = await verifyAccessToken(event.headers, { issuer: deps.issuer, clientId: deps.clientId, group: 'family_admin' });
+      claims = await verifyAccessToken(event.headers, { issuer: deps.issuer, clientId: deps.clientId, group: own ? null : 'family_admin' });
     } catch (e) {
       if (!e.status) throw e;
       console.warn('denied', e.message);
@@ -60,6 +87,27 @@ export function createApi(deps) {
     const at = deps.now().toISOString();
 
     switch (event.routeKey) {
+      case 'GET /home':
+        return json(200, homeOut(await get('HOME', claims.sub)));
+      case 'PUT /home': {
+        const bad = badSections(body.sections);
+        if (bad) return json(400, { error: bad });
+        if (!Number.isInteger(body.rev) || body.rev < 0) return json(400, { error: 'bad rev' });
+        const sections = body.sections.map((s) => ({ id: s.id, name: s.name.trim(), tiles: s.tiles }));
+        const item = { pk: 'HOME', sk: claims.sub, sections, rev: body.rev + 1, changedAt: at };
+        try {
+          await db.send(new PutCommand({
+            TableName: table, Item: item,
+            ...(body.rev === 0
+              ? { ConditionExpression: 'attribute_not_exists(pk)' }
+              : { ConditionExpression: 'rev = :rev', ExpressionAttributeValues: { ':rev': body.rev } }),
+          }));
+        } catch (e) {
+          if (e.name !== 'ConditionalCheckFailedException') throw e;
+          return json(409, { error: 'changed elsewhere', current: homeOut(await get('HOME', claims.sub)) });
+        }
+        return json(200, homeOut(item));
+      }
       case 'GET /people': {
         const [users, names, groups] = await Promise.all([deps.users(), all('PERSON'), all('GROUP')]);
         const display = new Map(names.map((n) => [n.sk, n.name]));
