@@ -23,6 +23,7 @@ tools/
   amber-finances/         amber-finances.dot-y.co: Amber's, the same way
   shared-finances/        shared-finances.dot-y.co: the joint accounts from both, against the Shared budget
   links/                  links.dot-y.co: family bookmarks by section
+  gym/                    gym.dot-y.co: each person's workouts, plan, sessions and progress
   house-hunt/             house-hunt.dot-y.co: Greer neighborhoods we're weighing, with prices and shared notes
   assistant/              assistant.dot-y.co: Luke's chat with Claude (Bedrock) + calendar tools
   chamber/                chamber.dot-y.co: mushroom chamber Arduino firmware, build notes, telemetry

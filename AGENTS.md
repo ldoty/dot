@@ -22,6 +22,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/calendars` | calendars.dot-y.co | `family_calendars` | The family's Google calendars and who may see or change each; the week ahead. The only holder of the Google key: Dot's calendar tools call it as the person. Notes in `tools/calendars/AGENTS.md` |
 | `tools/lists` | lists.dot-y.co | `family_lists` | To-dos and checklists (checklist, Eisenhower matrix, board), private until shared with people or family groups; reminders by text or email from an every-minute sweep. Notes in `tools/lists/AGENTS.md` |
 | `tools/links` | links.dot-y.co | `family_links` | Family bookmarks |
+| `tools/gym` | gym.dot-y.co | `family_gym` | Each person’s own workouts: saved workouts, a plan, sessions logged set by set (last time’s numbers, rest timer, works offline), body weight, how sore spots felt; a starter program. Dot reads it and logs sessions as the person |
 | `tools/biomap` | biomap.dot-y.co | `lukes_biomap` | Field-guide flashcards from a private photo collection |
 | `tools/tempi` | tempi.dot-y.co | `family_tempi` | An OT course, served to members only |
 | `tools/boards` | boards.dot-y.co | `lukes_boards` | Field guide + flashcards for two nonprofit boards; the guide lives in gitignored `private/` |
@@ -63,10 +64,10 @@ person* from the other tool's **delegated client** (`platform/api/delegation.mjs
   every non-GET from them** (403 `read-only`) except the writes its manifest declares (`method` on an operation;
   `writeRoutes()` in `platform/api/dot-manifest.mjs` gives the tool its own allowlist from the same manifest). A declared
   write that needs the person's OK answers 202 `{ confirm_id, prompt }`, and Dot sends the confirmation only after their own
-  reply. Declared today: House's automations (create, change, delete; each asks first). Built into Dot instead: House's
+  reply. Declared today: House's automations (create, change, delete; each asks first), and Gym's logging a session or a body weight (additions only, so no asking). Built into Dot instead: House's
   `POST /commands` (Dot's `house_control`), editing lists the person can edit (Dot's `lists_change`), never sharing, and events on calendars they may change (Dot's calendar tools). Reads are audited by the reader.
 
-Current links: Dot → any tool with a manifest (today the three finances tools, House and Lists); finances tools → Budget (as their person);
+Current links: Dot → any tool with a manifest (today the three finances tools, House, Lists and Gym); finances tools → Budget (as their person);
 Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`).
 
 ### Dot (the assistant) and tool discovery

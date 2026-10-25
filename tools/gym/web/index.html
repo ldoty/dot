@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gym</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="family.css">
+<style>
+/* Layout: one narrow column, built for a phone at the gym: big tap targets, numbers you can type with one thumb. */
+.wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 120px; display: grid; gap: 20px }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+.top a { color: var(--muted); text-decoration: none; font-size: 14px }
+h1 { font-size: clamp(32px, 6vw, 48px) }
+h2 { font-size: 22px }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap }
+.tabs button { flex: none; border: 1.5px solid var(--line); background: none; color: var(--ink); border-radius: var(--r-pill); padding: 6px 14px; font-weight: 600; cursor: pointer }
+.tabs button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface) }
+.stack { display: grid; gap: 14px }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
+.muted { color: var(--muted) }
+.small { font-size: 14px }
+.status { color: var(--muted); font-size: 14px; min-height: 1.4em }
+.status.bad { color: var(--ember) }
+#status:empty { display: none }
+#main { display: grid; gap: 14px; min-width: 0 }
+input, select, textarea { background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 8px 10px; color: var(--ink); min-width: 0 }
+input:focus, select:focus, textarea:focus { border-color: var(--pool); outline: none }
+textarea { width: 100%; font: inherit; resize: vertical; min-height: 64px }
+label.f { display: grid; gap: 4px; font-size: 14px; color: var(--muted) }
+label.f input, label.f select { color: var(--ink); font-size: 16px }
+.link { border: 0; background: none; color: var(--pool); cursor: pointer; padding: 4px 0; font-weight: 600 }
+.link.danger { color: var(--ember) }
+.list { list-style: none; margin: 0; padding: 0 }
+.list > li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line) }
+.list > li .grow { flex: 1; min-width: 0 }
+.list > li button.open { all: unset; cursor: pointer; display: block }
+.list > li button.open:focus-visible { outline: 2px solid var(--pool) }
+
+/* This week: a dot per day, filled when you trained, ringed when it's planned */
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; text-align: center; font-size: 13px; color: var(--muted) }
+.week .d { display: grid; justify-items: center; gap: 4px }
+.week .dot { width: 30px; height: 30px; border-radius: 50%; border: 2px dashed transparent; display: grid; place-items: center; font-weight: 600; color: var(--ink) }
+.week .planned .dot { border-color: var(--line) }
+.week .done .dot { background: var(--leaf); border: 2px solid var(--leaf); color: var(--on-accent) }
+.week .today { color: var(--ink); font-weight: 600 }
+.next { display: grid; gap: 10px }
+.next .btn { justify-self: start }
+
+/* The session being logged */
+.entry { display: grid; gap: 8px; padding: 14px 0; border-bottom: 1px solid var(--line) }
+.entry h3 { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap }
+.entry .tag { font: 600 12px var(--mono); background: var(--raised); border-radius: var(--r-sm); padding: 1px 6px; color: var(--muted) }
+.set { display: grid; grid-template-columns: 28px 1fr 1fr 44px; gap: 8px; align-items: center }
+.set .n { color: var(--muted); font: 500 14px var(--mono) }
+.set input { width: 100%; font-size: 17px; text-align: center; padding: 10px 6px }
+.set .tick { width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--line); background: var(--surface); color: var(--muted); font-size: 20px; cursor: pointer }
+.set.done .tick { background: var(--leaf); border-color: var(--leaf); color: var(--on-accent) }
+.set.done input { background: color-mix(in srgb, var(--leaf) 10%, var(--surface)) }
+.units { display: grid; grid-template-columns: 28px 1fr 1fr 44px; gap: 8px; font-size: 12px; color: var(--muted); text-align: center }
+.areas { display: grid; gap: 10px }
+.scale { display: flex; gap: 4px; flex-wrap: wrap }
+.scale button { width: 34px; height: 34px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--surface); cursor: pointer; font-weight: 600; color: var(--ink) }
+.scale button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink) }
+.timer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--ink); color: var(--surface); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); display: flex; justify-content: center; align-items: center; gap: 16px; font-weight: 600 }
+.timer .clock { font: 500 24px var(--mono); min-width: 4ch; text-align: center }
+.timer button { border: 1.5px solid color-mix(in srgb, var(--surface) 40%, transparent); background: none; color: var(--surface); border-radius: var(--r-pill); padding: 6px 14px; font-weight: 600; cursor: pointer }
+.timer.go { background: var(--leaf) }
+
+/* Editors */
+.item { display: grid; grid-template-columns: 1fr repeat(4, 64px); gap: 6px; align-items: end; padding: 10px 0; border-bottom: 1px solid var(--line) }
+.item .acts { grid-column: 1 / -1; display: flex; gap: 14px }
+.item input, .item select { width: 100% }
+@media (max-width: 520px) { .item { grid-template-columns: repeat(4, 1fr) } .item .ex { grid-column: 1 / -1 } }
+.days { display: flex; gap: 6px; flex-wrap: wrap }
+.days label { display: flex; gap: 4px; align-items: center; background: var(--raised); border-radius: var(--r-pill); padding: 4px 10px; font-size: 14px }
+
+/* Charts: one series each, recessive grid, the series in --pool */
+.chart svg { width: 100%; height: auto; display: block; overflow: visible }
+.chart .grid { stroke: var(--line); stroke-width: 1 }
+.chart .axis { fill: var(--muted); font: 13px var(--body) }
+.chart .ln { fill: none; stroke: var(--pool); stroke-width: 2 }
+.chart .pt { fill: var(--pool); stroke: var(--surface); stroke-width: 2 }
+.chart .bar { fill: var(--pool) }
+.chart .goal { stroke: var(--wood); stroke-width: 1.5; stroke-dasharray: 4 4 }
+.chart .hit { fill: transparent }
+.chart .hit:hover + .pt, .chart .bar:hover { opacity: .75 }
+table.data { width: 100%; border-collapse: collapse; font-size: 14px }
+table.data th, table.data td { text-align: left; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line) }
+table.data th { color: var(--muted); font-weight: 600 }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
+  <h1>Gym</h1>
+  <nav class="tabs" id="tabs" hidden></nav>
+  <p class="status" id="status" role="status"></p>
+  <div id="main"><p class="status">Loading…</p></div>
+</div>
+<div class="timer" id="timer" hidden></div>
+<script src="family-auth.js"></script>
+<script>
+(function () {
+  var cfg, data, tab = "today", openId = null, editId = null, confirmDel = null, chartEx = null;
+  var main = document.getElementById("main"), tabsEl = document.getElementById("tabs");
+  var TABS = [["today", "Today"], ["history", "History"], ["progress", "Progress"], ["plan", "Plan"], ["workouts", "Workouts"], ["exercises", "Exercises"]];
+  var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var LONG_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  var MEASURE = { reps: "Reps", time: "Time (s)", distance: "Distance (m)" };
+  var DRAFT = "gym-draft";
+
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function uid() { return "x" + Math.random().toString(36).slice(2, 10); }
+  function $(id) { return document.getElementById(id); }
+  function status(msg, isBad) { var s = $("status"); s.textContent = msg || ""; s.className = "status" + (isBad ? " bad" : ""); }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function ymd(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function parseDay(s) { var p = s.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function addDays(d, n) { var x = new Date(d.getTime()); x.setDate(x.getDate() + n); return x; }
+  function monday(d) { return addDays(new Date(d.getFullYear(), d.getMonth(), d.getDate()), -((d.getDay() + 6) % 7)); }
+  function nice(s) { var d = parseDay(s); return DAYS[d.getDay()] + " " + d.toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
+  function numOrNull(v) { if (v === "" || v == null) return null; var n = parseFloat(v); return isFinite(n) ? n : null; }
+  function unit() { return data.settings.unit || "lb"; }
+  function byId(list, id) { for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i]; return null; }
+  function field(f, name) { return f.querySelector('[name="' + name + '"]'); }
+  function copy(o) { return JSON.parse(JSON.stringify(o)); }
+  function store(fn) { try { return fn(window.localStorage); } catch (e) { return null; } }
+
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method,
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (j) { return { status: res.status, ok: res.ok, body: j }; });
+    });
+  }
+  // Saves a rev-checked row; on 409 takes the newer copy and says so
+  function saveRow(path, body, apply) {
+    return api("PUT", path, body).then(function (r) {
+      if (r.status === 409) { apply(r.body.current); status("That changed somewhere else, so this shows the newer version.", true); render(); return false; }
+      if (!r.ok) { status(r.body.error ? "Couldn’t save: " + r.body.error : "Couldn’t save. Try again.", true); return false; }
+      apply(r.body); status("Saved."); return true;
+    }).catch(function () { status("Couldn’t save. Check your connection and try again.", true); return false; });
+  }
+  function upsert(list, row) {
+    for (var i = 0; i < list.length; i++) if (list[i].id === row.id) { list[i] = row; return; }
+    list.push(row);
+  }
+
+  /* ---------- sessions: what's open, what came last, what's next ---------- */
+  function finished() { return data.sessions.filter(function (s) { return s.finishedAt; }); }
+  function openSession() {
+    var o = data.sessions.filter(function (s) { return !s.finishedAt; });
+    return o.length ? o[o.length - 1] : null;
+  }
+  function doneSets(e) { return e.sets.filter(function (s) { return s.done; }); }
+  // The most recent other session that did this exercise, and the sets it did
+  function lastTime(exerciseId, notId) {
+    for (var i = data.sessions.length - 1; i >= 0; i--) {
+      var s = data.sessions[i];
+      if (s.id === notId) continue;
+      for (var j = 0; j < s.entries.length; j++) {
+        var e = s.entries[j];
+        if (e.exerciseId === exerciseId && doneSets(e).length) return { date: s.date, sets: doneSets(e), measure: e.measure };
+      }
+    }
+    return null;
+  }
+  function fmtSet(s, measure) {
+    var w = s.w != null ? s.w : null, main;
+    if (measure === "time") main = (s.t != null ? s.t : "–") + " s";
+    else if (measure === "distance") main = (s.d != null ? s.d : "–") + " m";
+    else return (w != null ? w + " × " : "") + (s.r != null ? s.r : "–");
+    return main + (w != null ? " @ " + w : "");
+  }
+  function fmtSets(sets, measure) { return sets.map(function (s) { return fmtSet(s, measure); }).join(", "); }
+
+  function planActive(day) {
+    var p = data.plan;
+    if (!p) return false;
+    return (!p.from || day >= p.from) && (!p.to || day <= p.to);
+  }
+  function rotation() {
+    var p = data.plan;
+    return p ? p.rotation.filter(function (id) { return byId(data.workouts, id); }) : [];
+  }
+  // The workout after the last one you finished from the rotation (the first, if none)
+  function nextWorkout() {
+    var rot = rotation(), done = finished();
+    if (!rot.length) return null;
+    for (var i = done.length - 1; i >= 0; i--) {
+      var k = rot.indexOf(done[i].workoutId);
+      if (k >= 0) return byId(data.workouts, rot[(k + 1) % rot.length]);
+    }
+    return byId(data.workouts, rot[0]);
+  }
+  function nextPlannedDay() {
+    var p = data.plan, d = new Date();
+    if (!p || !p.days.length) return null;
+    for (var i = 0; i < 14; i++) {
+      var day = addDays(d, i);
+      if (p.days.indexOf(day.getDay()) >= 0 && planActive(ymd(day))) return day;
+    }
+    return null;
+  }
+
+  function startSession(workout) {
+    var s = { id: uid(), date: ymd(new Date()), workoutId: workout ? workout.id : null, name: workout ? workout.name : "Session",
+      startedAt: new Date().toISOString(), finishedAt: null, note: "", discomfort: {}, entries: [] };
+    if (workout) workout.items.forEach(function (it) {
+      var ex = byId(data.exercises, it.exerciseId);
+      if (ex) s.entries.push(entryFor(ex, it, s.id));
+    });
+    data.sessions.push(s);
+    openId = s.id; tab = "today";
+    render(); saveSession(s);
+  }
+  // A new entry starts from what you did last time, so the numbers are already there
+  function entryFor(ex, it, sessionId) {
+    var last = lastTime(ex.id, sessionId), n = it ? it.sets : 3, sets = [];
+    for (var i = 0; i < n; i++) {
+      var p = last ? last.sets[Math.min(i, last.sets.length - 1)] : {};
+      sets.push({ w: p.w != null ? p.w : null, r: p.r != null ? p.r : null, t: p.t != null ? p.t : null, d: p.d != null ? p.d : null, done: false });
+    }
+    return { exerciseId: ex.id, name: ex.name, measure: ex.measure, perSide: !!ex.perSide, note: "",
+      target: it ? it.target : "", pair: it ? it.pair : 0, rest: it ? it.rest : 60, sets: sets };
+  }
+
+  /* ---------- saving the session as you go, and surviving a dead zone ---------- */
+  var saveTimer = null, saving = false, again = false, edits = 0;
+  function sessionBody(s) {
+    return { date: s.date, workoutId: s.workoutId, name: s.name, startedAt: s.startedAt, finishedAt: s.finishedAt,
+      note: s.note, discomfort: s.discomfort, entries: s.entries, rev: s.rev };
+  }
+  function stash(s) { store(function (ls) { ls.setItem(DRAFT, JSON.stringify(s)); }); }
+  function unstash(s) {
+    store(function (ls) { var d = JSON.parse(ls.getItem(DRAFT) || "null"); if (d && d.id === s.id) ls.removeItem(DRAFT); });
+  }
+  function saveSession(s, now) {
+    edits++; stash(s);
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () { flush(s); }, now ? 0 : 600);
+  }
+  function flush(s) {
+    if (saving) { again = true; return; }
+    saving = true;
+    var sent = edits;
+    api("PUT", "/sessions/" + s.id, sessionBody(s)).then(function (r) {
+      if (r.status === 409) {
+        upsert(data.sessions, r.body.current || s); unstash(s);
+        status("This session changed on another device, so this shows that version.", true); render(); return;
+      }
+      if (!r.ok) throw new Error(r.body.error || r.status);
+      s.rev = r.body.rev;
+      if (edits === sent) unstash(s); else stash(s); // newer edits are still waiting: keep them, with the new rev
+      status("Saved " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + ".");
+    }).catch(function (e) {
+      status("Not saved yet (" + (e.message || "offline") + "). It’s kept on this phone and will retry.", true);
+      clearTimeout(saveTimer); saveTimer = setTimeout(function () { flush(s); }, 10000);
+    }).then(function () {
+      saving = false;
+      if (again) { again = false; flush(s); }
+    });
+  }
+  // A session edited here but never saved (no signal at the gym) comes back on the next load
+  function restoreDraft() {
+    var d = store(function (ls) { return JSON.parse(ls.getItem(DRAFT) || "null"); });
+    if (!d || !d.id) return;
+    var cur = byId(data.sessions, d.id);
+    if (cur && cur.rev !== d.rev) { unstash(d); return; } // saved since, elsewhere: theirs wins
+    upsert(data.sessions, d);
+    if (!d.finishedAt) openId = d.id;
+    saveSession(d, true);
+  }
+
+  /* ---------- rest timer ---------- */
+  var restEnd = 0, restTick = null;
+  function startRest(sec) {
+    if (!sec) return;
+    restEnd = Date.now() + sec * 1000;
+    clearInterval(restTick); restTick = setInterval(drawRest, 250); drawRest();
+  }
+  function stopRest() { clearInterval(restTick); restTick = null; $("timer").hidden = true; }
+  function drawRest() {
+    var t = $("timer"), left = Math.ceil((restEnd - Date.now()) / 1000);
+    t.hidden = false;
+    if (left <= 0) {
+      if (!t.classList.contains("go") && navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      t.classList.add("go");
+      t.innerHTML = '<span>Rest’s up. Go.</span><button data-rest="stop">OK</button>';
+      if (left < -20) stopRest();
+      return;
+    }
+    t.classList.remove("go");
+    t.innerHTML = '<span>Rest</span><span class="clock">' + Math.floor(left / 60) + ":" + pad(left % 60) + '</span>' +
+      '<button data-rest="15">+15 s</button><button data-rest="stop">Skip</button>';
+  }
+  $("timer").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-rest]"); if (!b) return;
+    if (b.dataset.rest === "stop") stopRest(); else { restEnd += 15000; drawRest(); }
+  });
+
+  /* ---------- rendering ---------- */
+  function render() {
+    tabsEl.hidden = false;
+    tabsEl.innerHTML = TABS.map(function (t) {
+      return '<button data-tab="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '">' + t[1] + "</button>";
+    }).join("");
+    var v = { today: viewToday, history: viewHistory, progress: viewProgress, plan: viewPlan, workouts: viewWorkouts, exercises: viewExercises }[tab];
+    main.innerHTML = v();
+  }
+
+  function viewToday() {
+    var s = openId ? byId(data.sessions, openId) : openSession();
+    if (s) { openId = s.id; return viewSession(s); }
+    if (!data.workouts.length && !data.exercises.length) {
+      return '<div class="card stack"><h2>Get started</h2><p>Load the starter program: Sessions A and B (full body, easy on shoulders and the lower back), ' +
+        'a 10-minute mobility routine, and a Monday, Wednesday, Friday plan alternating A and B. You can change all of it.</p>' +
+        '<div class="row"><button class="btn primary" data-act="starter">Load the starter program</button>' +
+        '<button class="btn ghost" data-tab="exercises">Build my own</button></div></div>';
+    }
+    var today = ymd(new Date()), start = monday(new Date()), p = data.plan, done = finished(), html = "";
+    var thisWeek = done.filter(function (x) { return x.date >= ymd(start) && x.date <= ymd(addDays(start, 6)); });
+    html += '<section class="card stack"><div class="row" style="justify-content:space-between"><h2>This week</h2><span class="muted">' +
+      thisWeek.length + (p && p.perWeek ? " of " + p.perWeek : "") + " done</span></div><div class=\"week\">";
+    for (var i = 0; i < 7; i++) {
+      var d = addDays(start, i), key = ymd(d);
+      var did = done.some(function (x) { return x.date === key; });
+      var planned = p && p.days.indexOf(d.getDay()) >= 0 && planActive(key);
+      html += '<div class="d' + (did ? " done" : "") + (planned ? " planned" : "") + (key === today ? " today" : "") + '"><span>' + DAYS[d.getDay()] +
+        '</span><span class="dot" title="' + (did ? "Trained" : planned ? "Planned" : "") + '">' + (did ? "✓" : d.getDate()) + "</span></div>";
+    }
+    html += "</div></section>";
+
+    var next = nextWorkout(), day = nextPlannedDay();
+    html += '<section class="card next">';
+    if (next) {
+      var when = !day ? "Next up" : ymd(day) === today ? "Today" : "Next up, " + LONG_DAYS[day.getDay()];
+      html += '<p class="eyebrow">' + esc(when) + "</p><h2>" + esc(next.name) + '</h2><p class="muted small">' + next.items.length + " exercises</p>" +
+        '<button class="btn primary" data-start="' + esc(next.id) + '">Start ' + esc(next.name) + "</button>";
+    } else {
+      html += '<h2>Start a workout</h2><p class="muted small">Set a rotation in Plan and the next one shows here.</p>';
+    }
+    var others = data.workouts.filter(function (w) { return !next || w.id !== next.id; });
+    html += '<div class="row">' + others.map(function (w) {
+      return '<button class="btn ghost" data-start="' + esc(w.id) + '">' + esc(w.name) + "</button>";
+    }).join("") + '<button class="btn ghost" data-start="">Empty session</button></div></section>';
+
+    var bw = data.weights.filter(function (x) { return x.date === today; })[0];
+    html += '<form class="card row" id="bw-form"><label class="f" style="flex:1">Body weight today (' + esc(unit()) + ')' +
+      '<input name="weight" type="number" inputmode="decimal" step="any" min="20" max="1000" value="' + esc(bw ? bw.weight : "") + '"></label>' +
+      '<button class="btn ghost" style="align-self:end">Save</button></form>';
+    return html;
+  }
+
+  function pairLabels(entries) {
+    var out = [], n = 0, prev = null, k = 0;
+    entries.forEach(function (e) {
+      if (!e.pair) { out.push(""); prev = null; return; }
+      if (e.pair !== prev) { n++; k = 0; prev = e.pair; }
+      out.push(n + "abcdefghij".charAt(k++));
+    });
+    // A lone member of a "pair" isn't a pair
+    return out.map(function (l, i) {
+      var g = entries[i].pair, same = entries.filter(function (e) { return e.pair === g; }).length;
+      return l && same > 1 ? l : "";
+    });
+  }
+
+  function viewSession(s) {
+    var wo = s.workoutId ? byId(data.workouts, s.workoutId) : null, labels = pairLabels(s.entries);
+    var html = '<section class="stack"><div class="row" style="justify-content:space-between"><div><p class="eyebrow">' +
+      (s.finishedAt ? "Logged" : "In progress") + '</p><h2>' + esc(s.name) + '</h2></div>' +
+      '<label class="f">Date<input type="date" data-sfield="date" value="' + esc(s.date) + '"></label></div>';
+    if (wo && wo.note) html += '<p class="note">' + esc(wo.note) + "</p>";
+    html += s.entries.map(function (e, i) {
+      var ex = e.exerciseId ? byId(data.exercises, e.exerciseId) : null, last = e.exerciseId ? lastTime(e.exerciseId, s.id) : null;
+      var col = e.measure === "time" ? ["t", "Seconds"] : e.measure === "distance" ? ["d", "Meters"] : ["r", "Reps"];
+      var out = '<div class="entry" data-entry="' + i + '"><h3>' + (labels[i] ? '<span class="tag">' + labels[i] + "</span>" : "") + esc(e.name) +
+        '<span class="muted small">' + esc(e.sets.length + " × " + (e.target || "")) + (e.perSide ? " per side" : "") + "</span></h3>";
+      if (ex && ex.note) out += '<p class="muted small">' + esc(ex.note) + "</p>";
+      out += '<p class="small">' + (last ? "Last time (" + esc(nice(last.date)) + "): " + esc(fmtSets(last.sets, last.measure)) : '<span class="muted">First time</span>') + "</p>";
+      out += '<div class="units"><span></span><span>' + esc(unit()) + "</span><span>" + col[1] + "</span><span></span></div>";
+      out += e.sets.map(function (st, j) {
+        return '<div class="set' + (st.done ? " done" : "") + '"><span class="n">' + (j + 1) + "</span>" +
+          '<input type="number" inputmode="decimal" step="any" min="0" aria-label="Set ' + (j + 1) + " weight\" data-set=\"" + j + '" data-k="w" value="' + esc(st.w) + '">' +
+          '<input type="number" inputmode="decimal" step="any" min="0" aria-label="Set ' + (j + 1) + " " + col[1].toLowerCase() + '" data-set="' + j + '" data-k="' + col[0] + '" value="' + esc(st[col[0]]) + '">' +
+          '<button class="tick" data-tick="' + j + '" aria-label="Set ' + (j + 1) + (st.done ? " done" : " not done") + '" aria-pressed="' + st.done + '">✓</button></div>';
+      }).join("");
+      out += '<div class="row"><button class="link" data-addset>+ Set</button>' + (e.sets.length > 1 ? '<button class="link" data-dropset>− Set</button>' : "") +
+        '<input data-enote placeholder="Note" aria-label="Note on ' + esc(e.name) + '" maxlength="500" value="' + esc(e.note) + '" style="flex:1">' +
+        '<button class="link danger" data-delentry>' + (confirmDel === "entry" + i ? "Remove?" : "Remove") + "</button></div></div>";
+      return out;
+    }).join("");
+    var spare = data.exercises.filter(function (x) { return !s.entries.some(function (e) { return e.exerciseId === x.id; }); });
+    if (spare.length) {
+      html += '<div class="row"><select id="add-ex" aria-label="Exercise to add" style="flex:1">' + spare.map(function (x) {
+        return '<option value="' + esc(x.id) + '">' + esc(x.name) + "</option>";
+      }).join("") + '</select><button class="btn ghost" data-act="addentry">Add exercise</button></div>';
+    }
+    if (data.settings.areas.length) {
+      html += '<div class="card areas"><h3>How did it feel?</h3><p class="muted small">0 is nothing, 10 is stop. Leave blank to skip.</p>' +
+        data.settings.areas.map(function (a) {
+          var v = s.discomfort[a], btns = "";
+          for (var n = 0; n <= 10; n++) btns += '<button data-area="' + esc(a) + '" data-v="' + n + '" aria-pressed="' + (v === n) + '" aria-label="' + esc(a) + " " + n + '">' + n + "</button>";
+          return '<div><p>' + esc(a) + '</p><div class="scale">' + btns + "</div></div>";
+        }).join("") + "</div>";
+    }
+    html += '<label class="f">Notes on this session<textarea data-sfield="note" maxlength="2000">' + esc(s.note) + "</textarea></label>";
+    html += '<div class="row">' + (s.finishedAt
+      ? '<button class="btn primary" data-act="close">Done</button>'
+      : '<button class="btn primary" data-act="finish">Finish</button>') +
+      '<button class="link danger" data-act="delsession">' + (confirmDel === "session" ? "Delete this session?" : "Delete session") + "</button></div></section>";
+    return html;
+  }
+
+  function viewHistory() {
+    var done = finished().slice().reverse();
+    if (!done.length) return '<p class="muted">Finished sessions show here.</p>';
+    return '<ul class="list">' + done.map(function (s) {
+      var sets = s.entries.reduce(function (n, e) { return n + doneSets(e).length; }, 0);
+      var feel = Object.keys(s.discomfort).map(function (a) { return a + " " + s.discomfort[a]; }).join(", ");
+      return '<li><button class="open grow" data-open="' + esc(s.id) + '"><strong>' + esc(s.name) + '</strong> <span class="muted">' + esc(nice(s.date)) + "</span><br>" +
+        '<span class="muted small">' + sets + " sets" + (feel ? " · " + esc(feel) : "") + (s.note ? " · " + esc(s.note.slice(0, 80)) : "") + "</span></button></li>";
+    }).join("") + "</ul>";
+  }
+
+  /* ---------- progress ---------- */
+  // pts: [{ x: "YYYY-MM-DD", y, tip }]. One series, so no legend: the heading names it.
+  function lineChart(pts, opt) {
+    if (!pts.length) return '<p class="muted small">Nothing logged yet.</p>';
+    var W = 360, H = 170, L = 36, R = 10, T = 10, B = 24; // sized for a phone, so 13px labels stay 13-ish
+    var xs = pts.map(function (p) { return parseDay(p.x).getTime(); });
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+    var ys = pts.map(function (p) { return p.y; });
+    var y0 = opt.min != null ? opt.min : Math.min.apply(null, ys), y1 = opt.max != null ? opt.max : Math.max.apply(null, ys);
+    if (y1 === y0) { y1 += 1; y0 = Math.max(0, y0 - 1); }
+    var X = function (t) { return x1 === x0 ? (L + W - R) / 2 : L + (t - x0) / (x1 - x0) * (W - L - R); };
+    var Y = function (v) { return T + (1 - (v - y0) / (y1 - y0)) * (H - T - B); };
+    var svg = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + esc(opt.label) + '">';
+    [y0, (y0 + y1) / 2, y1].forEach(function (v) {
+      svg += '<line class="grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v) + '" y2="' + Y(v) + '"/><text class="axis" x="' + (L - 6) + '" y="' + (Y(v) + 4) + '" text-anchor="end">' + Math.round(v * 10) / 10 + "</text>";
+    });
+    svg += '<text class="axis" x="' + L + '" y="' + (H - 6) + '">' + esc(nice(pts[0].x)) + "</text>";
+    if (pts.length > 1) svg += '<text class="axis" x="' + (W - R) + '" y="' + (H - 6) + '" text-anchor="end">' + esc(nice(pts[pts.length - 1].x)) + "</text>";
+    svg += '<polyline class="ln" points="' + pts.map(function (p, i) { return X(xs[i]) + "," + Y(p.y); }).join(" ") + '"/>';
+    pts.forEach(function (p, i) {
+      svg += '<g><title>' + esc(nice(p.x) + ": " + p.tip) + '</title><circle class="hit" cx="' + X(xs[i]) + '" cy="' + Y(p.y) + '" r="12"/><circle class="pt" cx="' + X(xs[i]) + '" cy="' + Y(p.y) + '" r="4"/></g>';
+    });
+    return '<div class="chart">' + svg + "</svg></div>";
+  }
+
+  function weeksChart() {
+    var start = monday(new Date()), weeks = [], p = data.plan, goal = p && p.perWeek;
+    for (var i = 11; i >= 0; i--) {
+      var a = ymd(addDays(start, -7 * i)), b = ymd(addDays(start, -7 * i + 6));
+      weeks.push({ from: a, n: finished().filter(function (s) { return s.date >= a && s.date <= b; }).length });
+    }
+    var W = 360, H = 140, L = 24, B = 24, T = 10, max = Math.max(goal || 0, 3, Math.max.apply(null, weeks.map(function (w) { return w.n; })));
+    var bw = (W - L) / 12, Y = function (v) { return T + (1 - v / max) * (H - T - B); };
+    var svg = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Sessions per week, last 12 weeks">';
+    [0, max].forEach(function (v) { svg += '<line class="grid" x1="' + L + '" x2="' + W + '" y1="' + Y(v) + '" y2="' + Y(v) + '"/><text class="axis" x="' + (L - 6) + '" y="' + (Y(v) + 4) + '" text-anchor="end">' + v + "</text>"; });
+    weeks.forEach(function (w, i) {
+      var x = L + i * bw + 2, h = Y(0) - Y(w.n);
+      svg += '<g><title>' + esc("Week of " + nice(w.from) + ": " + w.n) + '</title><rect class="bar" x="' + x + '" y="' + Y(w.n) + '" width="' + (bw - 4) + '" height="' + Math.max(h, 0) + '" rx="4"/>' +
+        '<rect class="hit" x="' + x + '" y="' + T + '" width="' + (bw - 4) + '" height="' + (H - T - B) + '"/></g>';
+    });
+    if (goal) svg += '<line class="goal" x1="' + L + '" x2="' + W + '" y1="' + Y(goal) + '" y2="' + Y(goal) + '"/>';
+    svg += '<text class="axis" x="' + L + '" y="' + (H - 6) + '">' + esc(nice(weeks[0].from)) + '</text><text class="axis" x="' + W + '" y="' + (H - 6) + '" text-anchor="end">This week</text>';
+    return '<div class="chart">' + svg + "</svg></div>" + (goal ? '<p class="muted small">Dashed line: your goal of ' + goal + " a week.</p>" : "");
+  }
+
+  // One number per session for an exercise: the top weight if you log weight, else the best reps, seconds or meters
+  function exerciseSeries(exId) {
+    var rows = [];
+    finished().forEach(function (s) {
+      s.entries.forEach(function (e) { if (e.exerciseId === exId && doneSets(e).length) rows.push({ date: s.date, e: e }); });
+    });
+    var weighted = rows.some(function (r) { return doneSets(r.e).some(function (x) { return x.w != null; }); });
+    var k = weighted ? "w" : rows.length && rows[0].e.measure === "time" ? "t" : rows.length && rows[0].e.measure === "distance" ? "d" : "r";
+    var what = { w: "Top weight (" + unit() + ")", r: "Most reps", t: "Longest (s)", d: "Farthest (m)" }[k];
+    return { what: what, rows: rows, pts: rows.map(function (r) {
+      var best = Math.max.apply(null, doneSets(r.e).map(function (x) { return x[k] == null ? 0 : x[k]; }));
+      return { x: r.date, y: best, tip: fmtSets(doneSets(r.e), r.e.measure) };
+    }) };
+  }
+
+  function viewProgress() {
+    var html = '<section class="card stack"><h2>Sessions per week</h2>' + weeksChart() + "</section>";
+    var used = data.exercises.filter(function (x) { return finished().some(function (s) { return s.entries.some(function (e) { return e.exerciseId === x.id && doneSets(e).length; }); }); });
+    html += '<section class="card stack"><h2>An exercise</h2>';
+    if (!used.length) html += '<p class="muted small">Finish a session and your exercises show here.</p>';
+    else {
+      if (!byId(used, chartEx)) chartEx = used[0].id;
+      var ser = exerciseSeries(chartEx);
+      html += '<select id="chart-ex" aria-label="Exercise">' + used.map(function (x) {
+        return '<option value="' + esc(x.id) + '"' + (x.id === chartEx ? " selected" : "") + ">" + esc(x.name) + "</option>";
+      }).join("") + "</select><h3>" + esc(ser.what) + "</h3>" + lineChart(ser.pts, { label: ser.what }) +
+        '<table class="data"><thead><tr><th>Date</th><th>Sets</th></tr></thead><tbody>' + ser.rows.slice().reverse().slice(0, 10).map(function (r) {
+          return "<tr><td>" + esc(nice(r.date)) + "</td><td>" + esc(fmtSets(doneSets(r.e), r.e.measure)) + (r.e.note ? ' <span class="muted">· ' + esc(r.e.note) + "</span>" : "") + "</td></tr>";
+        }).join("") + "</tbody></table>";
+    }
+    html += "</section>";
+    data.settings.areas.forEach(function (a) {
+      var pts = finished().filter(function (s) { return s.discomfort[a] != null; }).map(function (s) { return { x: s.date, y: s.discomfort[a], tip: s.discomfort[a] + " after " + s.name }; });
+      html += '<section class="card stack"><h2>' + esc(a) + '</h2><p class="muted small">How it felt after each session, 0 to 10.</p>' + lineChart(pts, { label: a + " discomfort", min: 0, max: 10 }) + "</section>";
+    });
+    var w = data.weights.map(function (x) { return { x: x.date, y: x.weight, tip: x.weight + " " + unit() }; });
+    html += '<section class="card stack"><h2>Body weight (' + esc(unit()) + ")</h2>" + lineChart(w, { label: "Body weight" }) + "</section>";
+    return html;
+  }
+
+  /* ---------- plan & settings ---------- */
+  function viewPlan() {
+    var p = data.plan || { rotation: [], days: [], from: null, to: null, perWeek: 3 }, html = "";
+    html += '<form class="card stack" id="plan-form"><h2>Plan</h2><p class="muted small">Workouts take turns in this order; the next one shows on Today.</p><ol class="list" id="rot">' +
+      p.rotation.map(function (id, i) {
+        var w = byId(data.workouts, id);
+        return '<li data-rot="' + esc(id) + '"><span class="grow">' + (i + 1) + ". " + esc(w ? w.name : "(deleted workout)") + '</span>' +
+          (i ? '<button type="button" class="link" data-rotup="' + i + '" aria-label="Move up">↑</button>' : "") + '<button type="button" class="link danger" data-rotdel="' + i + '">Remove</button></li>';
+      }).join("") + "</ol>";
+    if (data.workouts.length) html += '<div class="row"><select id="rot-add" aria-label="Workout to add">' + data.workouts.map(function (w) {
+      return '<option value="' + esc(w.id) + '">' + esc(w.name) + "</option>";
+    }).join("") + '</select><button type="button" class="btn ghost" data-act="rotadd">Add to rotation</button></div>';
+    html += '<p class="small">Training days</p><div class="days">' + [1, 2, 3, 4, 5, 6, 0].map(function (d) {
+      return '<label><input type="checkbox" name="day" value="' + d + '"' + (p.days.indexOf(d) >= 0 ? " checked" : "") + ">" + DAYS[d] + "</label>";
+    }).join("") + "</div>" +
+      '<div class="row"><label class="f">Goal a week<input name="perWeek" type="number" min="0" max="14" value="' + esc(p.perWeek) + '"></label>' +
+      '<label class="f">From (optional)<input name="from" type="date" value="' + esc(p.from || "") + '"></label>' +
+      '<label class="f">Until (optional)<input name="to" type="date" value="' + esc(p.to || "") + '"></label></div>' +
+      '<div><button class="btn primary">Save plan</button></div></form>';
+    var st = data.settings;
+    html += '<form class="card stack" id="settings-form"><h2>Settings</h2><div class="row"><label class="f">Weight in<select name="unit">' +
+      ["lb", "kg"].map(function (u) { return "<option" + (st.unit === u ? " selected" : "") + ">" + u + "</option>"; }).join("") + "</select></label></div>" +
+      '<label class="f">Areas to rate after each session (comma between)<input name="areas" maxlength="250" value="' + esc(st.areas.join(", ")) + '"></label>' +
+      '<div><button class="btn primary">Save settings</button></div></form>';
+    return html;
+  }
+  // Rotation buttons redraw the form; carry what's typed into the plan first
+  function readPlanForm() {
+    var f = $("plan-form"), p = data.plan; if (!f || !p) return;
+    p.days = [].map.call(f.querySelectorAll('[name="day"]:checked'), function (c) { return +c.value; });
+    p.perWeek = numOrNull(field(f, "perWeek").value); p.from = field(f, "from").value || null; p.to = field(f, "to").value || null;
+  }
+
+  /* ---------- workouts ---------- */
+  function viewWorkouts() {
+    if (editId) return workoutEditor(byId(data.workouts, editId) || { id: editId, name: "", note: "", items: [] });
+    return '<div class="row"><button class="btn primary" data-act="newworkout">New workout</button></div><ul class="list">' + data.workouts.map(function (w) {
+      return '<li><button class="open grow" data-editwo="' + esc(w.id) + '"><strong>' + esc(w.name) + '</strong><br><span class="muted small">' +
+        esc(w.items.map(function (it) { var x = byId(data.exercises, it.exerciseId); return x ? x.name : "?"; }).join(" · ")) + "</span></button></li>";
+    }).join("") + "</ul>";
+  }
+  var woDraft = null;
+  function workoutEditor(w) {
+    if (!woDraft || woDraft.id !== w.id) woDraft = copy(w);
+    var d = woDraft;
+    var opts = function (sel) { return data.exercises.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === sel ? " selected" : "") + ">" + esc(x.name) + "</option>"; }).join(""); };
+    return '<form class="stack" id="wo-form"><label class="f">Name<input name="name" maxlength="60" required value="' + esc(d.name) + '"></label>' +
+      '<label class="f">Note (warm-up, reminders)<textarea name="note" maxlength="500">' + esc(d.note) + "</textarea></label>" +
+      '<p class="muted small">Give two exercises the same pair number to alternate them. Rest is the timer after each set.</p><div>' +
+      d.items.map(function (it, i) {
+        return '<div class="item" data-item="' + i + '"><label class="f ex">Exercise<select data-ik="exerciseId">' + opts(it.exerciseId) + "</select></label>" +
+          '<label class="f">Sets<input data-ik="sets" type="number" min="1" max="10" value="' + esc(it.sets) + '"></label>' +
+          '<label class="f">Target<input data-ik="target" maxlength="20" value="' + esc(it.target) + '"></label>' +
+          '<label class="f">Pair<input data-ik="pair" type="number" min="0" max="20" value="' + esc(it.pair || "") + '"></label>' +
+          '<label class="f">Rest s<input data-ik="rest" type="number" min="0" max="600" value="' + esc(it.rest) + '"></label>' +
+          '<div class="acts"><button type="button" class="link" data-itemup="' + i + '">↑ Up</button><button type="button" class="link danger" data-itemdel="' + i + '">Remove</button></div></div>';
+      }).join("") + "</div>" +
+      (data.exercises.length ? '<div><button type="button" class="btn ghost" data-act="additem">Add exercise</button></div>' : '<p class="muted small">Add exercises first, in Exercises.</p>') +
+      '<div class="row"><button class="btn primary">Save workout</button><button type="button" class="btn ghost" data-act="cancel">Cancel</button>' +
+      (byId(data.workouts, d.id) ? '<button type="button" class="link danger" data-act="delworkout">' + (confirmDel === "wo" ? "Delete this workout?" : "Delete") + "</button>" : "") + "</div></form>";
+  }
+
+  /* ---------- exercises ---------- */
+  function viewExercises() {
+    if (editId) return exerciseEditor(byId(data.exercises, editId) || { id: editId, name: "", measure: "reps", perSide: false, note: "" });
+    return '<div class="row"><button class="btn primary" data-act="newexercise">New exercise</button></div><ul class="list">' + data.exercises.map(function (x) {
+      return '<li><button class="open grow" data-editex="' + esc(x.id) + '"><strong>' + esc(x.name) + '</strong> <span class="muted small">' + esc(MEASURE[x.measure]) + (x.perSide ? ", per side" : "") + "</span>" +
+        (x.note ? '<br><span class="muted small">' + esc(x.note) + "</span>" : "") + "</button></li>";
+    }).join("") + "</ul>";
+  }
+  function exerciseEditor(x) {
+    return '<form class="stack" id="ex-form" data-id="' + esc(x.id) + '"><label class="f">Name<input name="name" maxlength="80" required value="' + esc(x.name) + '"></label>' +
+      '<div class="row"><label class="f">Log<select name="measure">' + Object.keys(MEASURE).map(function (m) {
+        return '<option value="' + m + '"' + (x.measure === m ? " selected" : "") + ">" + MEASURE[m] + "</option>";
+      }).join("") + '</select></label><label class="row small"><input type="checkbox" name="perSide"' + (x.perSide ? " checked" : "") + "> Per side</label></div>" +
+      '<label class="f">Setup and cues<textarea name="note" maxlength="500">' + esc(x.note) + "</textarea></label>" +
+      '<div class="row"><button class="btn primary">Save exercise</button><button type="button" class="btn ghost" data-act="cancel">Cancel</button>' +
+      (byId(data.exercises, x.id) ? '<button type="button" class="link danger" data-act="delexercise">' + (confirmDel === "ex" ? "Delete this exercise?" : "Delete") + "</button>" : "") + "</div></form>";
+  }
+
+  /* ---------- events ---------- */
+  function current() { return openId ? byId(data.sessions, openId) : null; }
+  function entryOf(el) { var s = current(), box = el.closest("[data-entry]"); return s && box ? s.entries[+box.dataset.entry] : null; }
+  function readWoForm() {
+    var f = $("wo-form"); if (!f) return;
+    woDraft.name = field(f, "name").value; woDraft.note = field(f, "note").value;
+    f.querySelectorAll("[data-item]").forEach(function (row) {
+      var it = woDraft.items[+row.dataset.item];
+      row.querySelectorAll("[data-ik]").forEach(function (inp) {
+        var k = inp.dataset.ik;
+        it[k] = k === "exerciseId" || k === "target" ? inp.value : numOrNull(inp.value) || 0;
+      });
+    });
+  }
+
+  // Typing in a session saves without redrawing, so the keyboard stays put
+  main.addEventListener("input", function (e) {
+    var s = current(), t = e.target; if (!s) return;
+    if (t.dataset.k) { var en = entryOf(t); en.sets[+t.dataset.set][t.dataset.k] = numOrNull(t.value); }
+    else if (t.hasAttribute("data-enote")) entryOf(t).note = t.value;
+    else if (t.dataset.sfield === "note") s.note = t.value;
+    else if (t.dataset.sfield === "date") { if (!/^\d{4}-\d{2}-\d{2}$/.test(t.value)) return; s.date = t.value; }
+    else return;
+    saveSession(s);
+  });
+  main.addEventListener("change", function (e) {
+    if (e.target.id === "chart-ex") { chartEx = e.target.value; render(); }
+  });
+
+  main.addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    var s = current(), d = b.dataset;
+    if (d.tab) { tab = d.tab; editId = null; render(); return; }
+    if (d.start !== undefined) { startSession(d.start ? byId(data.workouts, d.start) : null); return; }
+    if (d.open) { openId = d.open; tab = "today"; confirmDel = null; render(); window.scrollTo(0, 0); return; }
+    if (d.tick !== undefined && s) {
+      var en = entryOf(b), st = en.sets[+d.tick];
+      st.done = !st.done;
+      if (st.done) startRest(en.rest);
+      render(); saveSession(s); return;
+    }
+    if (b.hasAttribute("data-addset") && s) { var a = entryOf(b), l = a.sets[a.sets.length - 1]; a.sets.push({ w: l.w, r: l.r, t: l.t, d: l.d, done: false }); render(); saveSession(s); return; }
+    if (b.hasAttribute("data-dropset") && s) { entryOf(b).sets.pop(); render(); saveSession(s); return; }
+    if (b.hasAttribute("data-delentry") && s) {
+      var i = +b.closest("[data-entry]").dataset.entry;
+      if (confirmDel === "entry" + i) { s.entries.splice(i, 1); confirmDel = null; saveSession(s); } else confirmDel = "entry" + i;
+      render(); return;
+    }
+    if (d.area && s) {
+      var v = +d.v;
+      if (s.discomfort[d.area] === v) delete s.discomfort[d.area]; else s.discomfort[d.area] = v;
+      render(); saveSession(s); return;
+    }
+    if (d.rotup !== undefined || d.rotdel !== undefined || d.act === "rotadd") readPlanForm();
+    if (d.rotup !== undefined) { var r = data.plan.rotation, k = +d.rotup; if (k > 0) { r.splice(k - 1, 0, r.splice(k, 1)[0]); } render(); return; }
+    if (d.rotdel !== undefined) { data.plan.rotation.splice(+d.rotdel, 1); render(); return; }
+    if (d.editwo) { editId = d.editwo; woDraft = null; confirmDel = null; render(); return; }
+    if (d.editex) { editId = d.editex; confirmDel = null; render(); return; }
+    if (d.itemup !== undefined) { readWoForm(); var n = +d.itemup, it = woDraft.items; if (n > 0) it.splice(n - 1, 0, it.splice(n, 1)[0]); render(); return; }
+    if (d.itemdel !== undefined) { readWoForm(); woDraft.items.splice(+d.itemdel, 1); render(); return; }
+    var act = d.act; if (!act) return;
+    if (act !== "delsession" && act !== "delworkout" && act !== "delexercise") confirmDel = null;
+    ({
+      starter: function () {
+        b.disabled = true;
+        api("POST", "/starter").then(function (r) {
+          if (!r.ok) { status(r.body.error || "Couldn’t load the starter program.", true); b.disabled = false; return; }
+          data = r.body; status("Loaded. Your plan is on Plan; tweak anything in Workouts and Exercises."); render();
+        });
+      },
+      addentry: function () {
+        var x = byId(data.exercises, $("add-ex").value); if (!x || !s) return;
+        s.entries.push(entryFor(x, null, s.id)); render(); saveSession(s);
+      },
+      finish: function () { s.finishedAt = new Date().toISOString(); saveSession(s, true); stopRest(); openId = null; status("Nice work."); tab = "today"; render(); },
+      close: function () { openId = null; tab = "history"; render(); },
+      delsession: function () {
+        if (confirmDel !== "session") { confirmDel = "session"; render(); return; }
+        confirmDel = null;
+        api("DELETE", "/sessions/" + s.id).then(function (r) {
+          if (!r.ok) { status("Couldn’t delete. Try again.", true); return; }
+          data.sessions = data.sessions.filter(function (x) { return x.id !== s.id; }); unstash(s); stopRest(); openId = null; render();
+        });
+      },
+      rotadd: function () { data.plan = data.plan || { rotation: [], days: [], from: null, to: null, perWeek: 3 }; data.plan.rotation.push($("rot-add").value); render(); },
+      newworkout: function () { editId = uid(); woDraft = null; render(); },
+      newexercise: function () { editId = uid(); render(); },
+      cancel: function () { editId = null; woDraft = null; render(); },
+      additem: function () { readWoForm(); woDraft.items.push({ exerciseId: data.exercises[0].id, sets: 3, target: "8–10", pair: 0, rest: 60 }); render(); },
+      delworkout: function () {
+        if (confirmDel !== "wo") { confirmDel = "wo"; readWoForm(); render(); return; }
+        confirmDel = null;
+        api("DELETE", "/workouts/" + woDraft.id).then(function (r) {
+          if (!r.ok) { status("Couldn’t delete. Try again.", true); return; }
+          data.workouts = data.workouts.filter(function (x) { return x.id !== woDraft.id; }); editId = null; woDraft = null; render();
+        });
+      },
+      delexercise: function () {
+        if (confirmDel !== "ex") { confirmDel = "ex"; render(); return; }
+        confirmDel = null;
+        api("DELETE", "/exercises/" + editId).then(function (r) {
+          if (r.status === 409) { status("It’s in " + (r.body.workouts || []).join(", ") + ". Take it out of those first.", true); render(); return; }
+          if (!r.ok) { status("Couldn’t delete. Try again.", true); return; }
+          data.exercises = data.exercises.filter(function (x) { return x.id !== editId; }); editId = null; render();
+        });
+      },
+    })[act]();
+  });
+
+  main.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var f = e.target;
+    if (f.id === "bw-form") {
+      var w = numOrNull(field(f, "weight").value), day = ymd(new Date());
+      if (w === null) return;
+      api("PUT", "/weights/" + day, { weight: w }).then(function (r) {
+        if (!r.ok) { status(r.body.error || "Couldn’t save.", true); return; }
+        data.weights = data.weights.filter(function (x) { return x.date !== day; }).concat([r.body]); status("Saved.");
+      });
+    } else if (f.id === "plan-form") {
+      var p = data.plan || { rotation: [] };
+      var days = [].map.call(f.querySelectorAll('[name="day"]:checked'), function (c) { return +c.value; });
+      saveRow("/plan", { rotation: p.rotation, days: days, perWeek: numOrNull(field(f, "perWeek").value), from: field(f, "from").value || null, to: field(f, "to").value || null, rev: p.rev },
+        function (row) { data.plan = row; }).then(function (ok) { if (ok) render(); });
+    } else if (f.id === "settings-form") {
+      var st = data.settings;
+      saveRow("/settings", { unit: field(f, "unit").value, areas: field(f, "areas").value.split(",").map(function (a) { return a.trim(); }).filter(Boolean), rev: st.rev },
+        function (row) { data.settings = row; }).then(function (ok) { if (ok) render(); });
+    } else if (f.id === "wo-form") {
+      readWoForm();
+      var d = woDraft;
+      saveRow("/workouts/" + d.id, { name: d.name, note: d.note, items: d.items, rev: d.rev }, function (row) { upsert(data.workouts, row); woDraft = null; })
+        .then(function (ok) { if (ok) { editId = null; render(); } });
+    } else if (f.id === "ex-form") {
+      var id = f.dataset.id, old = byId(data.exercises, id);
+      saveRow("/exercises/" + id, { name: field(f, "name").value, measure: field(f, "measure").value, perSide: field(f, "perSide").checked, note: field(f, "note").value, rev: old ? old.rev : undefined },
+        function (row) { upsert(data.exercises, row); data.exercises.sort(function (a, b) { return a.name.localeCompare(b.name); }); })
+        .then(function (ok) { if (ok) { editId = null; render(); } });
+    }
+  });
+  tabsEl.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-tab]"); if (!b) return;
+    tab = b.dataset.tab; editId = null; woDraft = null; confirmDel = null;
+    if (tab !== "today" && openId) { var s = current(); if (s && s.finishedAt) openId = null; }
+    status(""); render();
+  });
+
+  function gate(msg) {
+    main.innerHTML = '<p class="status">' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button>';
+    $("signin").onclick = function () { FamilyAuth.login(); };
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
+    $("signout").hidden = false;
+    $("signout").onclick = function () { FamilyAuth.logout(); };
+    return api("GET", "/all").then(function (r) {
+      if (r.status === 403) return gate("Your account doesn’t have access to Gym yet.");
+      if (!r.ok) throw new Error("Couldn’t load (" + r.status + "). Reload to try again.");
+      data = r.body; restoreDraft(); render();
+    });
+  }).catch(function (e) { gate(e.message); });
+})();
+</script>
+</body>
+</html>
