@@ -296,6 +296,26 @@ test('moving a transaction to the next month from the page', async () => {
   p.close();
 });
 
+test('leave out of trends: the trend drops it, the month still counts it', async () => {
+  const p = await open();
+  const box = [...p.d.querySelectorAll('[data-notrend]')].find((x) => x.closest('.tx').textContent.includes('BLUE BOTTLE'));
+  const id = box.dataset.notrend;
+  assert.equal(box.checked, false);
+  await p.change(`[data-notrend="${id}"]`, true);
+  assert.ok(p.requests.includes(`PUT /transactions/${id}`));
+  assert.match(p.el('#status').textContent, /Left out of trends/);
+  const cols = [...p.el('#trend-chart').querySelectorAll('.col')];
+  assert.equal(cols[2].querySelector('.cval').textContent, '$0', 'October’s coffee is out of the trend');
+  assert.equal(p.el('.col[data-cat="Luke›Food"] .cval').textContent, '$7', 'but still in October');
+  assert.match(p.el('#h-trend').closest('section').textContent, /leave out of trends/);
+  assert.equal(p.el(`[data-notrend="${id}"]`).checked, true);
+  assert.match(p.el(`[data-notrend="${id}"]`).closest('.tx').textContent, /not in trends/);
+  await p.change(`[data-notrend="${id}"]`, false);
+  assert.match(p.el('#status').textContent, /Back in trends/);
+  assert.equal(p.el('#trend-chart').querySelectorAll('.col')[2].querySelector('.cval').textContent, '$7');
+  p.close();
+});
+
 test('trend: above a column opens that month with all its transactions; a color, just that category', async () => {
   const p = await open();
   await p.click('#trend-chart .col[data-go="2026-09"]');

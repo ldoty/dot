@@ -420,7 +420,8 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
       };
     });
     return '<section aria-labelledby="h-trend"><div class="sec-head"><h2 id="h-trend">Last three months</h2><span class="status">' + (shared() ? "The household’s" : "My budget’s") + ' spending by category, against its monthly total' +
-      (current.elapsed < 1 ? "; " + esc(shortMonth(current.month)) + " is month to date" : "") + "</span></div>" +
+      (current.elapsed < 1 ? "; " + esc(shortMonth(current.month)) + " is month to date" : "") +
+      (data.txns.some(function (t) { return t.noTrend; }) ? "; transactions marked “leave out of trends” aren’t in it" : "") + "</span></div>" +
       '<div class="legend-row">' + series.map(function (s) { return '<span class="k"><span class="sw" style="background:' + s.color + '"></span>' + esc(s.name) + "</span>"; }).join("") +
       '<span><span class="tr"></span>Budget</span></div>' +
       '<div class="chart" id="trend-chart">' + columns(items) + "</div>" + (showing && showing.from === "trend" ? showHtml() : "") +
@@ -514,7 +515,8 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
     var amt = t.amount, a = accountOf(t.account);
     return '<div class="tx"><span class="d">' + esc(t.date.slice(5).replace("-", "/")) + "</span>" +
       '<span><span class="desc">' + esc(t.description) + '</span> <span class="acct">· ' + esc(a ? a.name : "") + "</span>" +
-      (t.moved ? ' <span class="moved">counts in ' + esc(shortMonth(t.month)) + "</span>" : "") + "</span>" +
+      (t.moved ? ' <span class="moved">counts in ' + esc(shortMonth(t.month)) + "</span>" : "") +
+      (t.noTrend ? ' <span class="moved">not in trends</span>' : "") + "</span>" +
       '<span class="money amt' + (amt > 0 ? " in" : "") + '">' + (amt > 0 ? "+" : "") + usd.format(amt) + "</span>" +
       (withFile ? '<div class="file">' + picker(t, a && a.owner) +
         '<label><input type="checkbox" data-remember="' + esc(t.id) + '" checked> same merchant from now on</label>' +
@@ -522,6 +524,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
           var m = shift(t.date.slice(0, 7), n);
           return '<option value="' + m + '"' + (m === t.month ? " selected" : "") + ">" + esc(shortMonth(m)) + (n ? "" : " (posted)") + "</option>";
         }).join("") + "</select></label>" +
+        '<label title="Still counts in the month; just not in the three-month trend"><input type="checkbox" data-notrend="' + esc(t.id) + '"' + (t.noTrend ? " checked" : "") + "> leave out of trends</label>" +
         (t.source ? '<span class="src">' + esc(SOURCES[t.source] || t.source) + "</span>" : "") + "</div>" : "") +
       "</div>";
   }
@@ -706,6 +709,10 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
   main.addEventListener("change", function (e) {
     if (e.target.dataset.month) {
       return after(api("PUT", "/transactions/" + e.target.dataset.month, { month: e.target.value }), function () { return "Now counts in " + monthName(e.target.value) + "."; });
+    }
+    if (e.target.dataset.notrend) {
+      var out = e.target.checked;
+      return after(api("PUT", "/transactions/" + e.target.dataset.notrend, { trend: !out }), function () { return out ? "Left out of trends. It still counts in its month." : "Back in trends."; });
     }
     if (e.target.dataset.fund) {
       return after(api("PUT", "/accounts/" + e.target.dataset.fund, { fund: e.target.value }), function () { return "Saved. The next sync files contributions to it accordingly."; });

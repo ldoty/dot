@@ -118,6 +118,26 @@ test('moving a transaction to the month after (or before) it posted', async () =
   assert.equal(table.get('LUKE', `TXN#${id.replace('.', '#')}`).month, undefined);
 });
 
+test('leaving a transaction out of trends: gone from the trend, still in its month, kept through a sync', async () => {
+  const id = await idOf('SQ');
+  const sept = (await call('GET', '/month/2026-09')).body.txns[0].id;
+  assert.deepEqual((await call('PUT', `/transactions/${id}`, { trend: false })).body, { updated: 1 });
+  await call('PUT', `/transactions/${sept}`, { trend: false });
+  let oct = await month();
+  assert.equal(oct.txns.find((x) => x.id === id).noTrend, true);
+  assert.equal(oct.summary.lines.find((l) => l.id === 'L.f2').spent, 6.5, 'it still counts in October');
+  assert.deepEqual([oct.trend[1].spent['L.f2'], oct.trend[2].spent['L.f2']], [undefined, undefined], 'but not in the trend, this month or before');
+  assert.equal(table.get('LUKE', `TXN#${id.replace('.', '#')}`).line, 'L.f2', 'its filing is unchanged');
+  await runSync(t.deps);
+  assert.equal(table.get('LUKE', `TXN#${id.replace('.', '#')}`).noTrend, true);
+  assert.equal((await call('PUT', `/transactions/${id}`, { trend: 'no' })).status, 400);
+  await call('PUT', `/transactions/${id}`, { trend: true });
+  oct = await month();
+  assert.equal(oct.trend[2].spent['L.f2'], 6.5);
+  assert.equal(oct.txns.find((x) => x.id === id).noTrend, undefined);
+  assert.equal(table.get('LUKE', `TXN#${id.replace('.', '#')}`).noTrend, undefined);
+});
+
 test('a moved transaction is in its new month’s CSV, and keeps the move through a sync', async () => {
   const sept = (await call('GET', '/month/2026-09')).body;
   const id = sept.txns[0].id;
