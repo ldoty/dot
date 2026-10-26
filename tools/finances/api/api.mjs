@@ -1,14 +1,13 @@
 // A finances tool's API (one deployment per person, and Shared). Routes (all need this tool's token):
-//   GET  /month/{month}             -> { month, today, budget, summary, trend, txns, accounts, sync, settings }
-//                                    trend: that month and the two before, spent per line, without
-//                                    transactions left out of trends (noTrend)
+//   GET  /month/{month}             -> { month, today, budget, summary, trend, annual, txns, accounts, sync, settings }
+//                                    trend: that month and the two before, spent per line (monthly lines only)
+//                                    annual: the year so far for annual ("/ yr") lines, with its transactions
 //                                    The budget is re-read when the stored copy is over 5 minutes old
-//   PUT  /transactions/{id}         { line?, remember?, month?, trend? } -> { updated }
+//   PUT  /transactions/{id}         { line?, remember?, month? } -> { updated }
 //                                    month: the budget month it counts in, the month before or after
 //                                    the one it posted in (null = where it posted); remember = also file this
 //                                    merchant's other transactions there, now and in future syncs;
-//                                    without it, a rule Claude made for the merchant is dropped;
-//                                    trend: false leaves it out of the 3-month trend (taxes, a one-off), not the month
+//                                    without it, a rule Claude made for the merchant is dropped
 //   PUT  /accounts/{id}             { owner: mine | shared | off } or { fund: household | travel }: a shared (joint) account files
 //                                    to Shared lines only; off leaves it out of the numbers
 //   PUT  /settings                  { tag } -> { budget }   follow another of the person's budget tags, or
@@ -22,7 +21,7 @@
 // The token is re-verified here (signature, issuer, client, expiry, group); API Gateway's
 // authorizer is not trusted on its own.
 import { verifyAccessToken } from './verify-token.mjs';
-import { summarize } from './summary.mjs';
+import { summarize, summarizeYear } from './summary.mjs';
 import { refreshBudget, ymd } from './sync.mjs';
 import { VERSION, WORKING, withContributionLines } from './budget-lines.mjs';
 import { OWNERS, lineFits, ownerOf, txnId, txnKey } from './store.mjs';
@@ -44,7 +43,7 @@ const SHARED_MANIFEST = validateManifest({
   operations: [{
     name: 'month',
     description: 'One month (YYYY-MM; this month is month to date): totals, every Shared budget line with its budget, spending so far and an even pace (summary.lines), '
-      + 'spending per line for the two months before (trend; transactions marked noTrend are left out of it but not out of the month), the joint accounts’ balances, and that month’s transactions with the line each is filed under (null = not filed yet). '
+      + 'spending per line for the two months before (trend), yearly items (annual: “/ yr” lines measured on the calendar year so far, never in the month’s totals or the trend), the joint accounts’ balances, and that month’s transactions with the line each is filed under (null = not filed yet). '
       + 'Amounts are dollars; negative transaction amounts are money out.',
     path: '/month/{month}',
     input: { type: 'object', properties: { month: { type: 'string', pattern: '^\\d{4}-(0[1-9]|1[0-2])$', description: 'YYYY-MM' } }, required: ['month'], additionalProperties: false },
@@ -59,7 +58,8 @@ export const makeManifest = ({ title = 'Luke’s Finances', person = 'Luke' } = 
   operations: [{
     name: 'month',
     description: 'One month (YYYY-MM; this month is month to date): totals (income, spending, saved, transfers), every budget line with its budget, '
-      + `spending so far and where an even pace would be (summary.lines; kind income/spend/save, group ${person} or Shared), spending per line for the two months before (trend; transactions marked noTrend, like taxes, are left out of it but not out of the month), `
+      + `spending so far and where an even pace would be (summary.lines; kind income/spend/save, group ${person} or Shared), spending per line for the two months before (trend), `
+      + 'yearly items (annual: lines marked annual are “/ yr” budget items like taxes, measured on the calendar year so far against their yearly amount, never in the month’s totals or the trend), '
       + 'account balances, and that month’s transactions with the line each is filed under (null = not filed yet). Transfers between their own accounts are never spending. '
       + 'Amounts are dollars; negative transaction amounts are money out.',
     path: '/month/{month}',
@@ -76,7 +76,7 @@ const BUDGET_FRESH_MS = 5 * 60_000;
 
 const txnOut = (t) => ({
   id: txnId(t.sk), date: t.date, month: monthOf(t), moved: !!t.month && t.month !== t.date.slice(0, 7), account: t.account.slice(5), amount: t.amount, merchant: t.merchant || '',
-  description: t.description, memo: t.memo || '', line: t.line || null, source: t.source || null, ...(t.noTrend ? { noTrend: true } : {}),
+  description: t.description, memo: t.memo || '', line: t.line || null, source: t.source || null,
 });
 const accountOut = (a) => ({
   id: a.sk.slice(5), name: a.name, org: a.org, balance: a.balance, available: a.available,
@@ -128,10 +128,14 @@ export function createApi(depsOrFactory) {
         // Three months of trend, plus a month either side for transactions moved into them
         const earlier = [monthBefore(p.month, 2), monthBefore(p.month, 1)];
         const span = [monthBefore(p.month, 3), ...earlier, p.month, monthBefore(p.month, -1)];
+        // The calendar year so far, for annual lines (with December and January either side, for moves)
+        const year = Number(p.month.slice(0, 4));
+        const yearSpan = [`${year - 1}-12-`, `${year}-`, `${year + 1}-01-`];
         const [cached, accounts, sync, settings, ...posted] = await Promise.all([
           store.budget(), store.accounts(), store.sync(), store.settings(),
-          ...span.map((m) => store.txns(`${m}-`)),
+          ...[...span.map((m) => `${m}-`), ...yearSpan].map((prefix) => store.txns(prefix)),
         ]);
+        const yearPosted = posted.splice(span.length).flat();
         const all = posted.flat();
         const inMonth = (m) => all.filter((t) => monthOf(t) === m);
         const txns = inMonth(p.month), before = earlier.map(inMonth);
@@ -152,19 +156,22 @@ export function createApi(depsOrFactory) {
         const today = ymd(deps.now(), deps.timeZone);
         // A person's lines, plus the automatic "To <shared account>" contribution lines
         const lines = deps.mode === 'shared' ? budget?.lines || [] : withContributionLines(budget?.lines || [], accounts, deps.person);
-        const brief = (s) => ({ month: s.month, elapsed: s.elapsed, spent: Object.fromEntries(s.lines.filter((l) => l.count).map((l) => [l.id, l.spent])), unassigned: s.unassigned.out });
+        // The trend is the monthly lines: a once-a-year payment would read as a month over budget
+        const brief = (s) => ({ month: s.month, elapsed: s.elapsed, spent: Object.fromEntries(s.lines.filter((l) => l.count && !l.annual).map((l) => [l.id, l.spent])), unassigned: s.unassigned.out });
         const summary = summarize({ month: p.month, today, lines, txns: counted });
-        // The trend leaves out what was marked to stay out of it (a tax payment shouldn't read as a month over budget)
-        const inTrend = (t) => included.has(t.account) && !t.noTrend;
         const trend = [
-          ...earlier.map((m, i) => brief(summarize({ month: m, today, lines, txns: before[i].filter(inTrend) }))),
-          brief(counted.some((t) => t.noTrend) ? summarize({ month: p.month, today, lines, txns: counted.filter(inTrend) }) : summary),
+          ...earlier.map((m, i) => brief(summarize({ month: m, today, lines, txns: before[i].filter((t) => included.has(t.account)) }))),
+          brief(summary),
         ];
+        const annualIds = new Set(lines.filter((l) => l.annual).map((l) => l.id));
+        const yearTxns = yearPosted.filter((t) => included.has(t.account) && annualIds.has(t.line) && monthOf(t) >= `${year}-01` && monthOf(t) <= p.month);
+        const annual = { ...summarizeYear({ year, through: p.month, today, lines, txns: yearTxns }),
+          txns: yearTxns.map(txnOut).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)) };
         return json(200, {
           month: p.month, today,
           budget: budget && { tag: budget.tag, version: budget.version, sharedTag: budget.sharedTag, sharedVersion: budget.sharedVersion, tags: budget.tags, tagVersions: budget.tagVersions || {}, versions: budget.versions || [], fetchedAt: budget.fetchedAt },
           budgetError,
-          summary, trend,
+          summary, trend, annual,
           txns: counted.map(txnOut).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
           accounts: accounts.map(accountOut),
           sync: sync && { startedAt: sync.startedAt, at: sync.at, ok: sync.ok, running: !!sync.running, message: sync.message, counts: sync.counts, errors: sync.errors || [] },
@@ -183,10 +190,6 @@ export function createApi(depsOrFactory) {
           const own = t.date.slice(0, 7), m = body.month || own;
           if (!MONTH.test(m) || ![monthBefore(own, 1), own, monthBefore(own, -1)].includes(m)) return json(400, { error: 'it can count in the month before or after it posted, no further' });
           if (m === own) delete row.month; else row.month = m;
-        }
-        if ('trend' in body) {
-          if (typeof body.trend !== 'boolean') return json(400, { error: 'bad trend' });
-          if (body.trend) delete row.noTrend; else row.noTrend = true;
         }
         if (!('line' in body)) {
           await store.put(row);

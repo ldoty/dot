@@ -8,7 +8,8 @@
 <link rel="stylesheet" href="family.css">
 <style>
 /* Layout: one column. Balances, then the month (it scopes everything under it): summary tiles,
-   month-to-date by category (click one for its lines), the 3-month trend, then filing and settings.
+   month-to-date by category (click one for its lines), the 3-month trend, this year's yearly ("/ yr")
+   items, then filing and settings.
 
    Chart colors: the house hues, re-stepped and ordered so neighbours stay apart for colorblind
    readers (checked with the dataviz palette validator: lightness, chroma, CVD, contrast). Green
@@ -213,13 +214,15 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
   function categories() {
     var cats = [], by = {};
     data.summary.lines.forEach(function (l) {
-      if (l.kind !== "spend" && l.kind !== "save") return;
+      // Yearly ("/ yr") items are measured on the year, under This year, not against a month
+      if ((l.kind !== "spend" && l.kind !== "save") || l.annual) return;
       var key = l.group + "›" + l.category;
       if (!by[key]) { by[key] = { key: key, group: l.group, name: l.category, lines: [], target: 0, spent: 0, expected: 0 }; cats.push(by[key]); }
       var c = by[key];
       c.lines.push(l); c.target += l.target; c.spent += l.spent; c.expected += l.expected;
     });
-    return cats;
+    // A category of only yearly items is left with its General line: shown only if something's filed there
+    return cats.filter(function (c) { return c.lines.some(function (l) { return !l.general; }) || c.spent !== 0; });
   }
   // Up to five colored pieces in a fixed order, the rest folded into Other
   function pieces(items) {
@@ -317,11 +320,13 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
   function compact(v) { return v >= 10000 ? "$" + Math.round(v / 1000) + "k" : v >= 1000 ? "$" + (v / 1000).toFixed(1).replace(/\.0$/, "") + "k" : "$" + Math.round(v); }
   function stateOf(o) { var left = o.target - o.spent; return !o.target ? "No budget" : left >= 0 ? usd0.format(left) + " left" : usd0.format(-left) + " over"; }
 
-  // A column chart: one column per item ({ key?, name, target, spent, expected, segs }), one scale
+  // A column chart: one column per item ({ key?, name, target, spent, expected, segs }), one scale.
+  // opt: { elapsed } when the pace isn't the month's (This year), { hint } for the readout's first words
   var colItems = [];
-  function columns(items) {
+  function columns(items, opt) {
+    opt = opt || {};
     var sc = niceScale(Math.max.apply(null, items.map(function (o) { return Math.max(o.target, o.spent); })));
-    var showPace = data.summary.elapsed > 0 && data.summary.elapsed < 1;
+    var el = opt.elapsed != null ? opt.elapsed : data.summary.elapsed, showPace = el > 0 && el < 1;
     var grid = "", axis = "";
     for (var v = 0; v <= sc.top + 1e-9; v += sc.step) {
       grid += '<div class="gl' + (v === 0 ? " base" : "") + '" style="bottom:' + pct(v, sc.top) + '"></div>';
@@ -339,11 +344,11 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
         '<span class="cstack" style="height:' + pct(total, sc.top) + '">' + o.segs.map(function (x, j) {
           return '<span class="seg" style="flex:' + x.value + ' 0 0;background:' + x.color + '"' + (x.show ? ' data-show="' + i + ":" + j + '"' : "") + ' data-tv="' + esc(x.tv || usd.format(x.value)) + '" data-tl="' + esc(x.tl || x.name + " · " + o.name) + '"></span>';
         }).join("") + "</span>" +
-        (o.target ? '<span class="ctick" style="bottom:' + pct(o.target, sc.top) + '" data-tv="' + esc(usd0.format(o.target)) + '" data-tl="Budget for the month"></span>' : "") +
+        (o.target ? '<span class="ctick" style="bottom:' + pct(o.target, sc.top) + '" data-tv="' + esc(usd0.format(o.target)) + '" data-tl="' + (opt.year ? "Budget for the year" : "Budget for the month") + '"></span>' : "") +
         (showPace && o.target ? '<span class="ctick pace" style="bottom:' + pct(o.expected, sc.top) + '" data-tv="' + esc(usd0.format(o.expected)) + '" data-tl="An even pace by today"></span>' : "") +
         '<span class="cval' + (over ? " over" : "") + '" style="bottom:calc(' + pct(Math.max(o.spent, o.target), sc.top) + ' + 4px)">' + esc(compact(Math.max(0, o.spent))) + "</span>" +
         '</div></div><div class="clabel">' + esc(o.name) + "<small>" + (o.target ? "of " + esc(compact(o.target)) : "no budget") + "</small></div></div>";
-    }).join("") + '</div></div></div></div><div class="readout" aria-live="polite">Point at or tab to a column to see what it’s made of' + (items.some(function (o) { return o.month; }) ? "; click a color for that category’s transactions that month, or above it for the whole month." : items.some(function (o) { return o.key; }) ? "; click a color for that line’s transactions, or above it to open the category." : items.some(function (o) { return o.show; }) ? "; click a color for that merchant, or above it for the whole line." : items.some(function (o) { return o.key; }) ? "; click it to open the category." : ".") + "</div>";
+    }).join("") + '</div></div></div></div><div class="readout" aria-live="polite">Point at or tab to a column to see what it’s made of' + (opt.hint ? opt.hint : items.some(function (o) { return o.month; }) ? "; click a color for that category’s transactions that month, or above it for the whole month." : items.some(function (o) { return o.key; }) ? "; click a color for that line’s transactions, or above it to open the category." : items.some(function (o) { return o.show; }) ? "; click a color for that merchant, or above it for the whole line." : items.some(function (o) { return o.key; }) ? "; click it to open the category." : ".") + "</div>";
   }
   function readout(col) {
     var o = colItems[Number(col.dataset.col)], box = col.closest(".chart").querySelector(".readout");
@@ -421,13 +426,34 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
     });
     return '<section aria-labelledby="h-trend"><div class="sec-head"><h2 id="h-trend">Last three months</h2><span class="status">' + (shared() ? "The household’s" : "My budget’s") + ' spending by category, against its monthly total' +
       (current.elapsed < 1 ? "; " + esc(shortMonth(current.month)) + " is month to date" : "") +
-      (data.txns.some(function (t) { return t.noTrend; }) ? "; transactions marked “leave out of trends” aren’t in it" : "") + "</span></div>" +
+      (data.annual && data.annual.lines.length ? "; yearly items are under This year" : "") + "</span></div>" +
       '<div class="legend-row">' + series.map(function (s) { return '<span class="k"><span class="sw" style="background:' + s.color + '"></span>' + esc(s.name) + "</span>"; }).join("") +
       '<span><span class="tr"></span>Budget</span></div>' +
       '<div class="chart" id="trend-chart">' + columns(items) + "</div>" + (showing && showing.from === "trend" ? showHtml() : "") +
       '<details class="table-view"><summary>Table view</summary><table class="data"><thead><tr><th>Category</th>' + months.map(function (m) { return '<th class="n">' + esc(shortMonth(m)) + "</th>"; }).join("") + '<th class="n">Budget</th></tr></thead><tbody>' +
       per.map(function (x) { return "<tr><td>" + esc(x.c.name) + "</td>" + x.values.map(function (v) { return '<td class="n">' + usd0.format(v) + "</td>"; }).join("") + '<td class="n">' + usd0.format(x.c.target) + "</td></tr>"; }).join("") +
       "</tbody></table></details></section>";
+  }
+
+  // This year: the yearly ("/ yr") items, each against its yearly budget from January to the month
+  // shown, so a tax bill or an insurance renewal is measured on the year, not as a month over budget
+  function annualHtml() {
+    var a = data.annual, lines = a ? a.lines.filter(function (l) { return l.kind !== "income"; }) : [];
+    if (!lines.length) return "";
+    var colors = {}, cats = [];
+    lines.forEach(function (l) { if (!colors[l.category]) { colors[l.category] = cats.length < SLOTS.length ? SLOTS[cats.length] : OTHER; cats.push(l.category); } });
+    var items = lines.map(function (l) {
+      var f = { title: l.category + " › " + l.name + " · " + a.year, lines: [l.id], annual: true, from: "annual" };
+      return { name: l.name, target: l.target, spent: l.spent, expected: l.expected, show: f,
+        segs: l.spent > 0 ? [{ name: l.category, value: l.spent, color: colors[l.category], show: f }] : [] };
+    });
+    var t = { target: a.totals.spend.target + a.totals.save.target, spent: a.totals.spend.spent + a.totals.save.spent }, through = a.through === data.today.slice(0, 7) ? "so far" : "through " + monthName(a.through);
+    return '<section aria-labelledby="h-year"><div class="sec-head"><h2 id="h-year">This year</h2><span class="status">Yearly items in ' + a.year + " " + esc(through) +
+      ", against their budget for the year" + (t.target || t.spent ? ": " + usd0.format(t.spent) + " of " + usd0.format(t.target) : "") + "</span></div>" +
+      '<div class="legend-row">' + cats.map(function (c) { return '<span class="k"><span class="sw" style="background:' + colors[c] + '"></span>' + esc(c) + "</span>"; }).join("") +
+      '<span><span class="tr"></span>Budget for the year</span>' + (a.elapsed > 0 && a.elapsed < 1 ? '<span><span class="tk pace"></span>Even pace through the year</span>' : "") + "</div>" +
+      '<div class="chart" id="annual-chart">' + columns(items, { elapsed: a.elapsed, year: true, hint: "; click one for its transactions this year." }) + "</div>" +
+      (showing && showing.from === "annual" ? showHtml() : "") + "</section>";
   }
 
   // --- Filing picker: search, then pick a category (its General line) or one of its lines -------
@@ -457,7 +483,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
       var g = by[c], all = has(c), kids = all ? g.lines : g.lines.filter(function (l) { return has(l.name); });
       if (!all && !kids.length) return;
       out.push({ id: g.general ? g.general.id : null, label: c, header: true });
-      kids.forEach(function (l) { out.push({ id: l.id, label: l.name, child: true, category: c }); });
+      kids.forEach(function (l) { out.push({ id: l.id, label: l.name, child: true, category: c, hint: l.annual ? "yearly" : "" }); });
     });
     if (transfer && (has("Transfers") || has(transfer.name))) out.push({ id: transfer.id, label: "Transfers", hint: "between my accounts, card payments" });
     return out;
@@ -515,8 +541,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
     var amt = t.amount, a = accountOf(t.account);
     return '<div class="tx"><span class="d">' + esc(t.date.slice(5).replace("-", "/")) + "</span>" +
       '<span><span class="desc">' + esc(t.description) + '</span> <span class="acct">· ' + esc(a ? a.name : "") + "</span>" +
-      (t.moved ? ' <span class="moved">counts in ' + esc(shortMonth(t.month)) + "</span>" : "") +
-      (t.noTrend ? ' <span class="moved">not in trends</span>' : "") + "</span>" +
+      (t.moved ? ' <span class="moved">counts in ' + esc(shortMonth(t.month)) + "</span>" : "") + "</span>" +
       '<span class="money amt' + (amt > 0 ? " in" : "") + '">' + (amt > 0 ? "+" : "") + usd.format(amt) + "</span>" +
       (withFile ? '<div class="file">' + picker(t, a && a.owner) +
         '<label><input type="checkbox" data-remember="' + esc(t.id) + '" checked> same merchant from now on</label>' +
@@ -524,7 +549,6 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
           var m = shift(t.date.slice(0, 7), n);
           return '<option value="' + m + '"' + (m === t.month ? " selected" : "") + ">" + esc(shortMonth(m)) + (n ? "" : " (posted)") + "</option>";
         }).join("") + "</select></label>" +
-        '<label title="Still counts in the month; just not in the three-month trend"><input type="checkbox" data-notrend="' + esc(t.id) + '"' + (t.noTrend ? " checked" : "") + "> leave out of trends</label>" +
         (t.source ? '<span class="src">' + esc(SOURCES[t.source] || t.source) + "</span>" : "") + "</div>" : "") +
       "</div>";
   }
@@ -556,8 +580,8 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
         : stat("Income", s.totals.income) + stat("Spending", s.totals.spend, usd0.format(s.totals.spend.expected) + " at pace")) +
         (shared() ? "" : stat("Saved", s.totals.save)) + "</div>" +
         (s.totals.transfers && s.totals.transfers.count ? '<p class="status" id="transfers">Transfers: ' + usd0.format(s.totals.transfers.out) + " moved out, " + usd0.format(s.totals.transfers.in) + " in, between your accounts (" + s.totals.transfers.count + "). Not counted in any budget.</p>" : "") : "") + "</section>" +
-      '<section aria-labelledby="h-cat"><div class="sec-head"><h2 id="h-cat">Month to date by category</h2></div>' + categoryChart() + (showing && showing.from === "trend" ? "" : showHtml()) + "</section>" +
-      (b && data.trend ? trendHtml() : "") +
+      '<section aria-labelledby="h-cat"><div class="sec-head"><h2 id="h-cat">Month to date by category</h2></div>' + categoryChart() + (showing && (showing.from === "trend" || showing.from === "annual") ? "" : showHtml()) + "</section>" +
+      (b && data.trend ? trendHtml() : "") + (b ? annualHtml() : "") +
       (toFile.length ? '<div class="card" id="to-file"><h3>To file (' + toFile.length + ")</h3>" + toFile.map(function (t) { return txRow(t, !!b); }).join("") + "</div>" : "") +
       '<details class="card"><summary>All transactions (' + data.txns.length + ")</summary>" + (data.txns.length ? data.txns.map(function (t) { return txRow(t, !!b); }).join("") : '<p class="status">None this month.</p>') + "</details>" +
       '<details class="card"><summary>Accounts &amp; budget</summary><div class="settings">' +
@@ -648,7 +672,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
   // A chart piece's transactions: a line, a few lines, a merchant within a line, or a whole month
   function showHtml() {
     if (!showing) return "";
-    var f = showing, txns = data.txns.filter(function (t) {
+    var f = showing, txns = (f.annual ? data.annual.txns : data.txns).filter(function (t) {
       if (f.lines && f.lines.indexOf(t.line) < 0) return false;
       return !f.merchants || f.merchants.indexOf(t.merchant || t.description) >= 0;
     });
@@ -659,7 +683,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
   }
   function show(f) {
     // The chart you clicked stays put on screen, even as a new month changes what's above it
-    var id = f.from === "trend" ? "trend-chart" : "h-cat", before = document.getElementById(id);
+    var id = f.from === "trend" ? "trend-chart" : f.from === "annual" ? "annual-chart" : "h-cat", before = document.getElementById(id);
     var top = before ? before.getBoundingClientRect().top : null;
     var then = f.month && f.month !== month ? load(f.month) : Promise.resolve();
     return then.then(function () {
@@ -709,10 +733,6 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
   main.addEventListener("change", function (e) {
     if (e.target.dataset.month) {
       return after(api("PUT", "/transactions/" + e.target.dataset.month, { month: e.target.value }), function () { return "Now counts in " + monthName(e.target.value) + "."; });
-    }
-    if (e.target.dataset.notrend) {
-      var out = e.target.checked;
-      return after(api("PUT", "/transactions/" + e.target.dataset.notrend, { trend: !out }), function () { return out ? "Left out of trends. It still counts in its month." : "Back in trends."; });
     }
     if (e.target.dataset.fund) {
       return after(api("PUT", "/accounts/" + e.target.dataset.fund, { fund: e.target.value }), function () { return "Saved. The next sync files contributions to it accordingly."; });

@@ -296,23 +296,34 @@ test('moving a transaction to the next month from the page', async () => {
   p.close();
 });
 
-test('leave out of trends: the trend drops it, the month still counts it', async () => {
+test('this year: yearly items in their own chart, not the month’s or the trend', async () => {
+  const id = (await call('GET', '/month/2026-10')).body.txns.find((x) => x.description.startsWith('MYSTERY')).id;
+  await call('PUT', `/transactions/${id}`, { line: 'L.v1' });
   const p = await open();
-  const box = [...p.d.querySelectorAll('[data-notrend]')].find((x) => x.closest('.tx').textContent.includes('BLUE BOTTLE'));
-  const id = box.dataset.notrend;
-  assert.equal(box.checked, false);
-  await p.change(`[data-notrend="${id}"]`, true);
-  assert.ok(p.requests.includes(`PUT /transactions/${id}`));
-  assert.match(p.el('#status').textContent, /Left out of trends/);
-  const cols = [...p.el('#trend-chart').querySelectorAll('.col')];
-  assert.equal(cols[2].querySelector('.cval').textContent, '$0', 'October’s coffee is out of the trend');
-  assert.equal(p.el('.col[data-cat="Luke›Food"] .cval').textContent, '$7', 'but still in October');
-  assert.match(p.el('#h-trend').closest('section').textContent, /leave out of trends/);
-  assert.equal(p.el(`[data-notrend="${id}"]`).checked, true);
-  assert.match(p.el(`[data-notrend="${id}"]`).closest('.tx').textContent, /not in trends/);
-  await p.change(`[data-notrend="${id}"]`, false);
-  assert.match(p.el('#status').textContent, /Back in trends/);
-  assert.equal(p.el('#trend-chart').querySelectorAll('.col')[2].querySelector('.cval').textContent, '$7');
+  assert.equal(p.d.querySelector('.col[data-cat="Luke›Savings"]'), null, 'Savings (only the yearly Roth IRA) is out of the month’s chart');
+  assert.doesNotMatch(p.el('#trend-chart').textContent, /Savings/);
+  const sec = p.el('#h-year').closest('section');
+  assert.match(sec.textContent, /Yearly items in 2026 so far, against their budget for the year: \$75 of \$6,000/);
+  const col = p.el('#annual-chart .col');
+  assert.equal(col.querySelector('.clabel').firstChild.textContent, 'Roth IRA');
+  assert.match(col.querySelector('.clabel small').textContent, /of \$6K/i);
+  assert.equal(col.querySelector('.cval').textContent, '$75');
+  assert.equal(col.querySelector('.ctick').dataset.tl, 'Budget for the year');
+  assert.ok(col.querySelector('.ctick.pace'), 'an even pace through the year');
+  await p.click('#annual-chart [data-showcol]');
+  assert.match(p.el('#show-txns h3').textContent, /Savings › Roth IRA · 2026 \(1/);
+  assert.match(p.el('#show-txns').textContent, /MYSTERY MERCHANT/);
+  assert.ok(p.el('#show-txns').closest('section') === p.el('#h-year').closest('section'), 'the list opens under the chart');
+  p.close();
+});
+
+test('the filing picker says which lines are yearly', async () => {
+  const p = await open();
+  const btn = p.el('#to-file [data-pick]');
+  await p.click(`#to-file [data-pick="${btn.dataset.pick}"]`);
+  const roth = [...p.d.querySelectorAll('.pick-list li')].find((li) => li.textContent.startsWith('Roth IRA'));
+  assert.match(roth.textContent, /yearly/);
+  assert.doesNotMatch([...p.d.querySelectorAll('.pick-list li')].find((li) => li.textContent.startsWith('Groceries')).textContent, /yearly/);
   p.close();
 });
 

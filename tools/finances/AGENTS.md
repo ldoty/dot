@@ -29,4 +29,8 @@ later `schedule`. Defaults: `mode = "personal"`, `delegates = ["dot", "shared_fi
   “Refresh budget” on the page calls `PUT /settings` with the current tag to re-read it now.
 - `GET /month/{month}` is the page's (and Dot's) one read: summary, 3-month trend, transactions,
   accounts, sync status. A transaction can count in the month before or after it posted (`month`).
+- **Yearly lines**: a Budget item with `freq: 'yr'` (not a calculated one) becomes a line with `annual: true`
+  and `yearly` (`budget-lines.mjs`). It stays in `summary.lines` (to file to) but out of the month's totals,
+  the trend and the page's month chart; `GET /month` adds `annual` (`summarizeYear`: the calendar year
+  through the month shown, with that year's transactions on those lines).
 - **Never change the description of the `simplefin` SSM parameter** (also in the root guide).

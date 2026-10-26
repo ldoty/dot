@@ -38,6 +38,10 @@ connection, filed under the lines of their budget, with how each line is trackin
   or Transfers) or Off (not counted). Shared lines count the household’s amount, whoever paid.
 - **Months**: a transaction can count in the month before or after it posted (“Counts in”), e.g.
   September 26th’s child support against October. Totals, trend and CSV use that month.
+- **Yearly items**: a Budget item set to “/ yr” (taxes, insurance, a renewal) is a yearly line. You
+  file to it as usual, but it's left out of the month's totals, category chart and trend, so one big
+  payment doesn't read as a month over budget. **This year** shows each against its yearly amount, January
+  to the month shown, with an even pace; click one for its transactions.
 - **Live budget**: the page re-reads the budget when its copy is over 5 minutes old. Follow
   “Working copy (live)” to see Budget edits without saving a version or moving a tag.
 - **CSV**: “Download CSV” on the page, a month or everything.

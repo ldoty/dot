@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveLines, resolveSharedLines } from '../api/budget-lines.mjs';
-import { elapsedShare, summarize } from '../api/summary.mjs';
+import { elapsedShare, summarize, summarizeYear, yearShare } from '../api/summary.mjs';
 import { merchantKey, classify } from '../api/categorize.mjs';
 import { claim, fetchAccounts, secretKind, PLACEHOLDER } from '../api/simplefin.mjs';
 import { budgetAll, fakeNet, fakeClaude, SETUP_TOKEN, ACCESS_URL } from './helpers/fixtures.mjs';
@@ -110,6 +110,34 @@ test('month pace and totals', () => {
   assert.equal(s.totals.income.spent, 6000);
   assert.equal(s.totals.spend.spent, 122.37);
   assert.equal(s.totals.spend.target, 600 + 60 + 1399.1);
+});
+
+test('a “/ yr” item is a yearly line: its yearly amount, and out of the month’s totals', () => {
+  const r = resolveLines(budgetAll(), { tag: 'default' });
+  assert.deepEqual([line(r, 'L.v1').annual, line(r, 'L.v1').yearly, line(r, 'L.v1').target], [true, 6000, 500]);
+  assert.equal(line(r, 'L.f1').annual, undefined, 'a monthly item');
+  assert.equal(line(r, 'L.h1').annual, undefined, 'a calculated line is never yearly');
+  const sh = resolveSharedLines(budgetAll(), { tag: 'default' });
+  assert.deepEqual([line(sh, 'S.s2').annual, line(sh, 'S.s2').yearly, line(sh, 'S.s2').target], [true, 1200, 100]);
+  const s = summarize({ month: '2026-10', today: '2026-10-15', lines: r.lines, txns: [{ line: 'L.v1', amount: -6000 }, { line: 'L.f1', amount: -100 }] });
+  assert.deepEqual(s.totals.save, { target: 0, spent: 0, expected: 0 }, 'the Roth IRA is measured on the year');
+  assert.equal(s.lines.find((l) => l.id === 'L.v1').spent, 6000, 'but still in lines, to file to and drill into');
+  assert.equal(s.totals.spend.spent, 100);
+});
+
+test('the year so far: each yearly line against its yearly amount, at an even pace through the year', () => {
+  assert.equal(yearShare(2026, '2026-10', '2026-10-04'), 277 / 365, 'to today in the month shown');
+  assert.equal(yearShare(2026, '2026-03', '2026-10-04'), 90 / 365, 'to the end of an earlier month');
+  assert.equal(yearShare(2025, '2025-12', '2026-10-04'), 1);
+  assert.equal(yearShare(2028, '2028-12', '2029-01-01'), 1, 'a leap year');
+  assert.equal(yearShare(2028, '2028-02', '2029-01-01'), 60 / 366);
+  const lines = resolveLines(budgetAll(), { tag: 'default' }).lines;
+  const y = summarizeYear({ year: 2026, through: '2026-10', today: '2026-10-04', lines, txns: [
+    { line: 'L.v1', amount: -2000 }, { line: 'L.v1', amount: -1000 }, { line: 'L.f1', amount: -50 },
+  ] });
+  assert.deepEqual(y.lines.map((l) => [l.id, l.target, l.spent, l.count, l.expected]), [['L.v1', 6000, 3000, 2, 4553.42]], 'only yearly lines');
+  assert.deepEqual(y.totals.save, { target: 6000, spent: 3000, expected: 4553.42 });
+  assert.equal(y.elapsed, 0.759);
 });
 
 test('merchant keys ignore store numbers and places', () => {

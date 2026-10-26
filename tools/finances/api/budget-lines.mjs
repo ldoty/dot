@@ -10,6 +10,9 @@
 // Each line: { id, group: 'Luke' | 'Shared' | 'Other', category, name, kind, target }
 //   kind:   'income' | 'spend' | 'save' | 'skip' (Transfers: money moving between your own
 //           accounts, card payments; never counted against any budget line or total)
+//   annual: true (with yearly: the year's amount) for a "/ yr" item: paid once or twice a year (taxes,
+//           insurance), so it's measured against the calendar year (summary.mjs summarizeYear), not
+//           in the month's numbers or the trend
 //   target: the person's monthly amount. A personal tool has only the person's own lines (and
 //           Transfers); the Shared lines are Shared Finances' alone (resolveSharedLines), at the
 //           household's amounts.
@@ -124,6 +127,8 @@ function sharedMath(st) {
 }
 
 const find = (list, pred) => (list || []).find(pred) || null;
+/** A "/ yr" item's line fields: annual, and the year's amount (12 × its monthly share) */
+const annualOf = (it, monthly) => (it.freq === 'yr' && !it.calc ? { annual: true, yearly: cents(monthly * 12) } : {});
 
 // The household's lines (Shared Finances): the Shared budget alone, whole amounts, by a Shared tag
 // (or '@working' for its working copy). Money coming into the shared accounts (contributions,
@@ -148,7 +153,7 @@ export function resolveSharedLines(all, { tag = 'default' } = {}) {
   ];
   if (shared.mort > 0) lines.push({ id: 'S.mortgage', group: 'Shared', category: 'Home', name: 'Mortgage', kind: 'spend', target: cents(shared.mort) });
   for (const { c, it, whole } of shared.items) {
-    lines.push({ id: `S.${it.id}`, group: 'Shared', category: c.name || 'Shared', name: it.name || 'Item', kind: 'spend', target: cents(whole) });
+    lines.push({ id: `S.${it.id}`, group: 'Shared', category: c.name || 'Shared', name: it.name || 'Item', kind: 'spend', target: cents(whole), ...annualOf(it, whole) });
   }
   for (const c of sv.state?.categories || []) {
     if (c.id) lines.push({ id: `SC.${c.id}`, group: 'Shared', category: c.name || 'Shared', name: 'General', kind: 'spend', target: 0, general: true });
@@ -196,15 +201,17 @@ export function resolveLines(all, { person = 'Luke', tag = 'default' } = {}) {
 
   const lines = [];
   for (const it of st.income || []) {
-    lines.push({ id: `L.${it.id}`, group: person, category: 'Income', name: it.name || 'Income', kind: 'income', target: cents(personalMonthly(it)) });
+    const m = personalMonthly(it);
+    lines.push({ id: `L.${it.id}`, group: person, category: 'Income', name: it.name || 'Income', kind: 'income', target: cents(m), ...annualOf(it, m) });
   }
   const general = (prefix, group, c, kind) => (c.id ? [{ id: `${prefix}.${c.id}`, group, category: c.name || 'Uncategorized', name: 'General', kind, target: 0, general: true }] : []);
   for (const c of st.categories || []) {
     const kind = c.kind === 'save' ? 'save' : 'spend';
     for (const it of c.items || []) {
+      const m = personalMonthly(it);
       lines.push({
         id: `L.${it.id}`, group: person, category: c.name || 'Uncategorized', name: it.name || 'Item',
-        kind, target: cents(personalMonthly(it)),
+        kind, target: cents(m), ...annualOf(it, m),
       });
     }
     lines.push(...general('LC', person, c, kind));
