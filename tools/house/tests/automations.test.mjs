@@ -273,12 +273,14 @@ test('a run report becomes its last run and an audit row per action, as its owne
   grant('g1', `sub:${KID}`, 'area:kitchen', 'control');
   const id = (await call('POST', '/automations', MORNING, kid())).body.id;
   const ws = createRelayWs({ table: 'family-house', relayKey: async () => 'k' });
-  const ran = { type: 'ran', id, key: '2026-10-19@360', at: '2026-10-19T10:00:02Z', results: [{ entity_id: 'light.kitchen_main', action: 'turn_on', ok: true }, { entity_id: 'light.kitchen_island_pendants', action: 'turn_on', ok: false, error: 'refused: not exposed' }] };
+  // Dated now: the log only reads the last week, so a fixed date would fall out of it
+  const at = new Date().toISOString();
+  const ran = { type: 'ran', id, key: `${today()}@360`, at, results: [{ entity_id: 'light.kitchen_main', action: 'turn_on', ok: true }, { entity_id: 'light.kitchen_island_pendants', action: 'turn_on', ok: false, error: 'refused: not exposed' }] };
   assert.equal((await ws({ requestContext: { routeKey: 'ran', connectionId: 'old' }, body: JSON.stringify(ran) })).statusCode, 403, 'only the current connection');
   assert.equal((await ws({ requestContext: { routeKey: 'ran', connectionId: 'c1' }, body: JSON.stringify({ ...ran, key: 'x' }) })).statusCode, 400);
   assert.equal((await ws({ requestContext: { routeKey: 'ran', connectionId: 'c1' }, body: JSON.stringify(ran) })).statusCode, 200);
   const [a] = (await call('GET', '/automations', undefined, kid())).body;
-  assert.deepEqual([a.last_run.at, a.last_run.ok], ['2026-10-19T10:00:02.000Z', false]);
+  assert.deepEqual([a.last_run.at, a.last_run.ok], [at, false]);
   const rows = audit().filter((r) => r.via === 'automation');
   assert.deepEqual(rows.map((r) => [r.who, r.automation, r.name, r.action, r.data, r.outcome, r.error]), [
     [KID, id, 'kitchen main', 'turn_on', { brightness_pct: 80 }, 'done', null],
