@@ -1,6 +1,6 @@
-# Single table: pk = P#<username> (each person's own), sk = SETTINGS | PLAN | EX#<id> | WO#<id> | S#<id> | BW#<date>.
+# Single table: pk = P#<username> (each person's own), sk = SETTINGS | PLAN | EX#<id> | WO#<id> | S#<id> | BW#<date> | J#<date>.
 resource "aws_dynamodb_table" "main" {
-  name                        = "family-gym"
+  name                        = "family-health"
   billing_mode                = "PAY_PER_REQUEST"
   hash_key                    = "pk"
   range_key                   = "sk"

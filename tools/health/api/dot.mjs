@@ -1,4 +1,4 @@
-// Gym for Dot: the manifest (platform/api/dot-manifest.mjs) and the shapes Dot reads.
+// Health for Dot: the manifest (platform/api/dot-manifest.mjs) and the shapes Dot reads.
 // Dot calls these with a token for the person asking, so it only ever sees and logs their own
 // workouts, exactly as their page does. It can add (log a session, a body weight) but never change
 // or delete what's there: every other write refuses a via-Dot token (api.mjs, writeRoutes).
@@ -9,13 +9,13 @@ const closed = (properties, required = []) => ({ type: 'object', properties, req
 const DATE_IN = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'YYYY-MM-DD' };
 
 export const MANIFEST = validateManifest({
-  name: 'gym',
-  title: 'Gym',
-  description: 'This person’s own workout log: saved workouts, their plan (which workout is next, which days), sessions logged set by set, body weight, and how sore spots (e.g. shoulders, lower back) felt after each session, 0–10.',
+  name: 'health',
+  title: 'Health',
+  description: 'This person’s own health log: saved workouts, their plan (which workout is next, which days), sessions logged set by set (holds are counted in breaths, not seconds), body weight, how sore spots (e.g. shoulders, lower back) felt after each session, 0–10, and a daily journal of how they felt physically.',
   operations: [
     {
       name: 'summary',
-      description: 'Where they are: this week’s sessions against their weekly goal, the next workout and day in their plan, any session still open, their last few sessions, latest body weight, and recent soreness ratings. Start here.',
+      description: 'Where they are: this week’s sessions against their weekly goal, the next workout and day in their plan, any session still open, their last few sessions, latest body weight, recent soreness ratings, and their last few journal days. Start here.',
       path: '/dot/summary',
       input: closed({}),
     },
@@ -38,6 +38,12 @@ export const MANIFEST = validateManifest({
       input: closed({}),
     },
     {
+      name: 'journal',
+      description: 'Their daily journal: how they felt physically each day, in their own words, newest first. Optionally between two dates (inclusive); up to 60 days.',
+      path: '/dot/journal',
+      input: closed({ from: DATE_IN, to: DATE_IN, limit: { type: 'integer', minimum: 1, maximum: 60 } }),
+    },
+    {
       name: 'log',
       method: 'POST',
       description: 'Log a finished session they tell you about (“did session A, deadlift 135 for 3×8, shoulders a 2”). Adds a new session; never changes one. '
@@ -55,7 +61,7 @@ export const MANIFEST = validateManifest({
             note: { type: 'string', maxLength: 500 },
             sets: {
               type: 'array', maxItems: 20,
-              items: closed({ weight: { type: 'number' }, reps: { type: 'integer' }, seconds: { type: 'number' }, meters: { type: 'number' } }),
+              items: closed({ weight: { type: 'number' }, reps: { type: 'integer' }, seconds: { type: 'number' }, meters: { type: 'number' }, breaths: { type: 'integer', description: 'For a hold: how many breaths they held it' } }),
             },
           }, ['name']),
         },
@@ -83,6 +89,7 @@ export function fmtSet(s, measure) {
   const w = s.w ?? null;
   if (measure === 'time') return `${s.t ?? '–'} s${w !== null ? ` @ ${w}` : ''}`;
   if (measure === 'distance') return `${s.d ?? '–'} m${w !== null ? ` @ ${w}` : ''}`;
+  if (measure === 'breaths') return `${s.b ?? '–'} breaths${w !== null ? ` @ ${w}` : ''}`;
   return `${w !== null ? `${w} × ` : ''}${s.r ?? '–'}`;
 }
 const fmtSets = (e) => done(e).map((s) => fmtSet(s, e.measure)).join(', ');
@@ -131,12 +138,20 @@ export function summary(all, today) {
     last_sessions: fin.slice(-5).reverse().map((s) => ({ date: s.date, workout: s.name, sets_done: s.entries.reduce((n, e) => n + done(e).length, 0), discomfort: s.discomfort, note: s.note || undefined })),
     body_weight: weight ? { date: weight.date, weight: weight.weight } : null,
     rated_areas: all.settings.areas,
+    journal: journal(all, { limit: 3 }).map((j) => ({ ...j, text: j.text.length > 300 ? `${j.text.slice(0, 300)}…` : j.text })),
   };
 }
 
 export function sessions(all, { from, to, limit }) {
   const n = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 30);
   return all.sessions.filter((s) => (!from || s.date >= from) && (!to || s.date <= to)).slice(-n).reverse().map(sessionOut);
+}
+
+/** Their journal days with something written, newest first */
+export function journal(all, { from, to, limit }) {
+  const n = Math.min(Math.max(parseInt(limit, 10) || 14, 1), 60);
+  return all.journal.filter((j) => j.text && (!from || j.date >= from) && (!to || j.date <= to)).slice(-n).reverse()
+    .map((j) => ({ date: `${DAYS[dayNum(j.date)]} ${j.date}`, text: j.text }));
 }
 
 /** The exercise they mean: exact name first, else the only one containing what they said */
@@ -177,8 +192,8 @@ export function logToSession(b, all, today, now) {
   const named = [];
   const entries = (Array.isArray(b.exercises) ? b.exercises : []).map((e) => {
     const { match } = findExercise(all.exercises, e?.name);
-    const sets = (Array.isArray(e?.sets) ? e.sets : []).map((s) => ({ w: s?.weight, r: s?.reps, t: s?.seconds, d: s?.meters, done: true }));
-    const measure = match?.measure ?? (sets.some((s) => s.t != null) ? 'time' : sets.some((s) => s.d != null) ? 'distance' : 'reps');
+    const sets = (Array.isArray(e?.sets) ? e.sets : []).map((s) => ({ w: s?.weight, r: s?.reps, t: s?.seconds, d: s?.meters, b: s?.breaths, done: true }));
+    const measure = match?.measure ?? (sets.some((s) => s.b != null) ? 'breaths' : sets.some((s) => s.t != null) ? 'time' : sets.some((s) => s.d != null) ? 'distance' : 'reps');
     named.push({ said: e?.name, logged_as: match?.name ?? e?.name, matched: !!match });
     return { exerciseId: match?.id ?? null, name: match?.name ?? e?.name, measure, perSide: !!match?.perSide, note: e?.note, sets };
   });

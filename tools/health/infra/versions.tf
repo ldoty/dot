@@ -6,7 +6,7 @@ terraform {
   }
   backend "s3" {
     bucket       = "family-tfstate-921782276410"
-    key          = "tools/gym/terraform.tfstate"
+    key          = "tools/health/terraform.tfstate"
     region       = "us-east-1"
     profile      = "ldoty"
     use_lockfile = true
@@ -16,5 +16,5 @@ terraform {
 provider "aws" {
   region  = "us-east-1"
   profile = "ldoty"
-  default_tags { tags = { project = "family", root = "gym" } }
+  default_tags { tags = { project = "family", root = "health" } }
 }

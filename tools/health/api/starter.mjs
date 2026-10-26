@@ -2,7 +2,8 @@
 // two full-body sessions built to be kind to shoulders and the lower back, a 10-minute
 // mobility routine, a Mon/Wed/Fri plan alternating A and B, and those two areas to rate.
 // Exercises are named by key here; the API gives each its own id when it loads them.
-//   measure: 'reps' (weight × reps), 'time' (seconds), 'distance' (meters); weight is optional for all
+//   measure: 'reps' (weight × reps), 'time' (seconds), 'distance' (meters), 'breaths' (a hold, counted in breaths);
+//   weight is optional for all
 export const EXERCISES = {
   trapbar: { name: 'Trap bar deadlift', measure: 'reps', note: 'High handles at first. Push the floor away; hips and shoulders rise together.' },
   landmine: { name: 'Half-kneeling landmine press', measure: 'reps', perSide: true, note: 'Ribs down, squeeze the down-knee glute. Press up and forward, not overhead.' },
@@ -18,15 +19,15 @@ export const EXERCISES = {
   pushup: { name: 'Push-up', measure: 'reps', note: 'Hands raised on a bench if needed. Body in one line.' },
   carow: { name: 'Single-arm cable row', measure: 'reps', perSide: true, note: 'Let the shoulder blade move; don’t twist.' },
   extrot: { name: 'Cable external rotation', measure: 'reps', perSide: true, note: 'Elbow pinned to your side; light weight, slow.' },
-  sideplank: { name: 'Side plank', measure: 'time', perSide: true, note: 'Hips high; a straight line head to feet.' },
+  sideplank: { name: 'Side plank', measure: 'breaths', perSide: true, note: 'Hips high; a straight line head to feet.' },
   stirpot: { name: 'Stir-the-pot', measure: 'reps', note: 'Forearms on a ball, small circles each way; hips still.' },
   openbook: { name: 'Open books', measure: 'reps', perSide: true, note: 'Upper-back rotation, so the low back doesn’t have to.' },
-  couch: { name: 'Couch stretch', measure: 'time', perSide: true, note: 'Hip flexors. Squeeze the glute; ribs down.' },
+  couch: { name: 'Couch stretch', measure: 'breaths', perSide: true, note: 'Hip flexors. Squeeze the glute; ribs down.' },
   ninety: { name: '90/90 hip switches', measure: 'reps', perSide: true, note: 'Hip rotation. Hands behind you if needed.' },
-  childs: { name: 'Child’s pose, hands to each side', measure: 'time', perSide: true, note: 'Lats and upper back.' },
-  doorway: { name: 'Doorway pec stretch', measure: 'time', perSide: true, note: 'Elbow at shoulder height; step through gently.' },
+  childs: { name: 'Child’s pose, hands to each side', measure: 'breaths', perSide: true, note: 'Lats and upper back.' },
+  doorway: { name: 'Doorway pec stretch', measure: 'breaths', perSide: true, note: 'Elbow at shoulder height; step through gently.' },
   cars: { name: 'Shoulder CARs', measure: 'reps', perSide: true, note: 'Slow, biggest circle you can control; the rest of you stays still.' },
-  hang: { name: 'Dead hang', measure: 'time', note: 'Feet touching if needed. Skip it if it pinches.' },
+  hang: { name: 'Dead hang', measure: 'breaths', note: 'Feet touching if needed. Skip it if it pinches.' },
 };
 
 // Items: [exercise, sets, target, pair, rest seconds]. Items sharing a pair alternate;
@@ -48,14 +49,14 @@ export const WORKOUTS = [
       ['legpress', 3, '8–10', 1, 15], ['pulldown', 3, '10', 1, 60],
       ['backext', 3, '10–12', 2, 15], ['pushup', 3, '8–12', 2, 60],
       ['carow', 3, '10', 3, 15], ['extrot', 2, '12–15', 3, 60],
-      ['sideplank', 2, '20–40 s', 4, 0], ['stirpot', 2, '6 each way', 4, 30],
+      ['sideplank', 2, '4–8 breaths', 4, 0], ['stirpot', 2, '6 each way', 4, 30],
     ].map(item),
   },
   {
     key: 'm', name: 'Mobility', note: 'About 10 minutes, after a session or on its own. Short on time: open books, couch stretch, doorway.',
     items: [
-      ['openbook', 1, '8', 0, 0], ['couch', 1, '60 s', 0, 0], ['ninety', 1, '8', 0, 0],
-      ['childs', 1, '30 s', 0, 0], ['doorway', 1, '30 s', 0, 0], ['cars', 1, '3', 0, 0], ['hang', 3, '15–30 s', 0, 30],
+      ['openbook', 1, '8', 0, 0], ['couch', 1, '12 breaths', 0, 0], ['ninety', 1, '8', 0, 0],
+      ['childs', 1, '6 breaths', 0, 0], ['doorway', 1, '6 breaths', 0, 0], ['cars', 1, '3', 0, 0], ['hang', 3, '3–6 breaths', 0, 30],
     ].map(item),
   },
 ];

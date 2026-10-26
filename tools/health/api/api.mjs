@@ -1,6 +1,6 @@
-// Gym API: each person's own exercises, saved workouts, plan, logged sessions and body weight.
-// Routes (a family_gym token, or Dot's delegated one for the person asking; everything is that person's own):
-//   GET    /all              -> { settings, plan, exercises, workouts, sessions, weights }
+// Health API: each person's own exercises, saved workouts, plan, logged sessions, body weight and a daily journal.
+// Routes (a family_health token, or Dot's delegated one for the person asking; everything is that person's own):
+//   GET    /all              -> { settings, plan, exercises, workouts, sessions, weights, journal }
 //   PUT    /settings         { unit, areas, rev }
 //   PUT    /plan             { rotation: [workoutId], days: [0-6], from, to, perWeek, rev }
 //   PUT    /exercises/{id}   { name, measure, perSide, note, rev }
@@ -9,18 +9,19 @@
 //   DELETE /workouts/{id}
 //   PUT    /sessions/{id}    { date, workoutId, name, startedAt, finishedAt, note, discomfort: { area: 0-10 },
 //                               entries: [{ exerciseId, name, measure, perSide, note, target, pair, rest,
-//                                           sets: [{ w, r, t, d, done }] }], rev }
+//                                           sets: [{ w, r, t, d, b, done }] }], rev }   (b: breaths, for holds)
 //   DELETE /sessions/{id}
 //   PUT    /weights/{date}   { weight }
 //   DELETE /weights/{date}
+//   PUT    /journal/{date}   { text, rev }   how they felt that day, in their own words
 //   POST   /starter          loads the starter program (starter.mjs) into an empty account
 //   GET    /dot              this tool's description for Dot (dot.mjs, platform/api/dot-manifest.mjs), and what it
-//   GET    /dot/summary, /dot/sessions, /dot/exercise, /dot/workouts   calls: their log in words
+//   GET    /dot/summary, /dot/sessions, /dot/exercise, /dot/workouts, /dot/journal   calls: their log in words
 //   POST   /dot/log          Dot logging a session they told it about (a new session, never a change)
 // A via-Dot token may read, and use only the writes the manifest declares (POST /dot/log, PUT /weights/{date}):
 // 403 read-only on every other write, so Dot can add to someone's log but never change or delete it.
 // Rows (pk = P#<username>, so nobody can reach anyone else's): SETTINGS, PLAN, EX#<id>, WO#<id>,
-// S#<id>, BW#<date>. Everything but weights is rev-checked: a PUT sends the rev it was based on
+// S#<id>, BW#<date>, J#<date>. Everything but weights is rev-checked: a PUT sends the rev it was based on
 // (none for a new row) and gets 409 { current } if someone (another tab, another phone) got there first.
 // The token is re-verified here (signature, issuer, client, expiry, group); API Gateway's
 // authorizer is not trusted on its own.
@@ -41,7 +42,7 @@ const json = (statusCode, body) => ({
 });
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const MEASURES = ['reps', 'time', 'distance'];
+const MEASURES = ['reps', 'time', 'distance', 'breaths'];
 const MAX = { exercises: 300, workouts: 100 };
 
 class Bad extends Error {}
@@ -97,7 +98,7 @@ const clean = {
     const name = text(b.name, 80);
     if (!name) bad('name required');
     const measure = b.measure ?? 'reps';
-    if (!MEASURES.includes(measure)) bad('measure is reps, time or distance');
+    if (!MEASURES.includes(measure)) bad('measure is reps, time, distance or breaths');
     return { name, measure, perSide: b.perSide === true, note: text(b.note, 500) };
   },
   workout(b) {
@@ -134,7 +135,7 @@ const clean = {
         if (!s || typeof s !== 'object') bad('bad set');
         return {
           w: num(s.w, 0, 2000, 'weight'), r: int(s.r, 0, 1000, 'reps', null),
-          t: num(s.t, 0, 36000, 'seconds'), d: num(s.d, 0, 100000, 'distance'), done: s.done === true,
+          t: num(s.t, 0, 36000, 'seconds'), d: num(s.d, 0, 100000, 'distance'), b: int(s.b, 0, 1000, 'breaths', null), done: s.done === true,
         };
       });
       return {
@@ -157,6 +158,7 @@ const shape = {
   WO: (i) => ({ id: i.sk.slice(3), ...strip(i) }),
   S: (i) => ({ id: i.sk.slice(2), ...strip(i) }),
   BW: (i) => ({ date: i.sk.slice(3), weight: i.weight }),
+  J: (i) => ({ date: i.sk.slice(2), ...strip(i) }),
 };
 const rowShape = (i) => (i.sk === 'SETTINGS' || i.sk === 'PLAN' ? strip(i) : shape[i.sk.split('#')[0]](i));
 
@@ -174,7 +176,7 @@ async function rows(pk) {
 }
 
 async function getAll(pk) {
-  const out = { settings: null, plan: null, exercises: [], workouts: [], sessions: [], weights: [] };
+  const out = { settings: null, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [] };
   for (const i of await rows(pk)) {
     if (i.sk === 'SETTINGS') out.settings = strip(i);
     else if (i.sk === 'PLAN') out.plan = strip(i);
@@ -182,10 +184,12 @@ async function getAll(pk) {
     else if (i.sk.startsWith('WO#')) out.workouts.push(shape.WO(i));
     else if (i.sk.startsWith('S#')) out.sessions.push(shape.S(i));
     else if (i.sk.startsWith('BW#')) out.weights.push(shape.BW(i));
+    else if (i.sk.startsWith('J#')) out.journal.push(shape.J(i));
   }
   out.settings ??= { ...SETTINGS, areas: [] };
   out.exercises.sort((a, b) => a.name.localeCompare(b.name));
   out.workouts.sort((a, b) => a.name.localeCompare(b.name));
+  out.journal.sort((a, b) => (a.date < b.date ? -1 : 1));
   out.sessions.sort((a, b) => (a.date === b.date ? (a.startedAt || '').localeCompare(b.startedAt || '') : a.date < b.date ? -1 : 1));
   return out;
 }
@@ -304,6 +308,8 @@ export const handler = async (event) => {
       }
       case 'DELETE /weights/{date}':
         return await del(`BW#${date}`);
+      case 'PUT /journal/{date}':
+        return await save(pk, `J#${date}`, { text: text(body.text, 5000) }, body.rev);
       case 'POST /starter':
         return await loadStarter(pk);
       case 'GET /dot':
@@ -318,6 +324,10 @@ export const handler = async (event) => {
         return json(200, dot.exercise(await getAll(pk), event.queryStringParameters?.name));
       case 'GET /dot/workouts':
         return json(200, dot.workouts(await getAll(pk)));
+      case 'GET /dot/journal': {
+        const q = event.queryStringParameters ?? {};
+        return json(200, dot.journal(await getAll(pk), { from: optDate(q.from, 'from'), to: optDate(q.to, 'to'), limit: q.limit }));
+      }
       case 'POST /dot/log': {
         const all = await getAll(pk);
         const { session, named } = dot.logToSession(body, all, dot.localDay(new Date(), TZ_HOME), new Date().toISOString());

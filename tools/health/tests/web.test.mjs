@@ -2,7 +2,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { call, memberToken, table } from './helpers/gym-api.mjs';
+import { call, memberToken, table } from './helpers/health-api.mjs';
 
 const HTML = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8').replace('<script src="family-auth.js"></script>', '');
 const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
@@ -18,7 +18,7 @@ afterEach(() => { while (pages.length) pages.pop().close(); });
 // offline(): a predicate on (method, path) that makes fetch fail like a dead zone at the gym
 async function open({ offline = () => false, storage } = {}) {
   const dom = new JSDOM(HTML, {
-    runScripts: 'dangerously', url: 'https://gym.dot-y.co/', pretendToBeVisual: true,
+    runScripts: 'dangerously', url: 'https://health.dot-y.co/', pretendToBeVisual: true,
     beforeParse(w) {
       if (storage) for (const [k, v] of Object.entries(storage)) w.localStorage.setItem(k, v);
       w.FamilyAuth = { init: async () => ({ email: 't' }), accessToken: async () => memberToken(), autoLogin: () => false, login() {}, logout() {} };
@@ -72,7 +72,7 @@ test('log a session: sets save as you go, a tick starts the rest timer, finishin
   assert.match(p.el('#timer .clock').textContent, /0:1[45]/, 'the 15 s walk to the pair’s second exercise');
   await wait(700);
   let [s] = await sessions();
-  assert.deepEqual(s.entries[0].sets[0], { w: 135, r: 8, t: null, d: null, done: true });
+  assert.deepEqual(s.entries[0].sets[0], { w: 135, r: 8, t: null, d: null, b: null, done: true });
   assert.equal(s.finishedAt, null);
 
   await p.click('[data-area="Shoulders"][data-v="3"]');
@@ -112,22 +112,22 @@ test('no signal at the gym: the session is kept on the phone and saved on the ne
   await wait(700);
   assert.match(p.el('#status').textContent, /Not saved yet/);
   assert.deepEqual(await sessions(), []);
-  const draft = p.w.localStorage.getItem('gym-draft');
+  const draft = p.w.localStorage.getItem('health-draft');
   p.close();
 
-  const q = await open({ storage: { 'gym-draft': draft } });
+  const q = await open({ storage: { 'health-draft': draft } });
   await wait(50);
   const [s] = await sessions();
   assert.equal(s.entries[0].sets[0].w, 155);
   assert.equal(q.el('[data-entry="0"] [data-set="0"][data-k="w"]').value, '155', 'and it’s open again on Today');
-  assert.equal(q.w.localStorage.getItem('gym-draft'), null);
+  assert.equal(q.w.localStorage.getItem('health-draft'), null);
   q.close();
 });
 
 test('a stale draft doesn’t overwrite a session saved since on another device', async () => {
   await call('PUT', '/sessions/s1', { date: daysAgo(0), name: 'A', entries: [] });
   await call('PUT', '/sessions/s1', { date: daysAgo(0), name: 'A, from the laptop', entries: [], rev: 1 });
-  const p = await open({ storage: { 'gym-draft': JSON.stringify({ id: 's1', rev: 1, date: daysAgo(0), name: 'A, phone', entries: [], discomfort: {}, note: '' }) } });
+  const p = await open({ storage: { 'health-draft': JSON.stringify({ id: 's1', rev: 1, date: daysAgo(0), name: 'A, phone', entries: [], discomfort: {}, note: '' }) } });
   await wait(50);
   assert.equal((await sessions())[0].name, 'A, from the laptop');
   p.close();
@@ -145,6 +145,52 @@ test('history opens a past session to fix it', async () => {
   assert.equal((await sessions())[0].entries[0].sets[0].r, 12);
   await p.click('[data-act="close"]');
   assert.equal(p.el('[data-tab="history"]').getAttribute('aria-pressed'), 'true');
+  p.close();
+});
+
+test('a hold counts breaths, not seconds', async () => {
+  const { body } = await call('POST', '/starter');
+  const mob = body.workouts.find((w) => w.name === 'Mobility');
+  const p = await open();
+  await p.click('[data-start="' + mob.id + '"]');
+  const i = p.all('.entry h3').findIndex((h) => /Couch stretch/.test(h.textContent));
+  assert.match(p.all('.entry h3')[i].textContent, /12 breaths/, 'the target is in breaths too');
+  assert.match(p.el(`[data-entry="${i}"] .units`).textContent, /Breaths/);
+  await p.type(`[data-entry="${i}"] [data-set="0"][data-k="b"]`, '10');
+  await p.click(`[data-entry="${i}"] [data-tick="0"]`);
+  await p.click('[data-act="finish"]');
+  await wait(50);
+  assert.equal((await sessions())[0].entries[i].sets[0].b, 10);
+  await p.click('[data-start="' + mob.id + '"]');
+  assert.match(p.el(`[data-entry="${i}"] p.small:not(.muted)`).textContent, /Last time .*: 10 breaths$/);
+  await p.click('[data-tab="exercises"]');
+  assert.match(p.all('.list li').find((li) => /Couch stretch/.test(li.textContent)).textContent, /Breaths/);
+  p.close();
+});
+
+test('the journal: today’s words save as you type, and past days are on Journal', async () => {
+  await call('PUT', `/journal/${daysAgo(2)}`, { text: 'Hip tight.\n<b>not bold</b>' });
+  const p = await open();
+  await p.type(`textarea[data-jdate="${daysAgo(0)}"]`, 'Slept well, back fine.');
+  await wait(900);
+  let j = (await call('GET', '/all')).body.journal;
+  assert.deepEqual(j.map((x) => x.text), ['Hip tight.\n<b>not bold</b>', 'Slept well, back fine.']);
+  await p.type(`textarea[data-jdate="${daysAgo(0)}"]`, 'Slept well, back fine. Knee sore later.');
+  await wait(900);
+  assert.equal((await call('GET', '/all')).body.journal[1].text, 'Slept well, back fine. Knee sore later.', 'a second save carries the new rev');
+
+  await p.click('[data-tab="journal"]');
+  assert.equal(p.el('textarea.journal').value, 'Slept well, back fine. Knee sore later.');
+  assert.equal(p.all('#main b').length, 0, 'shown as text');
+  await p.click(`[data-jday="${daysAgo(2)}"]`);
+  assert.equal(p.el('textarea.journal').value, 'Hip tight.\n<b>not bold</b>');
+  // Typing in one day and switching straight to another still saves the first
+  await p.type(`textarea[data-jdate="${daysAgo(2)}"]`, 'Hip tight, eased by evening.');
+  await p.click(`[data-jday="${daysAgo(0)}"]`);
+  await p.type(`textarea[data-jdate="${daysAgo(0)}"]`, 'Today again.');
+  await wait(900);
+  j = (await call('GET', '/all')).body.journal;
+  assert.deepEqual(j.map((x) => x.text), ['Hip tight, eased by evening.', 'Today again.']);
   p.close();
 });
 

@@ -2,7 +2,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { accessToken } from '../../../platform/tests/helpers/tokens.mjs';
 import { validateManifest, writeRoutes, requestPath, requestBody } from '../../../platform/api/dot-manifest.mjs';
-import { ROUTES, call, dotToken, table } from './helpers/gym-api.mjs';
+import { ROUTES, call, dotToken, table } from './helpers/health-api.mjs';
 import { MANIFEST, localDay } from '../api/dot.mjs';
 
 beforeEach(() => table.clear());
@@ -31,6 +31,7 @@ test('from Dot: reads and the two declared writes; every other change is refused
     ['PUT', '/sessions/s1', { date: ymd(), name: 'changed', rev: 1 }], ['DELETE', '/sessions/s1'], ['POST', '/starter'],
     ['PUT', '/settings', { unit: 'kg' }], ['PUT', '/plan', {}], ['PUT', '/exercises/x', { name: 'X' }], ['DELETE', '/exercises/x'],
     ['PUT', '/workouts/w', { name: 'W' }], ['DELETE', '/workouts/w'], ['DELETE', '/weights/2026-10-26'],
+    ['PUT', '/journal/2026-10-26', { text: 'from Dot' }],
   ]) {
     const r = await call(m, p, b, dotToken());
     assert.deepEqual([r.status, r.body.error], [403, 'read-only'], `${m} ${p}`);
@@ -39,7 +40,7 @@ test('from Dot: reads and the two declared writes; every other change is refused
   assert.equal((await dot('log_weight', { date: ymd(), weight: 181 })).status, 200);
   assert.equal((await dot('log', { workout: 'A' })).status, 200);
   // The page's own token is still the only way to change things; a via-Dot claim on it counts too
-  assert.equal((await call('DELETE', '/sessions/s1', undefined, accessToken({ clientId: 'gym-client', group: 'family_gym', username: 'luke-sub', via: 'dot' }))).status, 403);
+  assert.equal((await call('DELETE', '/sessions/s1', undefined, accessToken({ clientId: 'health-client', group: 'family_health', username: 'luke-sub', via: 'dot' }))).status, 403);
 });
 
 test('Dot only ever sees and logs the asker’s own workouts', async () => {
@@ -106,12 +107,36 @@ test('logging from Dot links to their workout and exercises, so it counts in the
   assert.equal(s.workoutId, all.workouts.find((w) => w.name === 'Session A').id);
   assert.equal(s.date, ymd(1));
   assert.ok(s.finishedAt);
-  assert.deepEqual(s.entries[0].sets[0], { w: 135, r: 8, t: null, d: null, done: true });
+  assert.deepEqual(s.entries[0].sets[0], { w: 135, r: 8, t: null, d: null, b: null, done: true });
   assert.equal(s.entries[1].measure, 'distance');
   assert.equal(s.entries[2].exerciseId, null);
   assert.equal(s.entries[2].measure, 'distance', 'an unknown exercise’s measure comes from what was logged');
   assert.equal((await dot('summary')).body.next.workout, 'Session B');
   assert.equal((await dot('exercise', { name: 'trap bar' })).body.history[0].sets, '135 × 8, 135 × 8');
+});
+
+test('a hold Dot logs is counted in breaths', async () => {
+  await call('POST', '/starter');
+  await dot('log', { workout: 'Mobility', exercises: [{ name: 'couch stretch', sets: [{ breaths: 12 }] }, { name: 'Pigeon', sets: [{ breaths: 8 }] }] });
+  const [s] = (await call('GET', '/all')).body.sessions;
+  assert.deepEqual(s.entries.map((e) => [e.measure, e.sets[0].b]), [['breaths', 12], ['breaths', 8]], 'a saved hold, and an unknown one by what was said');
+  assert.equal((await dot('exercise', { name: 'couch' })).body.history[0].sets, '12 breaths');
+});
+
+test('the journal: Dot reads their days, newest first, and never anyone else’s', async () => {
+  await call('PUT', `/journal/${ymd(3)}`, { text: 'Knee ached on stairs.' });
+  await call('PUT', `/journal/${ymd(2)}`, { text: '' });
+  await call('PUT', `/journal/${ymd(1)}`, { text: 'Shoulders loose. '.repeat(30) });
+  await call('PUT', `/journal/${ymd(0)}`, { text: 'Tired, slept 5 hours.' });
+  const all = (await dot('journal')).body;
+  assert.deepEqual(all.map((j) => j.date.slice(-10)), [ymd(0), ymd(1), ymd(3)], 'newest first; an empty day is left out');
+  assert.match(all[0].date, /^\w+day /);
+  assert.deepEqual((await dot('journal', { from: ymd(3), to: ymd(2) })).body.map((j) => j.text), ['Knee ached on stairs.']);
+  assert.equal((await dot('journal', { limit: 1 })).body.length, 1);
+  const sum = (await dot('summary')).body.journal;
+  assert.equal(sum.length, 3);
+  assert.ok(sum[1].text.length <= 301 && sum[1].text.endsWith('…'), 'the summary keeps it short');
+  assert.deepEqual((await dot('journal', {}, dotToken('amber-sub'))).body, []);
 });
 
 test('each log is a new session; bad input is refused', async () => {

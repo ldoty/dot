@@ -2,7 +2,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { accessToken, forgedToken } from '../../../platform/tests/helpers/tokens.mjs';
-import { CLIENT_ID, ROUTES, call, memberToken, table } from './helpers/gym-api.mjs';
+import { CLIENT_ID, ROUTES, call, memberToken, table } from './helpers/health-api.mjs';
 import { EXERCISES, WORKOUTS } from '../api/starter.mjs';
 
 beforeEach(() => table.clear());
@@ -17,9 +17,9 @@ test('infra/api.tf routes match the handler', () => {
 
 test('refuses missing, forged, wrong-group and other-tool tokens', async () => {
   assert.equal((await call('GET', '/all', undefined, null)).status, 401);
-  assert.equal((await call('GET', '/all', undefined, forgedToken({ clientId: CLIENT_ID, group: 'family_gym' }))).status, 401);
+  assert.equal((await call('GET', '/all', undefined, forgedToken({ clientId: CLIENT_ID, group: 'family_health' }))).status, 401);
   assert.equal((await call('GET', '/all', undefined, accessToken({ clientId: CLIENT_ID, group: 'family_links' }))).status, 403);
-  assert.equal((await call('GET', '/all', undefined, accessToken({ clientId: 'other-tool', group: 'family_gym' }))).status, 401);
+  assert.equal((await call('GET', '/all', undefined, accessToken({ clientId: 'other-tool', group: 'family_health' }))).status, 401);
 });
 
 test('everyone has their own data: nobody sees or changes anyone else’s', async () => {
@@ -40,7 +40,7 @@ test('everyone has their own data: nobody sees or changes anyone else’s', asyn
 
 test('an empty account gets defaults', async () => {
   assert.deepEqual((await call('GET', '/all')).body, {
-    settings: { unit: 'lb', areas: [] }, plan: null, exercises: [], workouts: [], sessions: [], weights: [],
+    settings: { unit: 'lb', areas: [] }, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [],
   });
 });
 
@@ -68,7 +68,7 @@ test('a logged session keeps its sets, ratings and notes', async () => {
   const [s] = (await call('GET', '/all')).body.sessions;
   assert.equal(s.note, 'Felt good');
   assert.deepEqual(s.discomfort, { Shoulders: 2, 'Lower back': 0 });
-  assert.deepEqual(s.entries[0].sets[1], { w: 135, r: 7, t: null, d: null, done: true });
+  assert.deepEqual(s.entries[0].sets[1], { w: 135, r: 7, t: null, d: null, b: null, done: true });
   assert.deepEqual([s.entries[0].target, s.entries[0].pair, s.entries[0].rest], ['6–8', 1, 15]);
   assert.equal(s.finishedAt, '2026-10-26T17:32:00.000Z');
 });
@@ -101,6 +101,31 @@ test('validates input', async () => {
   ];
   for (const [m, p, b] of bad) assert.equal((await call(m, p, b)).status, 400, `${m} ${p} ${JSON.stringify(b)}`);
   assert.deepEqual(table.keys(), []);
+});
+
+test('a hold is counted in breaths', async () => {
+  assert.equal((await call('PUT', '/exercises/cs', { name: 'Couch stretch', measure: 'breaths', perSide: true })).body.measure, 'breaths');
+  await call('PUT', '/sessions/s1', { date: '2026-10-26', name: 'Mobility',
+    entries: [{ exerciseId: 'cs', name: 'Couch stretch', measure: 'breaths', sets: [{ b: 12, done: true }] }] });
+  const [s] = (await call('GET', '/all')).body.sessions;
+  assert.deepEqual([s.entries[0].measure, s.entries[0].sets[0].b], ['breaths', 12]);
+  assert.equal((await call('PUT', '/sessions/s2', { date: '2026-10-26', entries: [{ name: 'X', measure: 'breaths', sets: [{ b: -1 }] }] })).status, 400);
+});
+
+test('the journal: a day’s words, rev-checked, and nobody else’s', async () => {
+  const r = await call('PUT', '/journal/2026-10-26', { text: '  Low back stiff after the drive. Slept well.  ' });
+  assert.deepEqual(r.body, { date: '2026-10-26', text: 'Low back stiff after the drive. Slept well.', rev: 1 });
+  assert.equal((await call('PUT', '/journal/2026-10-26', { text: 'Better by lunch.', rev: 1 })).body.rev, 2);
+  const stale = await call('PUT', '/journal/2026-10-26', { text: 'from the other phone', rev: 1 });
+  assert.deepEqual([stale.status, stale.body.current.text], [409, 'Better by lunch.']);
+  await call('PUT', '/journal/2026-10-24', { text: 'Shoulders fine.' });
+  assert.deepEqual((await call('GET', '/all')).body.journal.map((j) => [j.date, j.text]), [['2026-10-24', 'Shoulders fine.'], ['2026-10-26', 'Better by lunch.']]);
+  const amber = memberToken('amber-sub');
+  assert.deepEqual((await call('GET', '/all', undefined, amber)).body.journal, []);
+  assert.equal((await call('PUT', '/journal/2026-10-26', { text: 'mine' }, amber)).status, 200, 'her own day, not Luke’s');
+  assert.equal((await call('GET', '/all')).body.journal[1].text, 'Better by lunch.');
+  assert.equal((await call('PUT', '/journal/2026-02-30', { text: 'x' })).status, 400);
+  assert.equal((await call('PUT', '/journal/2026-10-25', { text: 'x'.repeat(6000) })).body.text.length, 5000);
 });
 
 test('an exercise in a saved workout can’t be deleted until it’s taken out', async () => {

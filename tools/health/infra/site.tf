@@ -1,6 +1,6 @@
 module "site" {
   source          = "../../../platform/modules/static-site"
-  name            = "family-gym"
+  name            = "family-health"
   domain_name     = local.host
   zone_id         = data.aws_route53_zone.main.zone_id
   certificate_arn = data.aws_ssm_parameter.certificate_arn.value

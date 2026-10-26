@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Gym</title>
+<title>Health</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="family.css">
 <style>
@@ -88,12 +88,16 @@ label.f input, label.f select { color: var(--ink); font-size: 16px }
 table.data { width: 100%; border-collapse: collapse; font-size: 14px }
 table.data th, table.data td { text-align: left; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line) }
 table.data th { color: var(--muted); font-weight: 600 }
+
+/* The journal: a few lines a day, kept as typed */
+textarea.journal { min-height: 120px }
+.jtext { white-space: pre-wrap }
 </style>
 </head>
 <body>
 <div class="wrap" id="app">
   <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
-  <h1>Gym</h1>
+  <h1>Health</h1>
   <nav class="tabs" id="tabs" hidden></nav>
   <p class="status" id="status" role="status"></p>
   <div id="main"><p class="status">Loading…</p></div>
@@ -102,13 +106,15 @@ table.data th { color: var(--muted); font-weight: 600 }
 <script src="family-auth.js"></script>
 <script>
 (function () {
-  var cfg, data, tab = "today", openId = null, editId = null, confirmDel = null, chartEx = null;
+  var cfg, data, tab = "today", openId = null, editId = null, confirmDel = null, chartEx = null, jDay = null;
   var main = document.getElementById("main"), tabsEl = document.getElementById("tabs");
-  var TABS = [["today", "Today"], ["history", "History"], ["progress", "Progress"], ["plan", "Plan"], ["workouts", "Workouts"], ["exercises", "Exercises"]];
+  var TABS = [["today", "Today"], ["journal", "Journal"], ["history", "History"], ["progress", "Progress"], ["plan", "Plan"], ["workouts", "Workouts"], ["exercises", "Exercises"]];
   var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var LONG_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  var MEASURE = { reps: "Reps", time: "Time (s)", distance: "Distance (m)" };
-  var DRAFT = "gym-draft";
+  var MEASURE = { reps: "Reps", time: "Time (s)", distance: "Distance (m)", breaths: "Breaths (a hold)" };
+  // Each measure's number on a set, and its column heading
+  var COL = { reps: ["r", "Reps"], time: ["t", "Seconds"], distance: ["d", "Meters"], breaths: ["b", "Breaths"] };
+  var DRAFT = "health-draft";
 
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
   function uid() { return "x" + Math.random().toString(36).slice(2, 10); }
@@ -175,6 +181,7 @@ table.data th { color: var(--muted); font-weight: 600 }
     var w = s.w != null ? s.w : null, main;
     if (measure === "time") main = (s.t != null ? s.t : "–") + " s";
     else if (measure === "distance") main = (s.d != null ? s.d : "–") + " m";
+    else if (measure === "breaths") main = (s.b != null ? s.b : "–") + " breaths";
     else return (w != null ? w + " × " : "") + (s.r != null ? s.r : "–");
     return main + (w != null ? " @ " + w : "");
   }
@@ -225,7 +232,7 @@ table.data th { color: var(--muted); font-weight: 600 }
     var last = lastTime(ex.id, sessionId), n = it ? it.sets : 3, sets = [];
     for (var i = 0; i < n; i++) {
       var p = last ? last.sets[Math.min(i, last.sets.length - 1)] : {};
-      sets.push({ w: p.w != null ? p.w : null, r: p.r != null ? p.r : null, t: p.t != null ? p.t : null, d: p.d != null ? p.d : null, done: false });
+      sets.push({ w: p.w != null ? p.w : null, r: p.r != null ? p.r : null, t: p.t != null ? p.t : null, d: p.d != null ? p.d : null, b: p.b != null ? p.b : null, done: false });
     }
     return { exerciseId: ex.id, name: ex.name, measure: ex.measure, perSide: !!ex.perSide, note: "",
       target: it ? it.target : "", pair: it ? it.pair : 0, rest: it ? it.rest : 60, sets: sets };
@@ -278,6 +285,56 @@ table.data th { color: var(--muted); font-weight: 600 }
     saveSession(d, true);
   }
 
+  /* ---------- the journal: how you feel, a day at a time ---------- */
+  function journalFor(day) { for (var i = 0; i < data.journal.length; i++) if (data.journal[i].date === day) return data.journal[i]; return null; }
+  function journalBox(day) {
+    var j = journalFor(day);
+    return '<textarea class="journal" data-jdate="' + esc(day) + '" maxlength="5000" aria-label="How you feel, ' + esc(nice(day)) + '" ' +
+      'placeholder="How does your body feel? Sleep, energy, aches, anything.">' + esc(j ? j.text : "") + "</textarea>";
+  }
+  // Saves as you type, like a session. Switching days sends the other day's words first, so none are dropped.
+  var jTimer = null, jPending = null;
+  function saveJournal(day, text) {
+    var j = journalFor(day);
+    if (!j) { j = { date: day, text: "" }; data.journal.push(j); data.journal.sort(function (a, b) { return a.date < b.date ? -1 : 1; }); }
+    j.text = text;
+    if (jPending && jPending !== j) { clearTimeout(jTimer); flushJournal(jPending); }
+    jPending = j; clearTimeout(jTimer);
+    jTimer = setTimeout(function () { jPending = null; flushJournal(j); }, 800);
+  }
+  function flushJournal(j) {
+    if (j.saving) { j.again = true; return; }
+    j.saving = true;
+    api("PUT", "/journal/" + j.date, { text: j.text, rev: j.rev }).then(function (r) {
+      if (r.status === 409 && r.body.current) {
+        j.text = r.body.current.text; j.rev = r.body.current.rev; j.again = false;
+        status("That day’s journal changed somewhere else, so this shows the newer version.", true); render(); return;
+      }
+      if (!r.ok) throw new Error(r.body.error || r.status);
+      j.rev = r.body.rev;
+      status("Saved " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + ".");
+    }).catch(function (e) {
+      status("Journal not saved yet (" + (e.message || "offline") + "). Keep this page open and it will retry.", true);
+      setTimeout(function () { flushJournal(j); }, 10000);
+    }).then(function () {
+      j.saving = false;
+      if (j.again) { j.again = false; flushJournal(j); }
+    });
+  }
+  function journalCard() {
+    return '<section class="card stack"><h2>How you feel today</h2>' + journalBox(ymd(new Date())) + "</section>";
+  }
+  function viewJournal() {
+    var today = ymd(new Date()), day = jDay || today;
+    var html = '<section class="card stack"><div class="row" style="justify-content:space-between"><h2>' + esc(day === today ? "Today" : nice(day)) + "</h2>" +
+      '<label class="f">Day<input type="date" id="j-day" max="' + esc(today) + '" value="' + esc(day) + '"></label></div>' + journalBox(day) + "</section>";
+    var past = data.journal.filter(function (j) { return j.text && j.date !== day; }).reverse();
+    if (!past.length) return html + '<p class="muted small">Days you write about show here.</p>';
+    return html + '<ul class="list">' + past.map(function (j) {
+      return '<li><button class="open grow" data-jday="' + esc(j.date) + '"><strong>' + esc(nice(j.date)) + '</strong><br><span class="small jtext">' + esc(j.text) + "</span></button></li>";
+    }).join("") + "</ul>";
+  }
+
   /* ---------- rest timer ---------- */
   var restEnd = 0, restTick = null;
   function startRest(sec) {
@@ -311,7 +368,7 @@ table.data th { color: var(--muted); font-weight: 600 }
     tabsEl.innerHTML = TABS.map(function (t) {
       return '<button data-tab="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '">' + t[1] + "</button>";
     }).join("");
-    var v = { today: viewToday, history: viewHistory, progress: viewProgress, plan: viewPlan, workouts: viewWorkouts, exercises: viewExercises }[tab];
+    var v = { today: viewToday, journal: viewJournal, history: viewHistory, progress: viewProgress, plan: viewPlan, workouts: viewWorkouts, exercises: viewExercises }[tab];
     main.innerHTML = v();
   }
 
@@ -322,7 +379,7 @@ table.data th { color: var(--muted); font-weight: 600 }
       return '<div class="card stack"><h2>Get started</h2><p>Load the starter program: Sessions A and B (full body, easy on shoulders and the lower back), ' +
         'a 10-minute mobility routine, and a Monday, Wednesday, Friday plan alternating A and B. You can change all of it.</p>' +
         '<div class="row"><button class="btn primary" data-act="starter">Load the starter program</button>' +
-        '<button class="btn ghost" data-tab="exercises">Build my own</button></div></div>';
+        '<button class="btn ghost" data-tab="exercises">Build my own</button></div></div>' + journalCard();
     }
     var today = ymd(new Date()), start = monday(new Date()), p = data.plan, done = finished(), html = "";
     var thisWeek = done.filter(function (x) { return x.date >= ymd(start) && x.date <= ymd(addDays(start, 6)); });
@@ -355,7 +412,7 @@ table.data th { color: var(--muted); font-weight: 600 }
     html += '<form class="card row" id="bw-form"><label class="f" style="flex:1">Body weight today (' + esc(unit()) + ')' +
       '<input name="weight" type="number" inputmode="decimal" step="any" min="20" max="1000" value="' + esc(bw ? bw.weight : "") + '"></label>' +
       '<button class="btn ghost" style="align-self:end">Save</button></form>';
-    return html;
+    return html + journalCard();
   }
 
   function pairLabels(entries) {
@@ -380,7 +437,7 @@ table.data th { color: var(--muted); font-weight: 600 }
     if (wo && wo.note) html += '<p class="note">' + esc(wo.note) + "</p>";
     html += s.entries.map(function (e, i) {
       var ex = e.exerciseId ? byId(data.exercises, e.exerciseId) : null, last = e.exerciseId ? lastTime(e.exerciseId, s.id) : null;
-      var col = e.measure === "time" ? ["t", "Seconds"] : e.measure === "distance" ? ["d", "Meters"] : ["r", "Reps"];
+      var col = COL[e.measure] || COL.reps;
       var out = '<div class="entry" data-entry="' + i + '"><h3>' + (labels[i] ? '<span class="tag">' + labels[i] + "</span>" : "") + esc(e.name) +
         '<span class="muted small">' + esc(e.sets.length + " × " + (e.target || "")) + (e.perSide ? " per side" : "") + "</span></h3>";
       if (ex && ex.note) out += '<p class="muted small">' + esc(ex.note) + "</p>";
@@ -475,15 +532,15 @@ table.data th { color: var(--muted); font-weight: 600 }
     return '<div class="chart">' + svg + "</svg></div>" + (goal ? '<p class="muted small">Dashed line: your goal of ' + goal + " a week.</p>" : "");
   }
 
-  // One number per session for an exercise: the top weight if you log weight, else the best reps, seconds or meters
+  // One number per session for an exercise: the top weight if you log weight, else the best reps, seconds, meters or breaths
   function exerciseSeries(exId) {
     var rows = [];
     finished().forEach(function (s) {
       s.entries.forEach(function (e) { if (e.exerciseId === exId && doneSets(e).length) rows.push({ date: s.date, e: e }); });
     });
     var weighted = rows.some(function (r) { return doneSets(r.e).some(function (x) { return x.w != null; }); });
-    var k = weighted ? "w" : rows.length && rows[0].e.measure === "time" ? "t" : rows.length && rows[0].e.measure === "distance" ? "d" : "r";
-    var what = { w: "Top weight (" + unit() + ")", r: "Most reps", t: "Longest (s)", d: "Farthest (m)" }[k];
+    var k = weighted ? "w" : rows.length ? (COL[rows[0].e.measure] || COL.reps)[0] : "r";
+    var what = { w: "Top weight (" + unit() + ")", r: "Most reps", t: "Longest (s)", d: "Farthest (m)", b: "Most breaths" }[k];
     return { what: what, rows: rows, pts: rows.map(function (r) {
       var best = Math.max.apply(null, doneSets(r.e).map(function (x) { return x[k] == null ? 0 : x[k]; }));
       return { x: r.date, y: best, tip: fmtSets(doneSets(r.e), r.e.measure) };
@@ -612,7 +669,9 @@ table.data th { color: var(--muted); font-weight: 600 }
 
   // Typing in a session saves without redrawing, so the keyboard stays put
   main.addEventListener("input", function (e) {
-    var s = current(), t = e.target; if (!s) return;
+    var s = current(), t = e.target;
+    if (t.dataset.jdate) { saveJournal(t.dataset.jdate, t.value); return; }
+    if (!s) return;
     if (t.dataset.k) { var en = entryOf(t); en.sets[+t.dataset.set][t.dataset.k] = numOrNull(t.value); }
     else if (t.hasAttribute("data-enote")) entryOf(t).note = t.value;
     else if (t.dataset.sfield === "note") s.note = t.value;
@@ -622,6 +681,7 @@ table.data th { color: var(--muted); font-weight: 600 }
   });
   main.addEventListener("change", function (e) {
     if (e.target.id === "chart-ex") { chartEx = e.target.value; render(); }
+    if (e.target.id === "j-day" && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { jDay = e.target.value; render(); }
   });
 
   main.addEventListener("click", function (e) {
@@ -629,6 +689,7 @@ table.data th { color: var(--muted); font-weight: 600 }
     var s = current(), d = b.dataset;
     if (d.tab) { tab = d.tab; editId = null; render(); return; }
     if (d.start !== undefined) { startSession(d.start ? byId(data.workouts, d.start) : null); return; }
+    if (d.jday) { jDay = d.jday; render(); window.scrollTo(0, 0); return; }
     if (d.open) { openId = d.open; tab = "today"; confirmDel = null; render(); window.scrollTo(0, 0); return; }
     if (d.tick !== undefined && s) {
       var en = entryOf(b), st = en.sets[+d.tick];
@@ -636,7 +697,7 @@ table.data th { color: var(--muted); font-weight: 600 }
       if (st.done) startRest(en.rest);
       render(); saveSession(s); return;
     }
-    if (b.hasAttribute("data-addset") && s) { var a = entryOf(b), l = a.sets[a.sets.length - 1]; a.sets.push({ w: l.w, r: l.r, t: l.t, d: l.d, done: false }); render(); saveSession(s); return; }
+    if (b.hasAttribute("data-addset") && s) { var a = entryOf(b), l = a.sets[a.sets.length - 1]; a.sets.push({ w: l.w, r: l.r, t: l.t, d: l.d, b: l.b, done: false }); render(); saveSession(s); return; }
     if (b.hasAttribute("data-dropset") && s) { entryOf(b).sets.pop(); render(); saveSession(s); return; }
     if (b.hasAttribute("data-delentry") && s) {
       var i = +b.closest("[data-entry]").dataset.entry;
@@ -737,7 +798,7 @@ table.data th { color: var(--muted); font-weight: 600 }
   });
   tabsEl.addEventListener("click", function (e) {
     var b = e.target.closest("[data-tab]"); if (!b) return;
-    tab = b.dataset.tab; editId = null; woDraft = null; confirmDel = null;
+    tab = b.dataset.tab; editId = null; woDraft = null; confirmDel = null; jDay = null;
     if (tab !== "today" && openId) { var s = current(); if (s && s.finishedAt) openId = null; }
     status(""); render();
   });
@@ -755,7 +816,7 @@ table.data th { color: var(--muted); font-weight: 600 }
     $("signout").hidden = false;
     $("signout").onclick = function () { FamilyAuth.logout(); };
     return api("GET", "/all").then(function (r) {
-      if (r.status === 403) return gate("Your account doesn’t have access to Gym yet.");
+      if (r.status === 403) return gate("Your account doesn’t have access to Health yet.");
       if (!r.ok) throw new Error("Couldn’t load (" + r.status + "). Reload to try again.");
       data = r.body; restoreDraft(); render();
     });

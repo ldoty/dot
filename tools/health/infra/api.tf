@@ -1,5 +1,5 @@
 locals {
-  routes = ["GET /all", "PUT /settings", "PUT /plan", "PUT /exercises/{id}", "DELETE /exercises/{id}", "PUT /workouts/{id}", "DELETE /workouts/{id}", "PUT /sessions/{id}", "DELETE /sessions/{id}", "PUT /weights/{date}", "DELETE /weights/{date}", "POST /starter", "GET /dot", "GET /dot/summary", "GET /dot/sessions", "GET /dot/exercise", "GET /dot/workouts", "POST /dot/log"]
+  routes = ["GET /all", "PUT /settings", "PUT /plan", "PUT /exercises/{id}", "DELETE /exercises/{id}", "PUT /workouts/{id}", "DELETE /workouts/{id}", "PUT /sessions/{id}", "DELETE /sessions/{id}", "PUT /weights/{date}", "DELETE /weights/{date}", "PUT /journal/{date}", "POST /starter", "GET /dot", "GET /dot/summary", "GET /dot/sessions", "GET /dot/exercise", "GET /dot/workouts", "GET /dot/journal", "POST /dot/log"]
 }
 
 # The tool's handler, its starter program, what it tells Dot, and the platform's shared token check and manifest rules
@@ -29,7 +29,7 @@ data "archive_file" "api" {
 }
 
 resource "aws_iam_role" "api" {
-  name = "family-gym-api"
+  name = "family-health-api"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -58,7 +58,7 @@ resource "aws_iam_role_policy" "api_table" {
 }
 
 resource "aws_lambda_function" "api" {
-  function_name    = "family-gym-api"
+  function_name    = "family-health-api"
   role             = aws_iam_role.api.arn
   runtime          = "nodejs22.x"
   handler          = "api.handler"
@@ -85,7 +85,7 @@ resource "aws_cloudwatch_log_group" "api" {
 }
 
 resource "aws_apigatewayv2_api" "api" {
-  name          = "family-gym"
+  name          = "family-health"
   protocol_type = "HTTP"
   cors_configuration {
     allow_origins = [trimsuffix(local.app_url, "/"), trimsuffix(local.dev_url, "/")]
@@ -143,7 +143,7 @@ resource "aws_lambda_permission" "api" {
 # Where Dot finds this tool (tools/assistant/api/discovery.mjs)
 resource "aws_ssm_parameter" "delegation" {
   name        = "/family/delegation/${local.name}"
-  description = "Gym API and delegated client, for Dot"
+  description = "Health API and delegated client, for Dot"
   type        = "String"
   value = jsonencode({
     api_url   = aws_apigatewayv2_api.api.api_endpoint

@@ -1,4 +1,4 @@
-# Gym at gym.dot-y.co, for members of family_gym.
+# Health at health.dot-y.co, for members of family_health.
 
 variable "domain_name" {
   type    = string
@@ -6,8 +6,8 @@ variable "domain_name" {
 }
 
 locals {
-  name    = "family_gym"
-  host    = "gym.${var.domain_name}"
+  name    = "family_health"
+  host    = "health.${var.domain_name}"
   app_url = "https://${local.host}/"
   dev_url = "http://localhost:5173/"
   pool_id = data.aws_ssm_parameter.user_pool_id.value
@@ -39,9 +39,9 @@ module "app" {
   callback_urls = [local.app_url, local.dev_url]
   delegated     = true # Dot reads the asker's own log (GET /dot) and adds sessions and weights they tell it about
   tile = {
-    title       = "Gym"
-    description = "Your workouts: plan them, log every set, see what last time was."
+    title       = "Health"
+    description = "Your workouts and how you feel: log every set, and a few words a day."
     url         = local.app_url
-    icon        = "dumbbell" # see the icon list in platform/core/portal/index.html
+    icon        = "heart" # see the icon list in platform/core/portal/index.html
   }
 }
