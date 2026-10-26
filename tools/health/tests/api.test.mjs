@@ -40,7 +40,7 @@ test('everyone has their own data: nobody sees or changes anyone else’s', asyn
 
 test('an empty account gets defaults', async () => {
   assert.deepEqual((await call('GET', '/all')).body, {
-    settings: { unit: 'lb', areas: [] }, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [],
+    settings: { unit: 'lb', areas: [] }, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [], food: [],
   });
 });
 
@@ -126,6 +126,25 @@ test('the journal: a day’s words, rev-checked, and nobody else’s', async () 
   assert.equal((await call('GET', '/all')).body.journal[1].text, 'Better by lunch.');
   assert.equal((await call('PUT', '/journal/2026-02-30', { text: 'x' })).status, 400);
   assert.equal((await call('PUT', '/journal/2026-10-25', { text: 'x'.repeat(6000) })).body.text.length, 5000);
+});
+
+test('food: entries by day and time, rev-checked, checked, and nobody else’s', async () => {
+  const r = await call('PUT', '/food/f1', { date: '2026-10-26', time: '12:30', meal: 'lunch', what: ' Turkey sandwich, apple ', kcal: 610, protein: 34.4 });
+  assert.deepEqual(r.body, { id: 'f1', date: '2026-10-26', time: '12:30', meal: 'lunch', what: 'Turkey sandwich, apple', kcal: 610, protein: 34, note: '', rev: 1 });
+  await call('PUT', '/food/f0', { date: '2026-10-26', time: '07:15', what: 'Oatmeal' });
+  await call('PUT', '/food/fy', { date: '2026-10-25', what: 'Pizza' });
+  assert.deepEqual((await call('GET', '/all')).body.food.map((f) => f.id), ['fy', 'f0', 'f1'], 'by day, then time');
+  assert.equal((await call('PUT', '/food/f1', { date: '2026-10-26', what: 'Turkey sandwich', kcal: 520, rev: 1 })).body.rev, 2);
+  assert.equal((await call('PUT', '/food/f1', { date: '2026-10-26', what: 'stale', rev: 1 })).status, 409);
+  for (const b of [{ date: '2026-10-26', what: '' }, { what: 'x' }, { date: '2026-10-26', what: 'x', time: '25:00' }, { date: '2026-10-26', what: 'x', meal: 'brunch' }, { date: '2026-10-26', what: 'x', kcal: -5 }]) {
+    assert.equal((await call('PUT', '/food/bad', b)).status, 400, JSON.stringify(b));
+  }
+  const amber = memberToken('amber-sub');
+  assert.deepEqual((await call('GET', '/all', undefined, amber)).body.food, []);
+  await call('DELETE', '/food/f1', undefined, amber);
+  assert.equal((await call('GET', '/all')).body.food.length, 3, 'her delete reached only her own rows');
+  await call('DELETE', '/food/f1');
+  assert.equal((await call('GET', '/all')).body.food.length, 2);
 });
 
 test('an exercise in a saved workout can’t be deleted until it’s taken out', async () => {

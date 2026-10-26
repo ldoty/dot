@@ -1,6 +1,6 @@
-// Health API: each person's own exercises, saved workouts, plan, logged sessions, body weight and a daily journal.
+// Health API: each person's own exercises, saved workouts, plan, logged sessions, body weight, a daily journal and what they ate.
 // Routes (a family_health token, or Dot's delegated one for the person asking; everything is that person's own):
-//   GET    /all              -> { settings, plan, exercises, workouts, sessions, weights, journal }
+//   GET    /all              -> { settings, plan, exercises, workouts, sessions, weights, journal, food }
 //   PUT    /settings         { unit, areas, rev }
 //   PUT    /plan             { rotation: [workoutId], days: [0-6], from, to, perWeek, rev }
 //   PUT    /exercises/{id}   { name, measure, perSide, note, rev }
@@ -14,14 +14,18 @@
 //   PUT    /weights/{date}   { weight }
 //   DELETE /weights/{date}
 //   PUT    /journal/{date}   { text, rev }   how they felt that day, in their own words
+//   PUT    /food/{id}        { date, time, meal, what, kcal, protein, note, rev }   something they ate
+//   DELETE /food/{id}
 //   POST   /starter          loads the starter program (starter.mjs) into an empty account
 //   GET    /dot              this tool's description for Dot (dot.mjs, platform/api/dot-manifest.mjs), and what it
-//   GET    /dot/summary, /dot/sessions, /dot/exercise, /dot/workouts, /dot/journal   calls: their log in words
+//   GET    /dot/summary, /dot/sessions, /dot/exercise, /dot/workouts, /dot/journal, /dot/food   calls: their log in words
 //   POST   /dot/log          Dot logging a session they told it about (a new session, never a change)
-// A via-Dot token may read, and use only the writes the manifest declares (POST /dot/log, PUT /weights/{date}):
-// 403 read-only on every other write, so Dot can add to someone's log but never change or delete it.
+//   POST   /dot/food         Dot logging something they ate (often from a photo they sent): a new entry
+//   POST   /dot/journal      Dot adding to a day's journal: a new paragraph after what's there, never a rewrite
+// A via-Dot token may read, and use only the writes the manifest declares (POST /dot/log, /dot/food, /dot/journal,
+// PUT /weights/{date}): 403 read-only on every other write, so Dot can add to someone's log but never change or delete it.
 // Rows (pk = P#<username>, so nobody can reach anyone else's): SETTINGS, PLAN, EX#<id>, WO#<id>,
-// S#<id>, BW#<date>, J#<date>. Everything but weights is rev-checked: a PUT sends the rev it was based on
+// S#<id>, BW#<date>, J#<date>, F#<id>. Everything but weights is rev-checked: a PUT sends the rev it was based on
 // (none for a new row) and gets 409 { current } if someone (another tab, another phone) got there first.
 // The token is re-verified here (signature, issuer, client, expiry, group); API Gateway's
 // authorizer is not trusted on its own.
@@ -43,6 +47,9 @@ const json = (statusCode, body) => ({
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MEASURES = ['reps', 'time', 'distance', 'breaths'];
+const MEALS = ['breakfast', 'lunch', 'dinner', 'snack'];
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+const JOURNAL_MAX = 5000;
 const MAX = { exercises: 300, workouts: 100 };
 
 class Bad extends Error {}
@@ -149,6 +156,17 @@ const clean = {
       note: text(b.note, 2000), discomfort, entries,
     };
   },
+  food(b) {
+    const date = optDate(b.date, 'date');
+    if (!date) bad('date required');
+    const what = text(b.what, 300);
+    if (!what) bad('say what it was');
+    const time = b.time == null || b.time === '' ? null : b.time;
+    if (time !== null && (typeof time !== 'string' || !TIME.test(time))) bad('time is HH:MM');
+    const meal = b.meal == null || b.meal === '' ? null : b.meal;
+    if (meal !== null && !MEALS.includes(meal)) bad('meal is breakfast, lunch, dinner or snack');
+    return { date, time, meal, what, kcal: int(b.kcal, 0, 10000, 'calories', null), protein: int(b.protein, 0, 1000, 'protein', null), note: text(b.note, 500) };
+  },
 };
 
 // Row shapes the page sees: everything but the keys and bookkeeping
@@ -159,6 +177,7 @@ const shape = {
   S: (i) => ({ id: i.sk.slice(2), ...strip(i) }),
   BW: (i) => ({ date: i.sk.slice(3), weight: i.weight }),
   J: (i) => ({ date: i.sk.slice(2), ...strip(i) }),
+  F: (i) => ({ id: i.sk.slice(2), ...strip(i) }),
 };
 const rowShape = (i) => (i.sk === 'SETTINGS' || i.sk === 'PLAN' ? strip(i) : shape[i.sk.split('#')[0]](i));
 
@@ -176,7 +195,7 @@ async function rows(pk) {
 }
 
 async function getAll(pk) {
-  const out = { settings: null, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [] };
+  const out = { settings: null, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [], food: [] };
   for (const i of await rows(pk)) {
     if (i.sk === 'SETTINGS') out.settings = strip(i);
     else if (i.sk === 'PLAN') out.plan = strip(i);
@@ -185,11 +204,13 @@ async function getAll(pk) {
     else if (i.sk.startsWith('S#')) out.sessions.push(shape.S(i));
     else if (i.sk.startsWith('BW#')) out.weights.push(shape.BW(i));
     else if (i.sk.startsWith('J#')) out.journal.push(shape.J(i));
+    else if (i.sk.startsWith('F#')) out.food.push(shape.F(i));
   }
   out.settings ??= { ...SETTINGS, areas: [] };
   out.exercises.sort((a, b) => a.name.localeCompare(b.name));
   out.workouts.sort((a, b) => a.name.localeCompare(b.name));
   out.journal.sort((a, b) => (a.date < b.date ? -1 : 1));
+  out.food.sort((a, b) => (a.date === b.date ? (a.time || '').localeCompare(b.time || '') : a.date < b.date ? -1 : 1));
   out.sessions.sort((a, b) => (a.date === b.date ? (a.startedAt || '').localeCompare(b.startedAt || '') : a.date < b.date ? -1 : 1));
   return out;
 }
@@ -309,7 +330,11 @@ export const handler = async (event) => {
       case 'DELETE /weights/{date}':
         return await del(`BW#${date}`);
       case 'PUT /journal/{date}':
-        return await save(pk, `J#${date}`, { text: text(body.text, 5000) }, body.rev);
+        return await save(pk, `J#${date}`, { text: text(body.text, JOURNAL_MAX) }, body.rev);
+      case 'PUT /food/{id}':
+        return await save(pk, `F#${id}`, clean.food(body), body.rev);
+      case 'DELETE /food/{id}':
+        return await del(`F#${id}`);
       case 'POST /starter':
         return await loadStarter(pk);
       case 'GET /dot':
@@ -327,6 +352,31 @@ export const handler = async (event) => {
       case 'GET /dot/journal': {
         const q = event.queryStringParameters ?? {};
         return json(200, dot.journal(await getAll(pk), { from: optDate(q.from, 'from'), to: optDate(q.to, 'to'), limit: q.limit }));
+      }
+      case 'GET /dot/food': {
+        const q = event.queryStringParameters ?? {};
+        return json(200, dot.food(await getAll(pk), { from: optDate(q.from, 'from'), to: optDate(q.to, 'to'), limit: q.limit }));
+      }
+      case 'POST /dot/food': {
+        const now = new Date();
+        const entry = clean.food(dot.foodEntry(body, dot.localDay(now, TZ_HOME), dot.localTime(now, TZ_HOME)));
+        const fid = newId(), r = await save(pk, `F#${fid}`, { ...entry, source: 'dot' }, undefined);
+        if (r.statusCode !== 200) return r;
+        console.log('food via dot', JSON.stringify({ by: claims.username, id: fid, date: entry.date }));
+        return json(200, { logged: dot.foodOut(JSON.parse(r.body)), date: entry.date, note: 'They can fix or delete it on Health’s Food tab.' });
+      }
+      case 'POST /dot/journal': {
+        // Added after what's there, so nothing they wrote is ever replaced; a race with their page is retried
+        const day = optDate(body.date, 'date') ?? dot.localDay(new Date(), TZ_HOME), add = text(body.text, 2000);
+        if (!add) bad('text required');
+        for (let i = 0; i < 3; i++) {
+          const cur = (await db.send(new GetCommand({ TableName: TABLE, Key: { pk, sk: `J#${day}` } }))).Item;
+          const all = cur?.text ? `${cur.text}\n\n${add}` : add;
+          if (all.length > JOURNAL_MAX) return json(400, { error: 'that day’s journal is full' });
+          const r = await save(pk, `J#${day}`, { text: all }, cur?.rev);
+          if (r.statusCode !== 409) return r.statusCode === 200 ? json(200, { added_to: day, text: JSON.parse(r.body).text }) : r;
+        }
+        return json(409, { error: 'the journal kept changing; try again' });
       }
       case 'POST /dot/log': {
         const all = await getAll(pk);

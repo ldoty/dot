@@ -92,6 +92,11 @@ table.data th { color: var(--muted); font-weight: 600 }
 /* The journal: a few lines a day, kept as typed */
 textarea.journal { min-height: 120px }
 .jtext { white-space: pre-wrap }
+
+/* Food: entries down the day, the form under them */
+.food .when { font: 500 14px var(--mono); color: var(--muted); min-width: 5ch }
+.food .nums { font-size: 14px; color: var(--muted); white-space: nowrap }
+#food-form .row label.f { flex: 1 1 90px }
 </style>
 </head>
 <body>
@@ -106,9 +111,9 @@ textarea.journal { min-height: 120px }
 <script src="family-auth.js"></script>
 <script>
 (function () {
-  var cfg, data, tab = "today", openId = null, editId = null, confirmDel = null, chartEx = null, jDay = null;
+  var cfg, data, tab = "today", openId = null, editId = null, confirmDel = null, chartEx = null, jDay = null, fDay = null, fEdit = null;
   var main = document.getElementById("main"), tabsEl = document.getElementById("tabs");
-  var TABS = [["today", "Today"], ["journal", "Journal"], ["history", "History"], ["progress", "Progress"], ["plan", "Plan"], ["workouts", "Workouts"], ["exercises", "Exercises"]];
+  var TABS = [["today", "Today"], ["journal", "Journal"], ["food", "Food"], ["history", "History"], ["progress", "Progress"], ["plan", "Plan"], ["workouts", "Workouts"], ["exercises", "Exercises"]];
   var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var LONG_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   var MEASURE = { reps: "Reps", time: "Time (s)", distance: "Distance (m)", breaths: "Breaths (a hold)" };
@@ -335,6 +340,68 @@ textarea.journal { min-height: 120px }
     }).join("") + "</ul>";
   }
 
+  /* ---------- food: what you ate, when ---------- */
+  var MEALS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snack" };
+  function hhmm(d) { return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+  // A guess from the clock, so a quick add needs nothing but what it was
+  function mealAt(t) { var h = +t.slice(0, 2); return h < 4 ? "snack" : h < 11 ? "breakfast" : h < 15 ? "lunch" : h >= 17 && h < 22 ? "dinner" : "snack"; }
+  function foodOn(day) { return data.food.filter(function (f) { return f.date === day; }); }
+  function foodTotals(list) {
+    var k = 0, p = 0, any = false;
+    list.forEach(function (f) { if (f.kcal != null) { k += f.kcal; any = true; } if (f.protein != null) { p += f.protein; any = true; } });
+    return any ? "About " + k.toLocaleString() + " kcal · " + p + " g protein" : "";
+  }
+  function foodNums(f) {
+    var n = [];
+    if (f.kcal != null) n.push(f.kcal + " kcal");
+    if (f.protein != null) n.push(f.protein + " g protein");
+    return n.join(" · ") + (n.length && f.source === "dot" ? " (Dot’s estimate)" : "");
+  }
+  function foodList(list) {
+    return '<ul class="list food">' + list.map(function (f) {
+      return '<li><span class="when">' + esc(f.time || "") + '</span><button class="open grow" data-editfood="' + esc(f.id) + '"><strong>' + esc(f.what) + "</strong>" +
+        (f.meal ? ' <span class="muted small">' + esc(MEALS[f.meal]) + "</span>" : "") + (f.note ? '<br><span class="muted small">' + esc(f.note) + "</span>" : "") +
+        '</button><span class="nums">' + esc(foodNums(f)) + "</span></li>";
+    }).join("") + "</ul>";
+  }
+  function foodCard() {
+    var list = foodOn(ymd(new Date())), tot = foodTotals(list);
+    return '<section class="card stack"><div class="row" style="justify-content:space-between"><h2>Food today</h2><button class="link" data-tab="food">All food →</button></div>' +
+      (list.length ? foodList(list) + (tot ? '<p class="muted small">' + esc(tot) + "</p>" : "") : "") +
+      '<form class="row" id="food-quick"><input name="what" maxlength="300" placeholder="What are you eating?" aria-label="What are you eating?" style="flex:1"><button class="btn ghost">Add</button></form>' +
+      '<p class="muted small">Or text Dot a photo of it.</p></section>';
+  }
+  function viewFood() {
+    var today = ymd(new Date()), day = fDay || today, list = foodOn(day), tot = foodTotals(list);
+    var f = fEdit ? byId(data.food, fEdit) : null, now = hhmm(new Date());
+    if (fEdit && !f) fEdit = null;
+    var html = '<section class="card stack"><div class="row" style="justify-content:space-between"><h2>' + esc(day === today ? "Today" : nice(day)) + "</h2>" +
+      '<label class="f">Day<input type="date" id="f-day" max="' + esc(today) + '" value="' + esc(day) + '"></label></div>' +
+      (list.length ? foodList(list) : '<p class="muted small">Nothing logged.</p>') + (tot ? '<p class="small">' + esc(tot) + "</p>" : "") + "</section>";
+    var t = f ? f.time || "" : day === today ? now : "", meal = f ? f.meal || "" : t ? mealAt(t) : "";
+    html += '<form class="card stack" id="food-form"><h2>' + (f ? "Change" : "Add") + '</h2><label class="f">What it was<input name="what" maxlength="300" required value="' + esc(f ? f.what : "") + '"></label>' +
+      '<div class="row"><label class="f">Meal<select name="meal"><option value="">–</option>' + Object.keys(MEALS).map(function (m) {
+        return '<option value="' + m + '"' + (meal === m ? " selected" : "") + ">" + MEALS[m] + "</option>";
+      }).join("") + '</select></label><label class="f">Time<input name="time" type="time" value="' + esc(t) + '"></label>' +
+      '<label class="f">Calories<input name="kcal" type="number" inputmode="numeric" min="0" max="10000" value="' + esc(f ? f.kcal : "") + '"></label>' +
+      '<label class="f">Protein g<input name="protein" type="number" inputmode="numeric" min="0" max="1000" value="' + esc(f ? f.protein : "") + '"></label></div>' +
+      '<label class="f">Note<input name="note" maxlength="500" value="' + esc(f ? f.note : "") + '"></label>' +
+      '<div class="row"><button class="btn primary">' + (f ? "Save" : "Add") + "</button>" +
+      (f ? '<button type="button" class="btn ghost" data-act="cancelfood">Cancel</button><button type="button" class="link danger" data-act="delfood">' + (confirmDel === "food" ? "Delete this?" : "Delete") + "</button>" : "") + "</div></form>";
+    var days = [], seen = {};
+    data.food.slice().reverse().forEach(function (x) { if (x.date !== day && !seen[x.date] && days.length < 14) { seen[x.date] = 1; days.push(x.date); } });
+    if (days.length) html += '<ul class="list">' + days.map(function (d) {
+      var l = foodOn(d), tt = foodTotals(l);
+      return '<li><button class="open grow" data-fday="' + esc(d) + '"><strong>' + esc(nice(d)) + '</strong><br><span class="muted small">' +
+        esc(l.map(function (x) { return x.what; }).join(" · ").slice(0, 120)) + (tt ? " · " + esc(tt) : "") + "</span></button></li>";
+    }).join("") + "</ul>";
+    return html;
+  }
+  function saveFood(id, body, done) {
+    saveRow("/food/" + id, body, function (row) { upsert(data.food, row); data.food.sort(function (a, b) { return a.date === b.date ? (a.time || "").localeCompare(b.time || "") : a.date < b.date ? -1 : 1; }); })
+      .then(function (ok) { if (ok) { if (done) done(); render(); } });
+  }
+
   /* ---------- rest timer ---------- */
   var restEnd = 0, restTick = null;
   function startRest(sec) {
@@ -368,7 +435,7 @@ textarea.journal { min-height: 120px }
     tabsEl.innerHTML = TABS.map(function (t) {
       return '<button data-tab="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '">' + t[1] + "</button>";
     }).join("");
-    var v = { today: viewToday, journal: viewJournal, history: viewHistory, progress: viewProgress, plan: viewPlan, workouts: viewWorkouts, exercises: viewExercises }[tab];
+    var v = { today: viewToday, journal: viewJournal, food: viewFood, history: viewHistory, progress: viewProgress, plan: viewPlan, workouts: viewWorkouts, exercises: viewExercises }[tab];
     main.innerHTML = v();
   }
 
@@ -379,7 +446,7 @@ textarea.journal { min-height: 120px }
       return '<div class="card stack"><h2>Get started</h2><p>Load the starter program: Sessions A and B (full body, easy on shoulders and the lower back), ' +
         'a 10-minute mobility routine, and a Monday, Wednesday, Friday plan alternating A and B. You can change all of it.</p>' +
         '<div class="row"><button class="btn primary" data-act="starter">Load the starter program</button>' +
-        '<button class="btn ghost" data-tab="exercises">Build my own</button></div></div>' + journalCard();
+        '<button class="btn ghost" data-tab="exercises">Build my own</button></div></div>' + journalCard() + foodCard();
     }
     var today = ymd(new Date()), start = monday(new Date()), p = data.plan, done = finished(), html = "";
     var thisWeek = done.filter(function (x) { return x.date >= ymd(start) && x.date <= ymd(addDays(start, 6)); });
@@ -412,7 +479,7 @@ textarea.journal { min-height: 120px }
     html += '<form class="card row" id="bw-form"><label class="f" style="flex:1">Body weight today (' + esc(unit()) + ')' +
       '<input name="weight" type="number" inputmode="decimal" step="any" min="20" max="1000" value="' + esc(bw ? bw.weight : "") + '"></label>' +
       '<button class="btn ghost" style="align-self:end">Save</button></form>';
-    return html + journalCard();
+    return html + journalCard() + foodCard();
   }
 
   function pairLabels(entries) {
@@ -681,6 +748,7 @@ textarea.journal { min-height: 120px }
   });
   main.addEventListener("change", function (e) {
     if (e.target.id === "chart-ex") { chartEx = e.target.value; render(); }
+    if (e.target.id === "f-day" && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { fDay = e.target.value; fEdit = null; render(); }
     if (e.target.id === "j-day" && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { jDay = e.target.value; render(); }
   });
 
@@ -689,6 +757,8 @@ textarea.journal { min-height: 120px }
     var s = current(), d = b.dataset;
     if (d.tab) { tab = d.tab; editId = null; render(); return; }
     if (d.start !== undefined) { startSession(d.start ? byId(data.workouts, d.start) : null); return; }
+    if (d.fday) { fDay = d.fday; fEdit = null; render(); window.scrollTo(0, 0); return; }
+    if (d.editfood) { var ef = byId(data.food, d.editfood); tab = "food"; fDay = ef ? ef.date : fDay; fEdit = d.editfood; confirmDel = null; render(); return; }
     if (d.jday) { jDay = d.jday; render(); window.scrollTo(0, 0); return; }
     if (d.open) { openId = d.open; tab = "today"; confirmDel = null; render(); window.scrollTo(0, 0); return; }
     if (d.tick !== undefined && s) {
@@ -717,7 +787,7 @@ textarea.journal { min-height: 120px }
     if (d.itemup !== undefined) { readWoForm(); var n = +d.itemup, it = woDraft.items; if (n > 0) it.splice(n - 1, 0, it.splice(n, 1)[0]); render(); return; }
     if (d.itemdel !== undefined) { readWoForm(); woDraft.items.splice(+d.itemdel, 1); render(); return; }
     var act = d.act; if (!act) return;
-    if (act !== "delsession" && act !== "delworkout" && act !== "delexercise") confirmDel = null;
+    if (act !== "delsession" && act !== "delworkout" && act !== "delexercise" && act !== "delfood") confirmDel = null;
     ({
       starter: function () {
         b.disabled = true;
@@ -738,6 +808,16 @@ textarea.journal { min-height: 120px }
         api("DELETE", "/sessions/" + s.id).then(function (r) {
           if (!r.ok) { status("Couldn’t delete. Try again.", true); return; }
           data.sessions = data.sessions.filter(function (x) { return x.id !== s.id; }); unstash(s); stopRest(); openId = null; render();
+        });
+      },
+      cancelfood: function () { fEdit = null; render(); },
+      delfood: function () {
+        if (confirmDel !== "food") { confirmDel = "food"; render(); return; }
+        confirmDel = null;
+        var id = fEdit;
+        api("DELETE", "/food/" + id).then(function (r) {
+          if (!r.ok) { status("Couldn’t delete. Try again.", true); return; }
+          data.food = data.food.filter(function (x) { return x.id !== id; }); fEdit = null; status("Deleted."); render();
         });
       },
       rotadd: function () { data.plan = data.plan || { rotation: [], days: [], from: null, to: null, perWeek: 3 }; data.plan.rotation.push($("rot-add").value); render(); },
@@ -768,7 +848,16 @@ textarea.journal { min-height: 120px }
   main.addEventListener("submit", function (e) {
     e.preventDefault();
     var f = e.target;
-    if (f.id === "bw-form") {
+    if (f.id === "food-quick") {
+      var what = field(f, "what").value.trim(), t = hhmm(new Date());
+      if (!what) return;
+      saveFood(uid(), { date: ymd(new Date()), time: t, meal: mealAt(t), what: what });
+    } else if (f.id === "food-form") {
+      var old = fEdit ? byId(data.food, fEdit) : null;
+      saveFood(old ? old.id : uid(), { date: old ? old.date : fDay || ymd(new Date()), time: field(f, "time").value || null, meal: field(f, "meal").value || null,
+        what: field(f, "what").value, kcal: numOrNull(field(f, "kcal").value), protein: numOrNull(field(f, "protein").value), note: field(f, "note").value, rev: old ? old.rev : undefined },
+        function () { fEdit = null; });
+    } else if (f.id === "bw-form") {
       var w = numOrNull(field(f, "weight").value), day = ymd(new Date());
       if (w === null) return;
       api("PUT", "/weights/" + day, { weight: w }).then(function (r) {
@@ -798,7 +887,7 @@ textarea.journal { min-height: 120px }
   });
   tabsEl.addEventListener("click", function (e) {
     var b = e.target.closest("[data-tab]"); if (!b) return;
-    tab = b.dataset.tab; editId = null; woDraft = null; confirmDel = null; jDay = null;
+    tab = b.dataset.tab; editId = null; woDraft = null; confirmDel = null; jDay = null; fDay = null; fEdit = null;
     if (tab !== "today" && openId) { var s = current(); if (s && s.finishedAt) openId = null; }
     status(""); render();
   });

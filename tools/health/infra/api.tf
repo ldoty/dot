@@ -1,5 +1,5 @@
 locals {
-  routes = ["GET /all", "PUT /settings", "PUT /plan", "PUT /exercises/{id}", "DELETE /exercises/{id}", "PUT /workouts/{id}", "DELETE /workouts/{id}", "PUT /sessions/{id}", "DELETE /sessions/{id}", "PUT /weights/{date}", "DELETE /weights/{date}", "PUT /journal/{date}", "POST /starter", "GET /dot", "GET /dot/summary", "GET /dot/sessions", "GET /dot/exercise", "GET /dot/workouts", "GET /dot/journal", "POST /dot/log"]
+  routes = ["GET /all", "PUT /settings", "PUT /plan", "PUT /exercises/{id}", "DELETE /exercises/{id}", "PUT /workouts/{id}", "DELETE /workouts/{id}", "PUT /sessions/{id}", "DELETE /sessions/{id}", "PUT /weights/{date}", "DELETE /weights/{date}", "PUT /journal/{date}", "PUT /food/{id}", "DELETE /food/{id}", "POST /starter", "GET /dot", "GET /dot/summary", "GET /dot/sessions", "GET /dot/exercise", "GET /dot/workouts", "GET /dot/journal", "GET /dot/food", "POST /dot/log", "POST /dot/food", "POST /dot/journal"]
 }
 
 # The tool's handler, its starter program, what it tells Dot, and the platform's shared token check and manifest rules

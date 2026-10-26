@@ -1,6 +1,6 @@
 // Health for Dot: the manifest (platform/api/dot-manifest.mjs) and the shapes Dot reads.
 // Dot calls these with a token for the person asking, so it only ever sees and logs their own
-// workouts, exactly as their page does. It can add (log a session, a body weight) but never change
+// workouts, exactly as their page does. It can add (log a session, a body weight, food, a journal paragraph) but never change
 // or delete what's there: every other write refuses a via-Dot token (api.mjs, writeRoutes).
 // Answers are words and short numbers ("135 × 8"), not ids, so Claude reads them easily.
 import { validateManifest } from './dot-manifest.mjs';
@@ -11,11 +11,11 @@ const DATE_IN = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description
 export const MANIFEST = validateManifest({
   name: 'health',
   title: 'Health',
-  description: 'This person’s own health log: saved workouts, their plan (which workout is next, which days), sessions logged set by set (holds are counted in breaths, not seconds), body weight, how sore spots (e.g. shoulders, lower back) felt after each session, 0–10, and a daily journal of how they felt physically.',
+  description: 'This person’s own health log: saved workouts, their plan (which workout is next, which days), sessions logged set by set (holds are counted in breaths, not seconds), body weight, how sore spots (e.g. shoulders, lower back) felt after each session, 0–10, a daily journal of how they felt physically, and a food log of what they ate.',
   operations: [
     {
       name: 'summary',
-      description: 'Where they are: this week’s sessions against their weekly goal, the next workout and day in their plan, any session still open, their last few sessions, latest body weight, recent soreness ratings, and their last few journal days. Start here.',
+      description: 'Where they are: this week’s sessions against their weekly goal, the next workout and day in their plan, any session still open, their last few sessions, latest body weight, recent soreness ratings, their last few journal days, and what they’ve eaten today. Start here.',
       path: '/dot/summary',
       input: closed({}),
     },
@@ -42,6 +42,41 @@ export const MANIFEST = validateManifest({
       description: 'Their daily journal: how they felt physically each day, in their own words, newest first. Optionally between two dates (inclusive); up to 60 days.',
       path: '/dot/journal',
       input: closed({ from: DATE_IN, to: DATE_IN, limit: { type: 'integer', minimum: 1, maximum: 60 } }),
+    },
+    {
+      name: 'food',
+      description: 'What they ate, by day (newest first): each entry’s time, meal, what it was, and calories and protein where known, with the day’s totals. Optionally between two dates (inclusive); up to 60 days.',
+      path: '/dot/food',
+      input: closed({ from: DATE_IN, to: DATE_IN, limit: { type: 'integer', minimum: 1, maximum: 60 } }),
+    },
+    {
+      name: 'log_food',
+      method: 'POST',
+      description: 'Add something they ate or are about to eat to their food log. Adds a new entry; never changes one. '
+        + 'When they send a photo of their food, that is the request: say plainly what it is with rough amounts (“grilled chicken thigh, about a cup of rice, broccoli”), '
+        + 'estimate calories and protein, log it, and tell them what you logged and that the numbers are estimates they can fix on Health’s Food tab. '
+        + 'Only log food they’re eating; if a photo isn’t clearly their meal, ask.',
+      path: '/dot/food',
+      input: closed({
+        what: { type: 'string', minLength: 1, maxLength: 300, description: 'What it was, with rough amounts' },
+        meal: { type: 'string', enum: ['breakfast', 'lunch', 'dinner', 'snack'] },
+        date: { ...DATE_IN, description: 'YYYY-MM-DD; today if left out' },
+        time: { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$', description: 'HH:MM, 24-hour, their time; now if left out' },
+        calories: { type: 'integer', minimum: 0, maximum: 10000, description: 'An estimate is fine' },
+        protein_g: { type: 'integer', minimum: 0, maximum: 1000, description: 'Grams; an estimate is fine' },
+        note: { type: 'string', maxLength: 500 },
+      }, ['what']),
+    },
+    {
+      name: 'add_to_journal',
+      method: 'POST',
+      description: 'Add to their daily journal how they say they feel physically (“knee’s sore today”, “slept badly, low energy”), in their words, first person. '
+        + 'Goes after what’s already there that day; never replaces it. Only what they asked you to note, or plainly told you about how they feel.',
+      path: '/dot/journal',
+      input: closed({
+        text: { type: 'string', minLength: 1, maxLength: 2000 },
+        date: { ...DATE_IN, description: 'YYYY-MM-DD; today if left out' },
+      }, ['text']),
     },
     {
       name: 'log',
@@ -81,6 +116,8 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 
 /** The calendar day (YYYY-MM-DD) it is for them: they train in their own time zone, not UTC */
 export const localDay = (now, tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+/** HH:MM, 24-hour, in their time zone */
+export const localTime = (now, tz) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
 const dayNum = (s) => new Date(`${s}T00:00:00Z`).getUTCDay();
 const plusDays = (s, n) => new Date(Date.parse(`${s}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
@@ -138,6 +175,7 @@ export function summary(all, today) {
     last_sessions: fin.slice(-5).reverse().map((s) => ({ date: s.date, workout: s.name, sets_done: s.entries.reduce((n, e) => n + done(e).length, 0), discomfort: s.discomfort, note: s.note || undefined })),
     body_weight: weight ? { date: weight.date, weight: weight.weight } : null,
     rated_areas: all.settings.areas,
+    food_today: foodDay(all, today),
     journal: journal(all, { limit: 3 }).map((j) => ({ ...j, text: j.text.length > 300 ? `${j.text.slice(0, 300)}…` : j.text })),
   };
 }
@@ -153,6 +191,31 @@ export function journal(all, { from, to, limit }) {
   return all.journal.filter((j) => j.text && (!from || j.date >= from) && (!to || j.date <= to)).slice(-n).reverse()
     .map((j) => ({ date: `${DAYS[dayNum(j.date)]} ${j.date}`, text: j.text }));
 }
+
+/** A food entry in words: only what's known */
+export const foodOut = (f) => ({
+  ...(f.time ? { time: f.time } : {}), ...(f.meal ? { meal: f.meal } : {}), what: f.what,
+  ...(f.kcal != null ? { calories: f.kcal } : {}), ...(f.protein != null ? { protein_g: f.protein } : {}),
+  ...(f.note ? { note: f.note } : {}), ...(f.source === 'dot' ? { logged_by: 'Dot' } : {}),
+});
+// Totals count only entries that have a number, and say how many don't
+function foodDay(all, day) {
+  const list = all.food.filter((f) => f.date === day);
+  const sum = (k) => list.reduce((n, f) => n + (f[k] ?? 0), 0);
+  return {
+    entries: list.map(foodOut), calories: sum('kcal'), protein_g: sum('protein'),
+    ...(list.some((f) => f.kcal == null) ? { without_calories: list.filter((f) => f.kcal == null).length } : {}),
+  };
+}
+export function food(all, { from, to, limit }) {
+  const n = Math.min(Math.max(parseInt(limit, 10) || 7, 1), 60);
+  const days = [...new Set(all.food.map((f) => f.date))].filter((d) => (!from || d >= from) && (!to || d <= to)).slice(-n).reverse();
+  return days.map((d) => ({ date: `${DAYS[dayNum(d)]} ${d}`, ...foodDay(all, d) }));
+}
+/** The entry Dot logs, in the page's shape: today and now unless they said */
+export const foodEntry = (b, today, now) => ({
+  date: b.date || today, time: b.time || now, meal: b.meal, what: b.what, kcal: b.calories, protein: b.protein_g, note: b.note,
+});
 
 /** The exercise they mean: exact name first, else the only one containing what they said */
 function findExercise(list, name) {

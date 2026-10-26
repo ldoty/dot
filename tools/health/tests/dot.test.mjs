@@ -22,7 +22,7 @@ test('Dot reads a valid manifest, and every operation is a real route', async ()
   for (const o of MANIFEST.operations) {
     assert.ok(ROUTES.includes(`${o.method ?? 'GET'} ${o.path}`), `${o.name}: ${o.path}`);
   }
-  assert.deepEqual(writeRoutes(MANIFEST).sort(), ['POST /dot/log', 'PUT /weights/{date}']);
+  assert.deepEqual(writeRoutes(MANIFEST).sort(), ['POST /dot/food', 'POST /dot/journal', 'POST /dot/log', 'PUT /weights/{date}']);
 });
 
 test('from Dot: reads and the two declared writes; every other change is refused', async () => {
@@ -31,7 +31,7 @@ test('from Dot: reads and the two declared writes; every other change is refused
     ['PUT', '/sessions/s1', { date: ymd(), name: 'changed', rev: 1 }], ['DELETE', '/sessions/s1'], ['POST', '/starter'],
     ['PUT', '/settings', { unit: 'kg' }], ['PUT', '/plan', {}], ['PUT', '/exercises/x', { name: 'X' }], ['DELETE', '/exercises/x'],
     ['PUT', '/workouts/w', { name: 'W' }], ['DELETE', '/workouts/w'], ['DELETE', '/weights/2026-10-26'],
-    ['PUT', '/journal/2026-10-26', { text: 'from Dot' }],
+    ['PUT', '/journal/2026-10-26', { text: 'from Dot' }], ['PUT', '/food/f1', { date: '2026-10-26', what: 'x' }], ['DELETE', '/food/f1'],
   ]) {
     const r = await call(m, p, b, dotToken());
     assert.deepEqual([r.status, r.body.error], [403, 'read-only'], `${m} ${p}`);
@@ -137,6 +137,43 @@ test('the journal: Dot reads their days, newest first, and never anyone else’s
   assert.equal(sum.length, 3);
   assert.ok(sum[1].text.length <= 301 && sum[1].text.endsWith('…'), 'the summary keeps it short');
   assert.deepEqual((await dot('journal', {}, dotToken('amber-sub'))).body, []);
+});
+
+test('Dot logs food: today and now unless they said, marked as Dot’s, and only theirs', async () => {
+  const r = await dot('log_food', { what: 'Grilled chicken thigh, about a cup of rice, broccoli', meal: 'dinner', calories: 650, protein_g: 42 });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.logged, { time: r.body.logged.time, meal: 'dinner', what: 'Grilled chicken thigh, about a cup of rice, broccoli', calories: 650, protein_g: 42, logged_by: 'Dot' });
+  assert.match(r.body.logged.time, /^\d\d:\d\d$/);
+  assert.equal(r.body.date, ymd());
+  await dot('log_food', { what: 'Yogurt', date: ymd(1), time: '08:05', calories: 150 });
+  await dot('log_food', { what: 'Banana', date: ymd(1), time: '15:00' });
+  const [f] = (await call('GET', '/all')).body.food.filter((x) => x.date === ymd());
+  assert.deepEqual([f.source, f.kcal, f.protein], ['dot', 650, 42]);
+  const days = (await dot('food')).body;
+  assert.deepEqual(days.map((d) => d.date.slice(-10)), [ymd(), ymd(1)], 'newest first');
+  assert.deepEqual([days[1].calories, days[1].protein_g, days[1].without_calories, days[1].entries.map((e) => e.what)], [150, 0, 1, ['Yogurt', 'Banana']]);
+  assert.equal((await dot('summary')).body.food_today.calories, 650);
+  assert.equal((await dot('log_food', { what: '' })).status, 400);
+  assert.equal((await dot('log_food', { what: 'x', time: '7pm' })).status, 400);
+  assert.deepEqual((await dot('food', {}, dotToken('amber-sub'))).body, []);
+  // Fixed on the page, it's theirs: no longer marked as Dot's
+  await call('PUT', `/food/${f.id}`, { date: f.date, what: 'Chicken, rice, broccoli', kcal: 600, rev: f.rev });
+  assert.equal((await call('GET', '/all')).body.food.find((x) => x.id === f.id).source, undefined);
+});
+
+test('Dot adds to the journal after what’s there, never over it', async () => {
+  await call('PUT', `/journal/${ymd()}`, { text: 'Back stiff this morning.' });
+  const r = await dot('add_to_journal', { text: 'Knee sore after the stairs.' });
+  assert.deepEqual(r.body, { added_to: ymd(), text: 'Back stiff this morning.\n\nKnee sore after the stairs.' });
+  await dot('add_to_journal', { text: 'Slept badly.', date: ymd(1) });
+  const j = (await call('GET', '/all')).body.journal;
+  assert.deepEqual(j.map((x) => [x.date, x.text, x.rev]), [[ymd(1), 'Slept badly.', 1], [ymd(), 'Back stiff this morning.\n\nKnee sore after the stairs.', 2]]);
+  assert.equal((await dot('add_to_journal', { text: ' ' })).status, 400);
+  await call('PUT', `/journal/${ymd(2)}`, { text: 'x'.repeat(4990) });
+  assert.equal((await dot('add_to_journal', { text: 'one more line', date: ymd(2) })).status, 400, 'full: refused, not cut off');
+  assert.equal((await call('GET', '/all')).body.journal[0].text.length, 4990);
+  await dot('add_to_journal', { text: 'mine' }, dotToken('amber-sub'));
+  assert.match((await call('GET', '/all')).body.journal.at(-1).text, /^Back stiff/, 'Amber’s note went to Amber');
 });
 
 test('each log is a new session; bad input is refused', async () => {

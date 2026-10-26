@@ -194,6 +194,38 @@ test('the journal: today’s words save as you type, and past days are on Journa
   p.close();
 });
 
+test('food: a quick add on Today, and the Food tab to fix or delete', async () => {
+  await call('PUT', '/food/d1', { date: daysAgo(0), time: '07:30', meal: 'breakfast', what: 'Eggs and toast', kcal: 420, protein: 24 });
+  await call('PUT', '/food/old', { date: daysAgo(1), time: '19:00', what: '<b>Tacos</b>', kcal: 800 });
+  table.put({ ...table.get('P#luke-sub', 'F#d1'), source: 'dot' });
+  const p = await open();
+  assert.match(p.el('.food').textContent, /Eggs and toast.*420 kcal · 24 g protein \(Dot’s estimate\)/s);
+  await p.type('#food-quick [name="what"]', 'Apple');
+  await p.submit('#food-quick');
+  let food = (await call('GET', '/all')).body.food.filter((f) => f.date === daysAgo(0));
+  assert.deepEqual(food.map((f) => f.what).sort(), ['Apple', 'Eggs and toast']);
+  const apple = food.find((f) => f.what === 'Apple');
+  assert.match(apple.time, /^\d\d:\d\d$/);
+  assert.ok(['breakfast', 'lunch', 'dinner', 'snack'].includes(apple.meal), 'a meal guessed from the clock');
+
+  await p.click('[data-editfood="d1"]');
+  assert.equal(p.el('[data-tab="food"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(p.el('#food-form [name="what"]').value, 'Eggs and toast');
+  p.el('#food-form [name="kcal"]').value = '380';
+  await p.submit('#food-form');
+  assert.equal((await call('GET', '/all')).body.food.find((f) => f.id === 'd1').kcal, 380);
+  assert.match(p.el('#main').textContent, /About 380 kcal · 24 g protein/);
+
+  await p.click(`[data-fday="${daysAgo(1)}"]`);
+  assert.equal(p.all('#main b').length, 0, 'shown as text');
+  await p.click('[data-editfood="old"]');
+  await p.click('[data-act="delfood"]');
+  await p.click('[data-act="delfood"]');
+  await wait(50);
+  assert.deepEqual((await call('GET', '/all')).body.food.map((f) => f.id).includes('old'), false);
+  p.close();
+});
+
 test('the plan: pick days and order the rotation', async () => {
   await call('POST', '/starter');
   const p = await open();
