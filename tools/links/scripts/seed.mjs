@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Starting content for Links: a Technology section with the UniFi console.
+// Starting content for Links: a Technology section with the UniFi console, Luke's (sections are their
+// owner's until shared; see api/api.mjs).
 // Safe to re-run: it only adds rows that don't exist yet.
 //   node tools/links/scripts/seed.mjs
 import { execFileSync } from 'node:child_process';
@@ -7,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 const env = { ...process.env, AWS_PROFILE: process.env.AWS_PROFILE || 'ldoty', AWS_REGION: 'us-east-1' };
 const S = (v) => ({ S: String(v) });
 const N = (v) => ({ N: String(v) });
+const LUKE = '44f8c468-4011-70b8-76aa-ec2b68b0b004';
 
 function putIfMissing(item) {
   try {
@@ -20,7 +22,7 @@ function putIfMissing(item) {
 }
 
 const stamp = { updatedAt: S(new Date().toISOString()), updatedBy: S('seed') };
-console.log(putIfMissing({ pk: S('TOOL'), sk: S('SECTION#technology'), name: S('Technology'), order: N(1), ...stamp })
+console.log(putIfMissing({ pk: S('TOOL'), sk: S('SECTION#technology'), name: S('Technology'), order: N(1), owner: S(LUKE), share: { L: [] }, rev: N(1), ...stamp })
   ? 'section Technology added' : 'section Technology already exists');
 console.log(putIfMissing({ pk: S('TOOL'), sk: S('LINK#unifi'), sectionId: S('technology'), title: S('UniFi'), url: S('https://unifi.ui.com/'), order: N(1), ...stamp })
   ? 'link UniFi added' : 'link UniFi already exists');

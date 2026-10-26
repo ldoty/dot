@@ -21,7 +21,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/assistant` | assistant.dot-y.co | `family_assistant` | **Dot**: chat with Claude (Bedrock) + calendars + any tool that describes itself |
 | `tools/calendars` | calendars.dot-y.co | `family_calendars` | The family's Google calendars and who may see or change each; the week ahead. The only holder of the Google key: Dot's calendar tools call it as the person. Notes in `tools/calendars/AGENTS.md` |
 | `tools/lists` | lists.dot-y.co | `family_lists` | To-dos and checklists (checklist, Eisenhower matrix, board), private until shared with people or family groups; reminders by text or email from an every-minute sweep. Notes in `tools/lists/AGENTS.md` |
-| `tools/links` | links.dot-y.co | `family_links` | Family bookmarks |
+| `tools/links` | links.dot-y.co | `family_links` | Bookmarks in sections, private until shared with people or family groups (as Lists; `platform/api/sharing.mjs`) |
 | `tools/health` | health.dot-y.co | `family_health` | Each person’s own workouts and how they feel: saved workouts, a plan, sessions logged set by set (last time’s numbers, rest timer, works offline; holds counted in breaths), body weight, how sore spots felt, a daily journal, a food log; a starter program. Dot reads it and logs sessions, food (from a photo) and journal notes as the person |
 | `tools/biomap` | biomap.dot-y.co | `lukes_biomap` | Field-guide flashcards from a private photo collection |
 | `tools/tempi` | tempi.dot-y.co | `family_tempi` | An OT course, served to members only |
@@ -201,7 +201,7 @@ Read them first when a change crosses into one of those tools (e.g. Dot or Finan
   `x-chamber-key` header against the SecureString `/family/chamber/device-key` (set by hand) and its role can only
   write readings. Control runs on the Arduino; nothing in the cloud may become part of its loop. Firmware notes in
   `tools/chamber/AGENTS.md`.
-- **Links**: sections + http(s)-only links. **Tempi**: the course HTML is in the Lambda, served only to
+- **Links**: sections (each its owner's until shared, like a list) + http(s)-only links. **Tempi**: the course HTML is in the Lambda, served only to
   members. **Biomap**: `collection/` is gitignored; `scripts/publish.sh` builds the deck and syncs photos
   to a private bucket. **SMS**: consent text in `api/program.mjs` must match `portal/sms.html` (tested);
   the opt-in Lambda can only write the consent table. Photos texted or emailed to Dot are kept 7 days (privacy page says so; a test ties them). Dot’s texts never carry links (the campaign

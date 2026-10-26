@@ -7,7 +7,8 @@
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="family.css">
 <style>
-/* Layout: header with a link home, then a grid of section cards, each a list of links with an inline add/edit form. */
+/* Layout: header with a link home, then a grid of section cards, each a list of links with an inline add/edit form.
+   A section is its maker's until shared (like a list): what you may do with it decides which buttons show. */
 .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 24px }
 .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
 .top a { color: var(--muted); text-decoration: none; font-size: 14px }
@@ -37,6 +38,12 @@ form.edit .btn { padding: 6px 14px; font-size: 13px }
 .add-link { justify-self: start; padding: 6px 12px; font-size: 13px; border-style: dashed }
 .new-section { align-self: stretch; display: grid; place-items: center; border: 1.5px dashed var(--line); background: none; color: var(--muted); border-radius: var(--r-md); min-height: 120px; font-weight: 600; cursor: pointer }
 .new-section:hover { color: var(--ink); border-color: var(--muted) }
+.shared { color: var(--muted); font-size: 13px; margin: -4px 0 0 }
+.shares { display: grid; gap: 6px; font-size: 14px }
+.shares li { display: flex; justify-content: space-between; align-items: center; gap: 8px }
+form.edit select { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-sm); padding: 7px 10px; color: var(--ink); min-width: 0 }
+form.edit .row { display: flex; gap: 6px; flex-wrap: wrap }
+form.edit .row select:first-child { flex: 1 }
 </style>
 </head>
 <body>
@@ -49,8 +56,8 @@ form.edit .btn { padding: 6px 14px; font-size: 13px }
 <script src="family-auth.js"></script>
 <script>
 (function () {
-  var cfg, sections = [], links = [];
-  // What's open for editing: { kind: "section" | "link" | "new-link" | "new-section", id }
+  var cfg, sections = [], links = [], options = { people: [], groups: [] };
+  // What's open for editing: { kind: "section" | "link" | "new-link" | "new-section" | "share", id }
   var editing = null, armed = null;
   var main = document.getElementById("main");
 
@@ -78,7 +85,7 @@ form.edit .btn { padding: 6px 14px; font-size: 13px }
         body: body ? JSON.stringify(body) : undefined,
       });
     }).then(function (res) {
-      if (!res.ok) return res.json().catch(function () { return {}; }).then(function (b) { throw new Error(b.error || "HTTP " + res.status); });
+      if (!res.ok) return res.json().catch(function () { return {}; }).then(function (b) { var e = new Error(b.error || "HTTP " + res.status); e.current = b.current; throw e; });
       return res.json();
     });
   }
@@ -95,28 +102,71 @@ form.edit .btn { padding: 6px 14px; font-size: 13px }
       '<div class="acts"><button class="btn primary">' + (s ? "Rename" : "Add section") + '</button><button type="button" class="btn ghost" data-cancel>Cancel</button></div></form>';
   }
   function is(kind, id) { return editing && editing.kind === kind && editing.id === id; }
+  function canEdit(s) { return s.level === "owner" || s.level === "edit"; }
+  function byId(id) { return sections.filter(function (s) { return s.id === id; })[0]; }
+  // A person or group by its `who` (sub:… or group:…), from the share options
+  function whoName(who) {
+    var g = who.indexOf("group:") === 0, id = who.slice(who.indexOf(":") + 1), src = g ? options.groups : options.people, k = g ? "id" : "sub";
+    for (var n = 0; n < src.length; n++) if (src[n][k] === id) return g ? "Group “" + src[n].name + "”" : src[n].name;
+    return g ? "a removed group" : "someone no longer in Links";
+  }
+  function personName(sub) {
+    for (var n = 0; n < options.people.length; n++) if (options.people[n].sub === sub) return options.people[n].name;
+    return "someone";
+  }
+  // Under the heading: who else sees it (yours), or whose it is (shared with you)
+  function sharedNote(s) {
+    if (s.level === "owner") return s.share.length ? '<p class="shared">Shared with ' + esc(s.share.map(function (x) { return whoName(x.who); }).join(", ")) + "</p>" : "";
+    return '<p class="shared">' + esc(personName(s.owner)) + "’s, shared with you" + (s.level === "read" ? " to see" : "") + "</p>";
+  }
+  function shareForm(s) {
+    return '<form class="edit" data-form="share" data-id="' + esc(s.id) + '"><strong>Shared with</strong><ul class="shares">' +
+      (s.share.length ? s.share.map(function (x, n) {
+        return "<li><span>" + esc(whoName(x.who)) + " · " + (x.level === "edit" ? "can edit" : "can see") + '</span><span class="tools"><button type="button" data-unshare="' + n + '">Remove</button></span></li>';
+      }).join("") : '<li class="empty">Just you.</li>') + "</ul>" +
+      (options.people.length || options.groups.length ? '<div class="row"><select name="who" aria-label="Share with">' +
+        options.people.map(function (p) { return '<option value="sub:' + esc(p.sub) + '">' + esc(p.name) + "</option>"; }).join("") +
+        options.groups.map(function (g) { return '<option value="group:' + esc(g.id) + '">Group “' + esc(g.name) + "”</option>"; }).join("") +
+        '</select><select name="level" aria-label="Level"><option value="edit">can edit</option><option value="read">can see</option></select></div>' : "") +
+      '<div class="acts">' + (options.people.length || options.groups.length ? '<button class="btn primary">Share</button>' : "") + '<button type="button" class="btn ghost" data-cancel>Done</button></div></form>';
+  }
+  // Saves a section (rename or sharing) with its rev; a 409 brings the newer one
+  function saveSection(s, change, done) {
+    var body = { name: s.name, order: s.order, share: s.share, rev: s.rev };
+    for (var k in change) body[k] = change[k];
+    return api("PUT", "/sections/" + s.id, body).then(function (row) {
+      sections = sections.map(function (x) { return x.id === row.id ? row : x; });
+      done(row);
+    }).catch(function (err) {
+      if (err.current) { sections = sections.map(function (x) { return x.id === s.id ? err.current : x; }); editing = null; render(); status("That section changed somewhere else, so this shows the newer one."); return; }
+      status("Couldn’t save: " + err.message);
+    });
+  }
 
   function render() {
     main.innerHTML = '<div class="grid">' + sections.map(function (s) {
-      var mine = links.filter(function (l) { return l.sectionId === s.id; });
+      var mine = links.filter(function (l) { return l.sectionId === s.id; }), edit = canEdit(s), own = s.level === "owner";
       return '<section class="card section" data-sec="' + esc(s.id) + '">' +
         (is("section", s.id) ? sectionForm(s) :
           '<div class="sec-head"><h2>' + esc(s.name) + '</h2><div class="tools">' +
-          '<button data-rename="' + esc(s.id) + '">Rename</button><button data-secdel="' + esc(s.id) + '">Delete</button></div></div>') +
+          (own ? '<button data-share="' + esc(s.id) + '">Share</button>' : "") +
+          (edit ? '<button data-rename="' + esc(s.id) + '">Rename</button>' : "") +
+          (own ? '<button data-secdel="' + esc(s.id) + '">Delete</button>' : "") + "</div></div>") +
+        sharedNote(s) + (is("share", s.id) ? shareForm(s) : "") +
         "<ul>" + mine.map(function (l) {
           if (is("link", l.id)) return "<li>" + linkForm(s.id, l) + "</li>";
           return '<li class="link"><a href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">' + esc(l.title) + "</a>" +
-            '<span class="link-acts"><button data-edit="' + esc(l.id) + '" aria-label="Edit ' + esc(l.title) + '">Edit</button>' +
-            '<button data-del="' + esc(l.id) + '" aria-label="Delete ' + esc(l.title) + '">&times;</button></span>' +
+            (edit ? '<span class="link-acts"><button data-edit="' + esc(l.id) + '" aria-label="Edit ' + esc(l.title) + '">Edit</button>' +
+              '<button data-del="' + esc(l.id) + '" aria-label="Delete ' + esc(l.title) + '">&times;</button></span>' : "") +
             "<small>" + esc(host(l.url)) + "</small></li>";
         }).join("") + "</ul>" +
         (mine.length || is("new-link", s.id) ? "" : '<p class="empty">No links yet.</p>') +
-        (is("new-link", s.id) ? linkForm(s.id, null) : '<button class="btn ghost add-link" data-addlink="' + esc(s.id) + '">+ Add link</button>') +
+        (!edit ? "" : is("new-link", s.id) ? linkForm(s.id, null) : '<button class="btn ghost add-link" data-addlink="' + esc(s.id) + '">+ Add link</button>') +
         "</section>";
     }).join("") +
       (is("new-section", "") ? '<section class="card section">' + sectionForm(null) + "</section>" : '<button class="new-section" id="add-section">+ Add section</button>') +
       "</div>";
-    var f = main.querySelector("form.edit input"); if (f) f.focus();
+    var f = main.querySelector("form.edit input, form.edit select"); if (f) f.focus();
   }
 
   main.addEventListener("click", function (e) {
@@ -124,6 +174,11 @@ form.edit .btn { padding: 6px 14px; font-size: 13px }
     if (t.id === "add-section") { editing = { kind: "new-section", id: "" }; render(); }
     else if (t.dataset.addlink) { editing = { kind: "new-link", id: t.dataset.addlink }; render(); }
     else if (t.dataset.rename) { editing = { kind: "section", id: t.dataset.rename }; render(); }
+    else if (t.dataset.share) { editing = { kind: "share", id: t.dataset.share }; render(); }
+    else if (t.dataset.unshare) {
+      var sec = byId(editing.id), n = Number(t.dataset.unshare);
+      saveSection(sec, { share: sec.share.filter(function (_, k) { return k !== n; }) }, function () { render(); status("Removed"); });
+    }
     else if (t.dataset.edit) { editing = { kind: "link", id: t.dataset.edit }; render(); }
     else if (t.dataset.cancel != null) { editing = null; render(); }
     else if (t.dataset.del || t.dataset.secdel) {
@@ -154,13 +209,19 @@ form.edit .btn { padding: 6px 14px; font-size: 13px }
     e.preventDefault();
     // Read fields via f.elements: f.name / f.title are the form’s own properties
     var f = e.target, id = f.dataset.id;
+    if (f.dataset.form === "share") {
+      var s = byId(id), who = f.elements.who.value, level = f.elements.level.value;
+      saveSection(s, { share: s.share.filter(function (x) { return x.who !== who; }).concat([{ who: who, level: level }]) }, function () { render(); status("Shared"); });
+      return;
+    }
     if (f.dataset.form === "section") {
       var name = f.elements.name.value.trim(); if (!name) return;
-      var old = id && sections.filter(function (s) { return s.id === id; })[0];
-      var sec = { id: id || uid(), name: name, order: old ? old.order : Date.now() };
-      api("PUT", "/sections/" + sec.id, sec).then(function () {
-        sections = sections.filter(function (s) { return s.id !== sec.id; }).concat([sec]).sort(function (a, b) { return a.order - b.order; });
-        editing = old ? null : { kind: "new-link", id: sec.id }; render(); status(old ? "Renamed" : "Section added: add its first link");
+      var old = id && byId(id);
+      if (old) { saveSection(old, { name: name }, function () { editing = null; render(); status("Renamed"); }); return; }
+      var sid = uid();
+      api("PUT", "/sections/" + sid, { name: name, order: Date.now() }).then(function (row) {
+        sections = sections.concat([row]).sort(function (a, b) { return a.order - b.order; });
+        editing = { kind: "new-link", id: row.id }; render(); status("Section added: add its first link. It’s yours until you share it.");
       }).catch(function (err) { status("Couldn’t save: " + err.message); });
       return;
     }
@@ -188,7 +249,10 @@ form.edit .btn { padding: 6px 14px; font-size: 13px }
     if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
     document.getElementById("signout").hidden = false;
     document.getElementById("signout").onclick = function () { FamilyAuth.logout(); };
-    return api("GET", "/all").then(function (all) { sections = all.sections; links = all.links; render(); });
+    // Names for who sections are shared with; without them the page still works
+    return Promise.all([api("GET", "/all"), api("GET", "/share-options").catch(function () { return options; })]).then(function (r) {
+      sections = r[0].sections; links = r[0].links; options = r[1]; render();
+    });
   }).catch(function (e) { gate(/forbidden/.test(e.message) ? "Your account doesn’t have access to Links yet." : e.message); });
 })();
 </script>

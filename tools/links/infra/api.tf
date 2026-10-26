@@ -1,8 +1,8 @@
 locals {
-  routes = ["GET /all", "PUT /sections/{id}", "DELETE /sections/{id}", "PUT /links/{id}", "DELETE /links/{id}"]
+  routes = ["GET /all", "PUT /sections/{id}", "DELETE /sections/{id}", "PUT /links/{id}", "DELETE /links/{id}", "GET /share-options"]
 }
 
-# The tool's handler plus the platform's shared token check
+# The tool's handler plus the platform's shared token check, sharing rules and family groups
 data "archive_file" "api" {
   type        = "zip"
   output_path = "${path.module}/.build/api.zip"
@@ -14,7 +14,22 @@ data "archive_file" "api" {
     content  = file("${path.module}/../../../platform/api/verify-token.mjs")
     filename = "verify-token.mjs"
   }
+  source {
+    content  = file("${path.module}/../../../platform/api/sharing.mjs")
+    filename = "sharing.mjs"
+  }
+  source {
+    content  = file("${path.module}/../../../platform/api/people.mjs")
+    filename = "people.mjs"
+  }
 }
+
+# The family's groups (platform/family): read only, for sharing a section with a group
+data "aws_ssm_parameter" "people_table_arn" {
+  name = "/family/people/table-arn"
+}
+
+data "aws_caller_identity" "current" {}
 
 resource "aws_iam_role" "api" {
   name = "family-links-api"
@@ -37,11 +52,16 @@ resource "aws_iam_role_policy" "api_table" {
   role = aws_iam_role.api.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Query"]
-      Resource = aws_dynamodb_table.main.arn
-    }]
+    Statement = [
+      { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Query"], Resource = aws_dynamodb_table.main.arn },
+      { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:Query"], Resource = nonsensitive(data.aws_ssm_parameter.people_table_arn.value) },
+      {
+        # Who is in this tool's group, to share sections with (read only)
+        Effect   = "Allow"
+        Action   = "cognito-idp:ListUsersInGroup"
+        Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}"
+      },
+    ]
   })
 }
 
@@ -57,10 +77,12 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      TABLE     = aws_dynamodb_table.main.name
-      GROUP     = module.app.member_group
-      ISSUER    = local.issuer
-      CLIENT_ID = module.app.client_id
+      TABLE        = aws_dynamodb_table.main.name
+      GROUP        = module.app.member_group
+      ISSUER       = local.issuer
+      CLIENT_ID    = module.app.client_id
+      PEOPLE_TABLE = element(split("/", nonsensitive(data.aws_ssm_parameter.people_table_arn.value)), 1)
+      USER_POOL_ID = local.pool_id
     }
   }
 }

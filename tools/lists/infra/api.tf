@@ -31,6 +31,10 @@ data "archive_file" "api" {
     filename = "dot-manifest.mjs"
   }
   source {
+    content  = file("${path.module}/../../../platform/api/sharing.mjs")
+    filename = "sharing.mjs"
+  }
+  source {
     content  = file("${path.module}/../../../platform/api/people.mjs")
     filename = "people.mjs"
   }
