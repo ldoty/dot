@@ -40,7 +40,7 @@ test('everyone has their own data: nobody sees or changes anyone else’s', asyn
 
 test('an empty account gets defaults', async () => {
   assert.deepEqual((await call('GET', '/all')).body, {
-    settings: { unit: 'lb', areas: [] }, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [], food: [],
+    settings: { unit: 'lb', areas: [] }, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [], food: [], meds: [], doses: [],
   });
 });
 
@@ -145,6 +145,39 @@ test('food: entries by day and time, rev-checked, checked, and nobody else’s',
   assert.equal((await call('GET', '/all')).body.food.length, 3, 'her delete reached only her own rows');
   await call('DELETE', '/food/f1');
   assert.equal((await call('GET', '/all')).body.food.length, 2);
+});
+
+test('meds: a list of what they take, checked, and nobody else’s', async () => {
+  const r = await call('PUT', '/meds/vitd', { name: ' Vitamin D ', kind: 'supplement', dose: '2000 IU', times: ['20:00', '08:00', '08:00'] });
+  assert.deepEqual(r.body, { id: 'vitd', name: 'Vitamin D', kind: 'supplement', dose: '2000 IU', times: ['08:00', '20:00'], note: '', stopped: false, rev: 1 });
+  assert.equal((await call('PUT', '/meds/vitd', { name: 'Vitamin D3', times: ['08:00'], rev: 1 })).body.rev, 2);
+  assert.equal((await call('PUT', '/meds/vitd', { name: 'stale', rev: 1 })).status, 409);
+  for (const b of [{ name: '' }, { name: 'X', kind: 'candy' }, { name: 'X', times: ['8am'] }, { name: 'X', times: ['25:00'] }, { name: 'X', times: Array(7).fill(0).map((_, i) => `0${i}:00`) }]) {
+    assert.equal((await call('PUT', '/meds/bad', b)).status, 400, JSON.stringify(b));
+  }
+  assert.equal((await call('PUT', '/meds/has-dash', { name: 'X' })).status, 400, 'a med id can’t hold the dose id’s separator');
+  assert.deepEqual((await call('GET', '/all', undefined, memberToken('amber-sub'))).body.meds, []);
+});
+
+test('doses: once per due time, as-needed as often as taken, and only of their own meds', async () => {
+  await call('PUT', '/meds/vitd', { name: 'Vitamin D', times: ['08:00', '20:00'] });
+  await call('PUT', '/meds/ibu', { name: 'Ibuprofen', kind: 'medication', dose: '200 mg' });
+  const r = await call('PUT', '/doses/2026-10-26/vitd-0800', { med: 'vitd', slot: '08:00', at: '08:14' });
+  assert.deepEqual(r.body, { date: '2026-10-26', id: 'vitd-0800', med: 'vitd', slot: '08:00', at: '08:14' });
+  await call('PUT', '/doses/2026-10-26/vitd-0800', { med: 'vitd', slot: '08:00', at: '08:20' });
+  await call('PUT', '/doses/2026-10-26/ibu-na1', { med: 'ibu', slot: null, at: '13:00' });
+  await call('PUT', '/doses/2026-10-26/ibu-na2', { med: 'ibu', slot: null, at: '19:00' });
+  assert.deepEqual((await call('GET', '/all')).body.doses.map((d) => [d.id, d.at]), [['vitd-0800', '08:20'], ['ibu-na1', '13:00'], ['ibu-na2', '19:00']], 'the 8:00 dose once, at its latest time');
+  for (const [id, b] of [
+    ['vitd-0900', { med: 'vitd', slot: '09:00', at: '09:00' }], ['vitd-2000', { med: 'vitd', slot: '08:00', at: '08:00' }],
+    ['vitd-na1', { med: 'vitd', slot: '08:00', at: '08:00' }], ['ibu-0800', { med: 'ibu', slot: null, at: '08:00' }],
+    ['ibu-na3', { med: 'vitd', slot: null, at: '08:00' }], ['ibu-na3', { med: 'ibu', slot: null, at: 'noon' }], ['nope-na1', { med: 'nope', slot: null, at: '08:00' }],
+  ]) assert.equal((await call('PUT', `/doses/2026-10-26/${id}`, b)).status, 400, `${id} ${JSON.stringify(b)}`);
+  assert.equal((await call('PUT', '/doses/2026-10-26/ibu-na9', { med: 'ibu', slot: null, at: '08:00' }, memberToken('amber-sub'))).status, 400, 'Luke’s ibuprofen isn’t hers');
+  await call('DELETE', '/doses/2026-10-26/ibu-na2');
+  assert.equal((await call('GET', '/all')).body.doses.length, 2);
+  await call('DELETE', '/meds/ibu');
+  assert.deepEqual((await call('GET', '/all')).body.doses.map((d) => d.med), ['vitd'], 'a deleted med takes its doses with it');
 });
 
 test('an exercise in a saved workout can’t be deleted until it’s taken out', async () => {

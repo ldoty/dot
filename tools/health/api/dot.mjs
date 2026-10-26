@@ -1,6 +1,6 @@
 // Health for Dot: the manifest (platform/api/dot-manifest.mjs) and the shapes Dot reads.
 // Dot calls these with a token for the person asking, so it only ever sees and logs their own
-// workouts, exactly as their page does. It can add (log a session, a body weight, food, a journal paragraph) but never change
+// workouts, exactly as their page does. It can add (log a session, a body weight, food, a journal paragraph, a dose) but never change
 // or delete what's there: every other write refuses a via-Dot token (api.mjs, writeRoutes).
 // Answers are words and short numbers ("135 × 8"), not ids, so Claude reads them easily.
 import { validateManifest } from './dot-manifest.mjs';
@@ -11,11 +11,11 @@ const DATE_IN = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description
 export const MANIFEST = validateManifest({
   name: 'health',
   title: 'Health',
-  description: 'This person’s own health log: saved workouts, their plan (which workout is next, which days), sessions logged set by set (holds are counted in breaths, not seconds), body weight, how sore spots (e.g. shoulders, lower back) felt after each session, 0–10, a daily journal of how they felt physically, and a food log of what they ate.',
+  description: 'This person’s own health log: saved workouts, their plan (which workout is next, which days), sessions logged set by set (holds are counted in breaths, not seconds), body weight, how sore spots (e.g. shoulders, lower back) felt after each session, 0–10, a daily journal of how they felt physically, a food log of what they ate, and the medications and supplements they take, with each dose they’ve ticked off. Never advise starting, stopping or changing a medication or its dose: that is for their doctor or pharmacist.',
   operations: [
     {
       name: 'summary',
-      description: 'Where they are: this week’s sessions against their weekly goal, the next workout and day in their plan, any session still open, their last few sessions, latest body weight, recent soreness ratings, their last few journal days, and what they’ve eaten today. Start here.',
+      description: 'Where they are: this week’s sessions against their weekly goal, the next workout and day in their plan, any session still open, their last few sessions, latest body weight, recent soreness ratings, their last few journal days, what they’ve eaten today, and today’s medication and supplement doses. Start here.',
       path: '/dot/summary',
       input: closed({}),
     },
@@ -66,6 +66,25 @@ export const MANIFEST = validateManifest({
         protein_g: { type: 'integer', minimum: 0, maximum: 1000, description: 'Grams; an estimate is fine' },
         note: { type: 'string', maxLength: 500 },
       }, ['what']),
+    },
+    {
+      name: 'meds',
+      description: 'Their medications and supplements: each one’s dose and the times they take it (or as needed), which of today’s doses they’ve taken and when, '
+        + 'and how many they took over the last 7 days. Use it for “did I take my vitamin D?”.',
+      path: '/dot/meds',
+      input: closed({}),
+    },
+    {
+      name: 'log_dose',
+      method: 'POST',
+      description: 'Tick off a dose they say they took (“took my magnesium”): the next one due that day, or an as-needed one. Adds; never changes or removes one. '
+        + 'Use their medicine’s name as in meds. Only what they said they took.',
+      path: '/dot/dose',
+      input: closed({
+        name: { type: 'string', minLength: 2, maxLength: 80, description: 'The medication or supplement, as named in meds' },
+        date: { ...DATE_IN, description: 'YYYY-MM-DD; today if left out' },
+        time: { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$', description: 'When they took it, HH:MM, 24-hour; now if left out' },
+      }, ['name']),
     },
     {
       name: 'add_to_journal',
@@ -176,6 +195,7 @@ export function summary(all, today) {
     body_weight: weight ? { date: weight.date, weight: weight.weight } : null,
     rated_areas: all.settings.areas,
     food_today: foodDay(all, today),
+    ...(all.meds.some((m) => !m.stopped) ? { meds_today: medsDay(all, today) } : {}),
     journal: journal(all, { limit: 3 }).map((j) => ({ ...j, text: j.text.length > 300 ? `${j.text.slice(0, 300)}…` : j.text })),
   };
 }
@@ -190,6 +210,41 @@ export function journal(all, { from, to, limit }) {
   const n = Math.min(Math.max(parseInt(limit, 10) || 14, 1), 60);
   return all.journal.filter((j) => j.text && (!from || j.date >= from) && (!to || j.date <= to)).slice(-n).reverse()
     .map((j) => ({ date: `${DAYS[dayNum(j.date)]} ${j.date}`, text: j.text }));
+}
+
+// Medications and supplements: what's due on a day (each one's times), what was taken and when
+const taking = (all) => all.meds.filter((m) => !m.stopped);
+const dosesOn = (all, day, med) => all.doses.filter((d) => d.date === day && d.med === med.id);
+function medsDay(all, day) {
+  const due = taking(all).flatMap((m) => m.times.map((t) => ({ m, t, taken: dosesOn(all, day, m).find((d) => d.slot === t) })));
+  return { doses_due: due.length, taken: due.filter((x) => x.taken).length, not_yet: due.filter((x) => !x.taken).map((x) => `${x.m.name} ${x.t}`) };
+}
+export function meds(all, today) {
+  const week = Array.from({ length: 7 }, (_, i) => plusDays(today, -i));
+  return {
+    today,
+    taking: taking(all).map((m) => {
+      const t = dosesOn(all, today, m), inWeek = all.doses.filter((d) => d.med === m.id && week.includes(d.date));
+      return {
+        name: m.name, kind: m.kind, ...(m.dose ? { dose: m.dose } : {}), when: m.times.length ? m.times : 'as needed', ...(m.note ? { note: m.note } : {}),
+        today: m.times.length
+          ? m.times.map((s) => ({ due: s, taken_at: t.find((d) => d.slot === s)?.at ?? null }))
+          : t.map((d) => ({ taken_at: d.at })),
+        last_7_days: m.times.length ? `${inWeek.filter((d) => d.slot).length} of ${m.times.length * 7} doses` : `${inWeek.length} taken`,
+      };
+    }),
+    stopped: all.meds.filter((m) => m.stopped).map((m) => m.name),
+  };
+}
+/** The dose Dot logs for what they named: the next of that day's times not yet taken, or an as-needed one */
+export function doseFor(all, name, day, nonce) {
+  const { match, matches } = findExercise(taking(all), name);
+  if (!match) return { error: matches.length ? 'more than one matches' : 'nothing they take by that name', candidates: (matches.length ? matches : taking(all)).map((m) => m.name) };
+  if (!match.times.length) return { med: match, slot: null, id: `${match.id}-n${nonce}` };
+  const done = new Set(dosesOn(all, day, match).map((d) => d.slot));
+  const slot = match.times.find((t) => !done.has(t));
+  if (!slot) return { error: `all of that day’s doses of ${match.name} are already ticked off` };
+  return { med: match, slot, id: `${match.id}-${slot.replace(':', '')}` };
 }
 
 /** A food entry in words: only what's known */

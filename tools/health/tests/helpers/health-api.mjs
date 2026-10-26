@@ -10,8 +10,8 @@ export const table = fakeTable();
 const { handler } = await import('../../api/api.mjs');
 export const ROUTES = [
   'GET /all', 'PUT /settings', 'PUT /plan', 'PUT /exercises/{id}', 'DELETE /exercises/{id}', 'PUT /workouts/{id}', 'DELETE /workouts/{id}',
-  'PUT /sessions/{id}', 'DELETE /sessions/{id}', 'PUT /weights/{date}', 'DELETE /weights/{date}', 'PUT /journal/{date}', 'PUT /food/{id}', 'DELETE /food/{id}', 'POST /starter',
-  'GET /dot', 'GET /dot/summary', 'GET /dot/sessions', 'GET /dot/exercise', 'GET /dot/workouts', 'GET /dot/journal', 'GET /dot/food', 'POST /dot/log', 'POST /dot/food', 'POST /dot/journal',
+  'PUT /sessions/{id}', 'DELETE /sessions/{id}', 'PUT /weights/{date}', 'DELETE /weights/{date}', 'PUT /journal/{date}', 'PUT /food/{id}', 'DELETE /food/{id}', 'PUT /meds/{id}', 'DELETE /meds/{id}', 'PUT /doses/{date}/{id}', 'DELETE /doses/{date}/{id}', 'POST /starter',
+  'GET /dot', 'GET /dot/summary', 'GET /dot/sessions', 'GET /dot/exercise', 'GET /dot/workouts', 'GET /dot/journal', 'GET /dot/food', 'GET /dot/meds', 'POST /dot/log', 'POST /dot/food', 'POST /dot/journal', 'POST /dot/dose',
 ];
 export const memberToken = (username = 'luke-sub') => accessToken({ clientId: CLIENT_ID, group: 'family_health', username });
 /** The token Dot borrows for this person from Health's delegated client */

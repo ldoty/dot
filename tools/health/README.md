@@ -3,11 +3,12 @@
 `https://health.dot-y.co/` · permission group **`family_health`** (admins: `family_health:admin`)
 
 Each person's own health log: exercises, saved workouts, a plan, sessions logged set by set, body
-weight, how sore spots felt after each session, a daily journal, and what they ate. Nobody sees anyone else's.
+weight, how sore spots felt after each session, a daily journal, what they ate, and the medications and
+supplements they take. Nobody sees anyone else's.
 (It was Gym, at gym.dot-y.co, until 2026-10-26.)
 
 - **Today**: this week (planned days, days trained), the next workout in the plan's rotation, a start
-  button for each saved workout, body weight, today's journal, and today's food (a one-line quick add). A started session stays here until it's finished
+  button for each saved workout, body weight, today's doses to tick off, today's journal, and today's food (a one-line quick add). A started session stays here until it's finished
   or deleted.
 - **A session**: each exercise starts with last time's numbers and says what they were; tick a
   set and the rest timer runs (the workout item's rest; a pair's first exercise rests 15 s, the walk to the second).
@@ -18,6 +19,10 @@ weight, how sore spots felt after each session, a daily journal, and what they a
   past days listed below, any day opens to edit.
 - **Food**: what you ate, by day: what it was, meal, time, and calories and protein if you know them
   (`PUT /food/{id}`, rev-checked), with the day's totals. Tap an entry to fix or delete it. Or text Dot a photo of it.
+- **Meds**: medications and supplements (`PUT /meds/{id}`: name, kind, dose, the times you take it, or none for
+  as needed; mark one stopped to keep its history). Each day's doses are a checklist: tick one and the time
+  you took it is kept (`T#<date>#<med>-<HHMM>`, so each due dose once a day); as-needed ones are logged each time.
+  Any day can be filled in afterwards; each one shows the last 7 days' count. No reminders yet.
 - **History**: finished sessions; opening one lets you fix it.
 - **Progress**: sessions per week against the goal, one exercise's best per session (top weight if
   you log weight, else reps, seconds, meters or breaths), each area's rating, body weight.
@@ -55,11 +60,14 @@ IAM role can only reach this tool's table.
 Health has a delegated client (`delegated = true`, published at `/family/delegation/family_health`), so Dot
 can use it for whoever is asking, by chat, text or email, and only ever sees that person's log
 (`api/dot.mjs`). It can read the summary (this week, what's next, recent sessions,
-soreness, the last few journal days, today's food), sessions, one exercise's history, the journal, food by day and the saved workouts and plan. It can also add things:
+soreness, the last few journal days, today's food and doses), sessions, one exercise's history, the journal, food by day,
+medications and supplements with today's doses, and the saved workouts and plan. It can also add things:
 log a session someone describes (`POST /dot/log`, names matched to their own workout and exercises),
 log a body weight, log food (`POST /dot/food`: send it a photo of a meal and it says what it is, estimates calories
 and protein and logs it, marked as Dot's estimate until you edit it; the photo stays with Dot, deleted after 7 days),
-and add to a day's journal (`POST /dot/journal`: a new paragraph after what's there, never a rewrite). Additions don't need a confirmation step. Every other write refuses a via-Dot token (403 `read-only`), so
+add to a day's journal (`POST /dot/journal`: a new paragraph after what's there, never a rewrite), and tick off a
+dose they say they took (`POST /dot/dose`: the next one due that day, or an as-needed one). Its description tells it
+never to advise starting, stopping or changing a medication. Additions don't need a confirmation step. Every other write refuses a via-Dot token (403 `read-only`), so
 Dot never changes or deletes what's logged. "Today" for Dot is the day in `TZ_HOME` (America/New_York).
 
 Not yet: reminders, calendar events.

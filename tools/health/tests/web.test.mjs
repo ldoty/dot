@@ -226,6 +226,61 @@ test('food: a quick add on Today, and the Food tab to fix or delete', async () =
   p.close();
 });
 
+test('meds: add one on the Meds tab, then tick it off on Today', async () => {
+  const p = await open();
+  assert.equal(p.all('.meds').length, 0, 'no meds, no card');
+  await p.click('[data-tab="meds"]');
+  p.el('#med-form [name="name"]').value = 'Vitamin D';
+  p.el('#med-form [name="dose"]').value = '2000 IU';
+  p.el('#med-form [name="times"]').value = '20:00, 8:00';
+  await p.submit('#med-form');
+  const [m] = (await call('GET', '/all')).body.meds;
+  assert.deepEqual([m.name, m.times], ['Vitamin D', ['08:00', '20:00']]);
+  p.el('#med-form [name="name"]').value = 'Bad';
+  p.el('#med-form [name="times"]').value = '8am';
+  await p.submit('#med-form');
+  assert.match(p.el('#status').textContent, /Times are like 08:00/);
+  assert.equal((await call('GET', '/all')).body.meds.length, 1);
+
+  await p.click('[data-tab="today"]');
+  assert.deepEqual(p.all('.meds .when').map((x) => x.textContent), ['08:00', '20:00']);
+  await p.click(`[data-dose="${m.id}"][data-slot="08:00"]`);
+  await wait(30);
+  const doses = (await call('GET', '/all')).body.doses;
+  assert.deepEqual(doses.map((d) => [d.date, d.slot]), [[daysAgo(0), '08:00']]);
+  assert.match(doses[0].at, /^\d\d:\d\d$/);
+  assert.equal(p.el(`[data-dose="${m.id}"][data-slot="08:00"]`).getAttribute('aria-pressed'), 'true');
+  assert.match(p.el('.meds').textContent, /Taken \d\d:\d\d/);
+  await p.click(`[data-dose="${m.id}"][data-slot="08:00"]`);
+  await wait(30);
+  assert.deepEqual((await call('GET', '/all')).body.doses, [], 'ticking again undoes it');
+  p.close();
+});
+
+test('meds: as needed, logged each time; stopped ones drop off the checklist but keep their history', async () => {
+  await call('PUT', '/meds/ibu', { name: 'Ibuprofen', kind: 'medication', dose: '200 mg' });
+  await call('PUT', '/meds/old', { name: 'Old pill', times: ['09:00'] });
+  await call('PUT', `/doses/${daysAgo(1)}/old-0900`, { med: 'old', slot: '09:00', at: '09:10' });
+  const p = await open();
+  await p.click('[data-prn="ibu"]');
+  await wait(30);
+  await p.click('[data-prn="ibu"]');
+  await wait(30);
+  assert.equal((await call('GET', '/all')).body.doses.filter((d) => d.med === 'ibu').length, 2);
+  await p.click('[data-undose]');
+  await wait(30);
+  assert.equal((await call('GET', '/all')).body.doses.filter((d) => d.med === 'ibu').length, 1);
+
+  await p.click('[data-tab="meds"]');
+  await p.click('[data-editmed="old"]');
+  p.el('#med-form [name="stopped"]').checked = true;
+  await p.submit('#med-form');
+  assert.equal(p.d.querySelector('[data-dose="old"]'), null, 'off the checklist');
+  assert.match(p.el('[data-editmed="old"]').textContent, /stopped/);
+  assert.equal((await call('GET', '/all')).body.doses.filter((d) => d.med === 'old').length, 1, 'history kept');
+  p.close();
+});
+
 test('the plan: pick days and order the rotation', async () => {
   await call('POST', '/starter');
   const p = await open();

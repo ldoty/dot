@@ -22,7 +22,7 @@ test('Dot reads a valid manifest, and every operation is a real route', async ()
   for (const o of MANIFEST.operations) {
     assert.ok(ROUTES.includes(`${o.method ?? 'GET'} ${o.path}`), `${o.name}: ${o.path}`);
   }
-  assert.deepEqual(writeRoutes(MANIFEST).sort(), ['POST /dot/food', 'POST /dot/journal', 'POST /dot/log', 'PUT /weights/{date}']);
+  assert.deepEqual(writeRoutes(MANIFEST).sort(), ['POST /dot/dose', 'POST /dot/food', 'POST /dot/journal', 'POST /dot/log', 'PUT /weights/{date}']);
 });
 
 test('from Dot: reads and the two declared writes; every other change is refused', async () => {
@@ -32,6 +32,7 @@ test('from Dot: reads and the two declared writes; every other change is refused
     ['PUT', '/settings', { unit: 'kg' }], ['PUT', '/plan', {}], ['PUT', '/exercises/x', { name: 'X' }], ['DELETE', '/exercises/x'],
     ['PUT', '/workouts/w', { name: 'W' }], ['DELETE', '/workouts/w'], ['DELETE', '/weights/2026-10-26'],
     ['PUT', '/journal/2026-10-26', { text: 'from Dot' }], ['PUT', '/food/f1', { date: '2026-10-26', what: 'x' }], ['DELETE', '/food/f1'],
+    ['PUT', '/meds/m1', { name: 'X' }], ['DELETE', '/meds/m1'], ['PUT', '/doses/2026-10-26/m1-na1', { med: 'm1', at: '08:00' }], ['DELETE', '/doses/2026-10-26/m1-0800'],
   ]) {
     const r = await call(m, p, b, dotToken());
     assert.deepEqual([r.status, r.body.error], [403, 'read-only'], `${m} ${p}`);
@@ -174,6 +175,37 @@ test('Dot adds to the journal after what’s there, never over it', async () => 
   assert.equal((await call('GET', '/all')).body.journal[0].text.length, 4990);
   await dot('add_to_journal', { text: 'mine' }, dotToken('amber-sub'));
   assert.match((await call('GET', '/all')).body.journal.at(-1).text, /^Back stiff/, 'Amber’s note went to Amber');
+});
+
+test('meds from Dot: what’s due and taken, and ticking off the next dose', async () => {
+  await call('PUT', '/meds/vitd', { name: 'Vitamin D', dose: '2000 IU', times: ['08:00', '20:00'] });
+  await call('PUT', '/meds/mag', { name: 'Magnesium glycinate', times: ['21:00'] });
+  await call('PUT', '/meds/ibu', { name: 'Ibuprofen', kind: 'medication', dose: '200 mg' });
+  await call('PUT', '/meds/old', { name: 'Old pill', times: ['09:00'], stopped: true });
+  await call('PUT', `/doses/${ymd(1)}/vitd-0800`, { med: 'vitd', slot: '08:00', at: '08:05' });
+  assert.match(MANIFEST.description, /Never advise starting, stopping or changing a medication/);
+  let m = (await dot('meds')).body;
+  assert.deepEqual(m.taking.map((x) => x.name), ['Ibuprofen', 'Magnesium glycinate', 'Vitamin D'], 'not what they stopped');
+  assert.deepEqual(m.stopped, ['Old pill']);
+  assert.deepEqual(m.taking[2].today, [{ due: '08:00', taken_at: null }, { due: '20:00', taken_at: null }]);
+  assert.equal(m.taking[2].last_7_days, '1 of 14 doses');
+  assert.equal(m.taking[0].when, 'as needed');
+
+  let r = await dot('log_dose', { name: 'vitamin d', time: '08:30' });
+  assert.deepEqual(r.body.logged, { name: 'Vitamin D', dose: '2000 IU', date: ymd(), due: '08:00', taken_at: '08:30' });
+  r = await dot('log_dose', { name: 'vitamin d' });
+  assert.equal(r.body.logged.due, '20:00', 'the next one due');
+  assert.match((await dot('log_dose', { name: 'vitamin d' })).body.error, /already ticked off/);
+  assert.equal((await dot('log_dose', { name: 'ibuprofen' })).body.logged.due, 'as needed');
+  assert.equal((await dot('log_dose', { name: 'ibuprofen' })).status, 200, 'as needed, as often as taken');
+  const unknown = (await dot('log_dose', { name: 'fish oil' })).body;
+  assert.deepEqual([unknown.error, unknown.candidates.length], ['nothing they take by that name', 3]);
+  assert.equal((await dot('log_dose', { name: 'old pill' })).status, 400, 'nothing stopped');
+  m = (await dot('meds')).body;
+  assert.equal(m.taking[0].today.length, 2);
+  assert.deepEqual((await dot('summary')).body.meds_today, { doses_due: 3, taken: 2, not_yet: ['Magnesium glycinate 21:00'] });
+  assert.equal((await dot('meds', {}, dotToken('amber-sub'))).body.taking.length, 0);
+  assert.equal((await dot('log_dose', { name: 'vitamin d' }, dotToken('amber-sub'))).status, 400, 'only their own');
 });
 
 test('each log is a new session; bad input is refused', async () => {

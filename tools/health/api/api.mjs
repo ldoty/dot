@@ -1,6 +1,7 @@
-// Health API: each person's own exercises, saved workouts, plan, logged sessions, body weight, a daily journal and what they ate.
+// Health API: each person's own exercises, saved workouts, plan, logged sessions, body weight, a daily journal, what they ate,
+// and the medications and supplements they take.
 // Routes (a family_health token, or Dot's delegated one for the person asking; everything is that person's own):
-//   GET    /all              -> { settings, plan, exercises, workouts, sessions, weights, journal, food }
+//   GET    /all              -> { settings, plan, exercises, workouts, sessions, weights, journal, food, meds, doses }
 //   PUT    /settings         { unit, areas, rev }
 //   PUT    /plan             { rotation: [workoutId], days: [0-6], from, to, perWeek, rev }
 //   PUT    /exercises/{id}   { name, measure, perSide, note, rev }
@@ -16,16 +17,22 @@
 //   PUT    /journal/{date}   { text, rev }   how they felt that day, in their own words
 //   PUT    /food/{id}        { date, time, meal, what, kcal, protein, note, rev }   something they ate
 //   DELETE /food/{id}
+//   PUT    /meds/{id}        { name, kind, dose, times: [HH:MM], note, stopped, rev }   a medication or supplement; no times = as needed
+//   DELETE /meds/{id}        also its logged doses
+//   PUT    /doses/{date}/{id}  { med, slot, at }   taken: slot is the HH:MM it was due (id <med>-<HHMM>, so once a day
+//                               each), or null for an as-needed one (id <med>-n…); at is when they took it
+//   DELETE /doses/{date}/{id}  not taken after all
 //   POST   /starter          loads the starter program (starter.mjs) into an empty account
 //   GET    /dot              this tool's description for Dot (dot.mjs, platform/api/dot-manifest.mjs), and what it
-//   GET    /dot/summary, /dot/sessions, /dot/exercise, /dot/workouts, /dot/journal, /dot/food   calls: their log in words
+//   GET    /dot/summary, /dot/sessions, /dot/exercise, /dot/workouts, /dot/journal, /dot/food, /dot/meds   calls: their log in words
 //   POST   /dot/log          Dot logging a session they told it about (a new session, never a change)
 //   POST   /dot/food         Dot logging something they ate (often from a photo they sent): a new entry
 //   POST   /dot/journal      Dot adding to a day's journal: a new paragraph after what's there, never a rewrite
+//   POST   /dot/dose         Dot logging a dose they took (the next one due that day, or an as-needed one)
 // A via-Dot token may read, and use only the writes the manifest declares (POST /dot/log, /dot/food, /dot/journal,
-// PUT /weights/{date}): 403 read-only on every other write, so Dot can add to someone's log but never change or delete it.
+// /dot/dose, PUT /weights/{date}): 403 read-only on every other write, so Dot can add to someone's log but never change or delete it.
 // Rows (pk = P#<username>, so nobody can reach anyone else's): SETTINGS, PLAN, EX#<id>, WO#<id>,
-// S#<id>, BW#<date>, J#<date>, F#<id>. Everything but weights is rev-checked: a PUT sends the rev it was based on
+// S#<id>, BW#<date>, J#<date>, F#<id>, M#<id>, T#<date>#<dose id>. Everything but weights and doses is rev-checked: a PUT sends the rev it was based on
 // (none for a new row) and gets 409 { current } if someone (another tab, another phone) got there first.
 // The token is re-verified here (signature, issuer, client, expiry, group); API Gateway's
 // authorizer is not trusted on its own.
@@ -50,7 +57,10 @@ const MEASURES = ['reps', 'time', 'distance', 'breaths'];
 const MEALS = ['breakfast', 'lunch', 'dinner', 'snack'];
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const JOURNAL_MAX = 5000;
-const MAX = { exercises: 300, workouts: 100 };
+const KINDS = ['medication', 'supplement'];
+// A dose's id: the medicine's, then the time it was due (so a scheduled dose is logged once a day) or n… (as needed)
+const DOSE_ID = /^([A-Za-z0-9_]{1,30})-(\d{4}|n[A-Za-z0-9]{1,12})$/;
+const MAX = { exercises: 300, workouts: 100, meds: 60 };
 
 class Bad extends Error {}
 const bad = (msg) => { throw new Bad(msg); };
@@ -156,6 +166,17 @@ const clean = {
       note: text(b.note, 2000), discomfort, entries,
     };
   },
+  med(b) {
+    const name = text(b.name, 80);
+    if (!name) bad('name required');
+    const kind = b.kind ?? 'supplement';
+    if (!KINDS.includes(kind)) bad('kind is medication or supplement');
+    const times = [...new Set(list(b.times, 6, 'times').map((t) => {
+      if (typeof t !== 'string' || !TIME.test(t)) bad('times are HH:MM');
+      return t;
+    }))].sort();
+    return { name, kind, dose: text(b.dose, 40), times, note: text(b.note, 500), stopped: b.stopped === true };
+  },
   food(b) {
     const date = optDate(b.date, 'date');
     if (!date) bad('date required');
@@ -178,6 +199,7 @@ const shape = {
   BW: (i) => ({ date: i.sk.slice(3), weight: i.weight }),
   J: (i) => ({ date: i.sk.slice(2), ...strip(i) }),
   F: (i) => ({ id: i.sk.slice(2), ...strip(i) }),
+  M: (i) => ({ id: i.sk.slice(2), ...strip(i) }),
 };
 const rowShape = (i) => (i.sk === 'SETTINGS' || i.sk === 'PLAN' ? strip(i) : shape[i.sk.split('#')[0]](i));
 
@@ -195,7 +217,7 @@ async function rows(pk) {
 }
 
 async function getAll(pk) {
-  const out = { settings: null, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [], food: [] };
+  const out = { settings: null, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [], food: [], meds: [], doses: [] };
   for (const i of await rows(pk)) {
     if (i.sk === 'SETTINGS') out.settings = strip(i);
     else if (i.sk === 'PLAN') out.plan = strip(i);
@@ -205,11 +227,15 @@ async function getAll(pk) {
     else if (i.sk.startsWith('BW#')) out.weights.push(shape.BW(i));
     else if (i.sk.startsWith('J#')) out.journal.push(shape.J(i));
     else if (i.sk.startsWith('F#')) out.food.push(shape.F(i));
+    else if (i.sk.startsWith('M#')) out.meds.push(shape.M(i));
+    else if (i.sk.startsWith('T#')) out.doses.push({ date: i.sk.slice(2, 12), id: i.sk.slice(13), med: i.med, slot: i.slot ?? null, at: i.at });
   }
   out.settings ??= { ...SETTINGS, areas: [] };
   out.exercises.sort((a, b) => a.name.localeCompare(b.name));
   out.workouts.sort((a, b) => a.name.localeCompare(b.name));
   out.journal.sort((a, b) => (a.date < b.date ? -1 : 1));
+  out.meds.sort((a, b) => a.name.localeCompare(b.name));
+  out.doses.sort((a, b) => (a.date === b.date ? (a.at || '').localeCompare(b.at || '') : a.date < b.date ? -1 : 1));
   out.food.sort((a, b) => (a.date === b.date ? (a.time || '').localeCompare(b.time || '') : a.date < b.date ? -1 : 1));
   out.sessions.sort((a, b) => (a.date === b.date ? (a.startedAt || '').localeCompare(b.startedAt || '') : a.date < b.date ? -1 : 1));
   return out;
@@ -235,6 +261,20 @@ async function save(pk, sk, data, rev) {
 }
 
 const newId = () => `x${randomBytes(6).toString('hex')}`;
+
+/** Log a dose taken: an id that says which medicine and which of its times (or as needed), checked against it */
+async function putDose(pk, date, id, b) {
+  const m = DOSE_ID.exec(id ?? '');
+  if (!m) bad('bad dose id');
+  const med = (await db.send(new GetCommand({ TableName: TABLE, Key: { pk, sk: `M#${m[1]}` } }))).Item;
+  if (!med || b.med !== m[1]) bad('no such medication or supplement');
+  const slot = b.slot == null || b.slot === '' ? null : b.slot;
+  if (slot !== null && (!med.times.includes(slot) || m[2] !== slot.replace(':', ''))) bad('that isn’t one of its times');
+  if (slot === null && !m[2].startsWith('n')) bad('an as-needed dose’s id ends in n…');
+  if (typeof b.at !== 'string' || !TIME.test(b.at)) bad('at is HH:MM');
+  await db.send(new PutCommand({ TableName: TABLE, Item: { pk, sk: `T#${date}#${id}`, med: m[1], slot, at: b.at, updatedAt: new Date().toISOString() } }));
+  return { date, id, med: m[1], slot, at: b.at };
+}
 
 async function loadStarter(pk) {
   const existing = await rows(pk);
@@ -335,6 +375,20 @@ export const handler = async (event) => {
         return await save(pk, `F#${id}`, clean.food(body), body.rev);
       case 'DELETE /food/{id}':
         return await del(`F#${id}`);
+      case 'PUT /meds/{id}':
+        if (!/^[A-Za-z0-9_]{1,30}$/.test(id)) return json(400, { error: 'bad id' });
+        return (await capped('M#', 'meds')) ?? await save(pk, `M#${id}`, clean.med(body), body.rev);
+      case 'DELETE /meds/{id}': {
+        // Its doses go with it: a dose of nothing would only confuse the history
+        for (const t of (await rows(pk)).filter((i) => i.sk.startsWith('T#') && i.med === id)) {
+          await db.send(new DeleteCommand({ TableName: TABLE, Key: { pk, sk: t.sk } }));
+        }
+        return await del(`M#${id}`);
+      }
+      case 'PUT /doses/{date}/{id}':
+        return json(200, await putDose(pk, date, id, body));
+      case 'DELETE /doses/{date}/{id}':
+        return await del(`T#${date}#${id}`);
       case 'POST /starter':
         return await loadStarter(pk);
       case 'GET /dot':
@@ -364,6 +418,16 @@ export const handler = async (event) => {
         if (r.statusCode !== 200) return r;
         console.log('food via dot', JSON.stringify({ by: claims.username, id: fid, date: entry.date }));
         return json(200, { logged: dot.foodOut(JSON.parse(r.body)), date: entry.date, note: 'They can fix or delete it on Health’s Food tab.' });
+      }
+      case 'GET /dot/meds':
+        return json(200, dot.meds(await getAll(pk), dot.localDay(new Date(), TZ_HOME)));
+      case 'POST /dot/dose': {
+        const now = new Date(), day = optDate(body.date, 'date') ?? dot.localDay(now, TZ_HOME);
+        const pick = dot.doseFor(await getAll(pk), body.name, day, newId().slice(1, 9));
+        if (pick.error) return json(400, pick);
+        const d = await putDose(pk, day, pick.id, { med: pick.med.id, slot: pick.slot, at: body.time ?? dot.localTime(now, TZ_HOME) });
+        console.log('dose via dot', JSON.stringify({ by: claims.username, med: d.med, date: day }));
+        return json(200, { logged: { name: pick.med.name, dose: pick.med.dose || undefined, date: day, due: d.slot ?? 'as needed', taken_at: d.at } });
       }
       case 'POST /dot/journal': {
         // Added after what's there, so nothing they wrote is ever replaced; a race with their page is retried

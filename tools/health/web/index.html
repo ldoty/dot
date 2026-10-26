@@ -97,6 +97,12 @@ textarea.journal { min-height: 120px }
 .food .when { font: 500 14px var(--mono); color: var(--muted); min-width: 5ch }
 .food .nums { font-size: 14px; color: var(--muted); white-space: nowrap }
 #food-form .row label.f { flex: 1 1 90px }
+
+/* Meds: a day's doses in time order, each ticked off like a set */
+.meds .when { font: 500 14px var(--mono); color: var(--muted); min-width: 5ch }
+.meds .tick { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--line); background: var(--surface); color: var(--muted); font-size: 20px; cursor: pointer }
+.meds .tick.on { background: var(--leaf); border-color: var(--leaf); color: var(--on-accent) }
+#med-form .row label.f { flex: 1 1 120px }
 </style>
 </head>
 <body>
@@ -111,9 +117,9 @@ textarea.journal { min-height: 120px }
 <script src="family-auth.js"></script>
 <script>
 (function () {
-  var cfg, data, tab = "today", openId = null, editId = null, confirmDel = null, chartEx = null, jDay = null, fDay = null, fEdit = null;
+  var cfg, data, tab = "today", openId = null, editId = null, confirmDel = null, chartEx = null, jDay = null, fDay = null, fEdit = null, mDay = null, mEdit = null;
   var main = document.getElementById("main"), tabsEl = document.getElementById("tabs");
-  var TABS = [["today", "Today"], ["journal", "Journal"], ["food", "Food"], ["history", "History"], ["progress", "Progress"], ["plan", "Plan"], ["workouts", "Workouts"], ["exercises", "Exercises"]];
+  var TABS = [["today", "Today"], ["journal", "Journal"], ["food", "Food"], ["meds", "Meds"], ["history", "History"], ["progress", "Progress"], ["plan", "Plan"], ["workouts", "Workouts"], ["exercises", "Exercises"]];
   var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var LONG_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   var MEASURE = { reps: "Reps", time: "Time (s)", distance: "Distance (m)", breaths: "Breaths (a hold)" };
@@ -402,6 +408,84 @@ textarea.journal { min-height: 120px }
       .then(function (ok) { if (ok) { if (done) done(); render(); } });
   }
 
+  /* ---------- medications and supplements: what's due each day, what's taken ---------- */
+  var KINDS = { medication: "Medication", supplement: "Supplement" };
+  function taking() { return data.meds.filter(function (m) { return !m.stopped; }); }
+  function dosesOn(day, m) { return data.doses.filter(function (d) { return d.date === day && d.med === m.id; }); }
+  // One checklist per day: each scheduled dose in time order to tick, then the as-needed ones to log
+  function medsChecklist(day) {
+    var due = [], prn = [];
+    taking().forEach(function (m) { if (m.times.length) m.times.forEach(function (t) { due.push({ m: m, t: t }); }); else prn.push(m); });
+    due.sort(function (a, b) { return a.t < b.t ? -1 : a.t > b.t ? 1 : a.m.name.localeCompare(b.m.name); });
+    return '<ul class="list meds">' + due.map(function (x) {
+      var d = dosesOn(day, x.m).filter(function (y) { return y.slot === x.t; })[0];
+      return '<li><span class="when">' + esc(x.t) + '</span><span class="grow"><strong>' + esc(x.m.name) + "</strong>" + (x.m.dose ? ' <span class="muted small">' + esc(x.m.dose) + "</span>" : "") +
+        (d ? '<br><span class="muted small">Taken ' + esc(d.at) + "</span>" : "") + "</span>" +
+        '<button class="tick' + (d ? " on" : "") + '" data-dose="' + esc(x.m.id) + '" data-slot="' + esc(x.t) + '" data-day="' + esc(day) + '" aria-pressed="' + !!d + '" aria-label="' + esc(x.m.name + " at " + x.t) + '">✓</button></li>';
+    }).join("") + prn.map(function (m) {
+      var ds = dosesOn(day, m);
+      return '<li><span class="when">–</span><span class="grow"><strong>' + esc(m.name) + '</strong> <span class="muted small">' + esc((m.dose ? m.dose + " · " : "") + "as needed") + "</span>" +
+        (ds.length ? '<br><span class="muted small">Taken ' + esc(ds.map(function (d) { return d.at; }).join(", ")) + "</span>" : "") + "</span>" +
+        (ds.length ? '<button class="link" data-undose="' + esc(ds[ds.length - 1].id) + '" data-day="' + esc(day) + '">Undo</button>' : "") +
+        '<button class="btn ghost" data-prn="' + esc(m.id) + '" data-day="' + esc(day) + '">Took one</button></li>';
+    }).join("") + "</ul>";
+  }
+  function medsCard() {
+    if (!taking().length) return "";
+    return '<section class="card stack"><div class="row" style="justify-content:space-between"><h2>Meds today</h2><button class="link" data-tab="meds">All meds →</button></div>' + medsChecklist(ymd(new Date())) + "</section>";
+  }
+  // Taken today: now; on a past day: the time it was due (fix it on the day if that's wrong)
+  function takeDose(day, m, slot) {
+    var id = slot ? m.id + "-" + slot.replace(":", "") : m.id + "-n" + Math.random().toString(36).slice(2, 9);
+    var at = day === ymd(new Date()) ? hhmm(new Date()) : slot || "12:00";
+    api("PUT", "/doses/" + day + "/" + id, { med: m.id, slot: slot, at: at }).then(function (r) {
+      if (!r.ok) { status(r.body.error ? "Couldn’t save: " + r.body.error : "Couldn’t save. Try again.", true); return; }
+      data.doses.push(r.body); status("Taken " + r.body.at + "."); render();
+    }).catch(function () { status("Couldn’t save. Check your connection and try again.", true); });
+  }
+  function untakeDose(day, id) {
+    api("DELETE", "/doses/" + day + "/" + id).then(function (r) {
+      if (!r.ok) { status("Couldn’t undo. Try again.", true); return; }
+      data.doses = data.doses.filter(function (d) { return !(d.date === day && d.id === id); }); status("Undone."); render();
+    }).catch(function () { status("Couldn’t undo. Check your connection and try again.", true); });
+  }
+  // "8:00, 20:30" -> ["08:00", "20:30"]; null if any isn't a time
+  function parseTimes(v) {
+    var out = [], bad = false;
+    v.split(/[,\s]+/).filter(Boolean).forEach(function (t) {
+      var m = /^(\d{1,2}):([0-5]\d)$/.exec(t);
+      if (!m || +m[1] > 23) { bad = true; return; }
+      var x = pad(+m[1]) + ":" + m[2]; if (out.indexOf(x) < 0) out.push(x);
+    });
+    return bad ? null : out.sort();
+  }
+  function lastWeek(m) {
+    var from = ymd(addDays(new Date(), -6)), n = data.doses.filter(function (d) { return d.med === m.id && d.date >= from; }).length;
+    return m.times.length ? n + " of " + m.times.length * 7 + " in the last 7 days" : n + " in the last 7 days";
+  }
+  function viewMeds() {
+    var today = ymd(new Date()), day = mDay || today, x = mEdit ? byId(data.meds, mEdit) : null, html = "";
+    if (taking().length) html += '<section class="card stack"><div class="row" style="justify-content:space-between"><h2>' + esc(day === today ? "Today" : nice(day)) + "</h2>" +
+      '<label class="f">Day<input type="date" id="m-day" max="' + esc(today) + '" value="' + esc(day) + '"></label></div>' + medsChecklist(day) + "</section>";
+    if (data.meds.length) html += '<ul class="list">' + data.meds.map(function (m) {
+      return '<li><button class="open grow" data-editmed="' + esc(m.id) + '"><strong>' + esc(m.name) + "</strong>" + (m.dose ? " " + esc(m.dose) : "") +
+        ' <span class="muted small">' + esc(KINDS[m.kind]) + (m.stopped ? " · stopped" : "") + "</span><br>" +
+        '<span class="muted small">' + esc((m.times.length ? m.times.join(", ") : "As needed") + (m.stopped ? "" : " · " + lastWeek(m))) + "</span></button></li>";
+    }).join("") + "</ul>";
+    html += '<form class="card stack" id="med-form"><h2>' + (x ? "Change " + esc(x.name) : "Add a medication or supplement") + "</h2>" +
+      '<label class="f">Name<input name="name" maxlength="80" required value="' + esc(x ? x.name : "") + '"></label>' +
+      '<div class="row"><label class="f">Kind<select name="kind">' + Object.keys(KINDS).map(function (k) {
+        return '<option value="' + k + '"' + ((x ? x.kind : "supplement") === k ? " selected" : "") + ">" + KINDS[k] + "</option>";
+      }).join("") + '</select></label><label class="f">Dose<input name="dose" maxlength="40" placeholder="500 mg" value="' + esc(x ? x.dose : "") + '"></label>' +
+      '<label class="f">Times, 24-hour<input name="times" placeholder="08:00, 20:00" value="' + esc(x ? x.times.join(", ") : "") + '"></label></div>' +
+      '<p class="muted small">Leave the times empty for something you take as needed.</p>' +
+      '<label class="f">Note<input name="note" maxlength="500" placeholder="With food" value="' + esc(x ? x.note : "") + '"></label>' +
+      (x ? '<label class="row small"><input type="checkbox" name="stopped"' + (x.stopped ? " checked" : "") + "> Stopped taking it (keeps its history)</label>" : "") +
+      '<div class="row"><button class="btn primary">' + (x ? "Save" : "Add") + "</button>" +
+      (x ? '<button type="button" class="btn ghost" data-act="cancelmed">Cancel</button><button type="button" class="link danger" data-act="delmed">' + (confirmDel === "med" ? "Delete it and its history?" : "Delete") + "</button>" : "") + "</div></form>";
+    return html;
+  }
+
   /* ---------- rest timer ---------- */
   var restEnd = 0, restTick = null;
   function startRest(sec) {
@@ -435,7 +519,7 @@ textarea.journal { min-height: 120px }
     tabsEl.innerHTML = TABS.map(function (t) {
       return '<button data-tab="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '">' + t[1] + "</button>";
     }).join("");
-    var v = { today: viewToday, journal: viewJournal, food: viewFood, history: viewHistory, progress: viewProgress, plan: viewPlan, workouts: viewWorkouts, exercises: viewExercises }[tab];
+    var v = { today: viewToday, journal: viewJournal, food: viewFood, meds: viewMeds, history: viewHistory, progress: viewProgress, plan: viewPlan, workouts: viewWorkouts, exercises: viewExercises }[tab];
     main.innerHTML = v();
   }
 
@@ -446,7 +530,7 @@ textarea.journal { min-height: 120px }
       return '<div class="card stack"><h2>Get started</h2><p>Load the starter program: Sessions A and B (full body, easy on shoulders and the lower back), ' +
         'a 10-minute mobility routine, and a Monday, Wednesday, Friday plan alternating A and B. You can change all of it.</p>' +
         '<div class="row"><button class="btn primary" data-act="starter">Load the starter program</button>' +
-        '<button class="btn ghost" data-tab="exercises">Build my own</button></div></div>' + journalCard() + foodCard();
+        '<button class="btn ghost" data-tab="exercises">Build my own</button></div></div>' + medsCard() + journalCard() + foodCard();
     }
     var today = ymd(new Date()), start = monday(new Date()), p = data.plan, done = finished(), html = "";
     var thisWeek = done.filter(function (x) { return x.date >= ymd(start) && x.date <= ymd(addDays(start, 6)); });
@@ -479,7 +563,7 @@ textarea.journal { min-height: 120px }
     html += '<form class="card row" id="bw-form"><label class="f" style="flex:1">Body weight today (' + esc(unit()) + ')' +
       '<input name="weight" type="number" inputmode="decimal" step="any" min="20" max="1000" value="' + esc(bw ? bw.weight : "") + '"></label>' +
       '<button class="btn ghost" style="align-self:end">Save</button></form>';
-    return html + journalCard() + foodCard();
+    return html + medsCard() + journalCard() + foodCard();
   }
 
   function pairLabels(entries) {
@@ -748,6 +832,7 @@ textarea.journal { min-height: 120px }
   });
   main.addEventListener("change", function (e) {
     if (e.target.id === "chart-ex") { chartEx = e.target.value; render(); }
+    if (e.target.id === "m-day" && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { mDay = e.target.value; render(); }
     if (e.target.id === "f-day" && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { fDay = e.target.value; fEdit = null; render(); }
     if (e.target.id === "j-day" && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { jDay = e.target.value; render(); }
   });
@@ -757,6 +842,14 @@ textarea.journal { min-height: 120px }
     var s = current(), d = b.dataset;
     if (d.tab) { tab = d.tab; editId = null; render(); return; }
     if (d.start !== undefined) { startSession(d.start ? byId(data.workouts, d.start) : null); return; }
+    if (d.dose) {
+      var dm = byId(data.meds, d.dose), had = dosesOn(d.day, dm).filter(function (y) { return y.slot === d.slot; })[0];
+      if (had) untakeDose(d.day, had.id); else takeDose(d.day, dm, d.slot);
+      return;
+    }
+    if (d.prn) { takeDose(d.day, byId(data.meds, d.prn), null); return; }
+    if (d.undose) { untakeDose(d.day, d.undose); return; }
+    if (d.editmed) { mEdit = d.editmed; confirmDel = null; render(); return; }
     if (d.fday) { fDay = d.fday; fEdit = null; render(); window.scrollTo(0, 0); return; }
     if (d.editfood) { var ef = byId(data.food, d.editfood); tab = "food"; fDay = ef ? ef.date : fDay; fEdit = d.editfood; confirmDel = null; render(); return; }
     if (d.jday) { jDay = d.jday; render(); window.scrollTo(0, 0); return; }
@@ -787,7 +880,7 @@ textarea.journal { min-height: 120px }
     if (d.itemup !== undefined) { readWoForm(); var n = +d.itemup, it = woDraft.items; if (n > 0) it.splice(n - 1, 0, it.splice(n, 1)[0]); render(); return; }
     if (d.itemdel !== undefined) { readWoForm(); woDraft.items.splice(+d.itemdel, 1); render(); return; }
     var act = d.act; if (!act) return;
-    if (act !== "delsession" && act !== "delworkout" && act !== "delexercise" && act !== "delfood") confirmDel = null;
+    if (act !== "delsession" && act !== "delworkout" && act !== "delexercise" && act !== "delfood" && act !== "delmed") confirmDel = null;
     ({
       starter: function () {
         b.disabled = true;
@@ -811,6 +904,17 @@ textarea.journal { min-height: 120px }
         });
       },
       cancelfood: function () { fEdit = null; render(); },
+      cancelmed: function () { mEdit = null; render(); },
+      delmed: function () {
+        if (confirmDel !== "med") { confirmDel = "med"; render(); return; }
+        confirmDel = null;
+        var id = mEdit;
+        api("DELETE", "/meds/" + id).then(function (r) {
+          if (!r.ok) { status("Couldn’t delete. Try again.", true); return; }
+          data.meds = data.meds.filter(function (x) { return x.id !== id; }); data.doses = data.doses.filter(function (x) { return x.med !== id; });
+          mEdit = null; status("Deleted."); render();
+        });
+      },
       delfood: function () {
         if (confirmDel !== "food") { confirmDel = "food"; render(); return; }
         confirmDel = null;
@@ -848,7 +952,14 @@ textarea.journal { min-height: 120px }
   main.addEventListener("submit", function (e) {
     e.preventDefault();
     var f = e.target;
-    if (f.id === "food-quick") {
+    if (f.id === "med-form") {
+      var times = parseTimes(field(f, "times").value), om = mEdit ? byId(data.meds, mEdit) : null;
+      if (!times) { status("Times are like 08:00 or 20:30, with commas between.", true); return; }
+      saveRow("/meds/" + (om ? om.id : uid()), { name: field(f, "name").value, kind: field(f, "kind").value, dose: field(f, "dose").value, times: times,
+        note: field(f, "note").value, stopped: om ? field(f, "stopped").checked : false, rev: om ? om.rev : undefined },
+        function (row) { upsert(data.meds, row); data.meds.sort(function (a, b) { return a.name.localeCompare(b.name); }); })
+        .then(function (ok) { if (ok) { mEdit = null; render(); } });
+    } else if (f.id === "food-quick") {
       var what = field(f, "what").value.trim(), t = hhmm(new Date());
       if (!what) return;
       saveFood(uid(), { date: ymd(new Date()), time: t, meal: mealAt(t), what: what });
@@ -887,7 +998,7 @@ textarea.journal { min-height: 120px }
   });
   tabsEl.addEventListener("click", function (e) {
     var b = e.target.closest("[data-tab]"); if (!b) return;
-    tab = b.dataset.tab; editId = null; woDraft = null; confirmDel = null; jDay = null; fDay = null; fEdit = null;
+    tab = b.dataset.tab; editId = null; woDraft = null; confirmDel = null; jDay = null; fDay = null; fEdit = null; mDay = null; mEdit = null;
     if (tab !== "today" && openId) { var s = current(); if (s && s.finishedAt) openId = null; }
     status(""); render();
   });

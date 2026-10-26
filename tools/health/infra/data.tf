@@ -1,4 +1,4 @@
-# Single table: pk = P#<username> (each person's own), sk = SETTINGS | PLAN | EX#<id> | WO#<id> | S#<id> | BW#<date> | J#<date> | F#<id>.
+# Single table: pk = P#<username> (each person's own), sk = SETTINGS | PLAN | EX#<id> | WO#<id> | S#<id> | BW#<date> | J#<date> | F#<id> | M#<id> | T#<date>#<dose id>.
 resource "aws_dynamodb_table" "main" {
   name                        = "family-health"
   billing_mode                = "PAY_PER_REQUEST"
