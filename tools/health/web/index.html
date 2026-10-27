@@ -103,6 +103,7 @@ textarea.journal { min-height: 120px }
 .meds .tick { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--line); background: var(--surface); color: var(--muted); font-size: 20px; cursor: pointer }
 .meds .tick.on { background: var(--leaf); border-color: var(--leaf); color: var(--on-accent) }
 #med-form .row label.f { flex: 1 1 120px }
+h3.kind { margin: 8px 0 0; font-size: 15px; color: var(--muted) }
 </style>
 </head>
 <body>
@@ -412,10 +413,19 @@ textarea.journal { min-height: 120px }
   var KINDS = { medication: "Medication", supplement: "Supplement" };
   function taking() { return data.meds.filter(function (m) { return !m.stopped; }); }
   function dosesOn(day, m) { return data.doses.filter(function (d) { return d.date === day && d.med === m.id; }); }
-  // One checklist per day: each scheduled dose in time order to tick, then the as-needed ones to log
-  function medsChecklist(day) {
+  var KIND_GROUPS = [["medication", "Medications"], ["supplement", "Supplements"]];
+  // Medications and supplements apart, each under its own heading (only the kinds there are)
+  function byKind(list, each) {
+    return KIND_GROUPS.map(function (g) {
+      var l = list.filter(function (m) { return (m.kind === "medication" ? "medication" : "supplement") === g[0]; });
+      return l.length ? '<h3 class="kind">' + g[1] + "</h3>" + each(l) : "";
+    }).join("");
+  }
+  function medsChecklist(day) { return byKind(taking(), function (l) { return kindChecklist(day, l); }); }
+  // One checklist per kind a day: each scheduled dose in time order to tick, then the as-needed ones to log
+  function kindChecklist(day, list) {
     var due = [], prn = [];
-    taking().forEach(function (m) { if (m.times.length) m.times.forEach(function (t) { due.push({ m: m, t: t }); }); else prn.push(m); });
+    list.forEach(function (m) { if (m.times.length) m.times.forEach(function (t) { due.push({ m: m, t: t }); }); else prn.push(m); });
     due.sort(function (a, b) { return a.t < b.t ? -1 : a.t > b.t ? 1 : a.m.name.localeCompare(b.m.name); });
     return '<ul class="list meds">' + due.map(function (x) {
       var d = dosesOn(day, x.m).filter(function (y) { return y.slot === x.t; })[0];
@@ -432,7 +442,7 @@ textarea.journal { min-height: 120px }
   }
   function medsCard() {
     if (!taking().length) return "";
-    return '<section class="card stack"><div class="row" style="justify-content:space-between"><h2>Meds today</h2><button class="link" data-tab="meds">All meds →</button></div>' + medsChecklist(ymd(new Date())) + "</section>";
+    return '<section class="card stack"><div class="row" style="justify-content:space-between"><h2>Meds and supplements today</h2><button class="link" data-tab="meds">All meds →</button></div>' + medsChecklist(ymd(new Date())) + "</section>";
   }
   // Taken today: now; on a past day: the time it was due (fix it on the day if that's wrong)
   function takeDose(day, m, slot) {
@@ -467,11 +477,11 @@ textarea.journal { min-height: 120px }
     var today = ymd(new Date()), day = mDay || today, x = mEdit ? byId(data.meds, mEdit) : null, html = "";
     if (taking().length) html += '<section class="card stack"><div class="row" style="justify-content:space-between"><h2>' + esc(day === today ? "Today" : nice(day)) + "</h2>" +
       '<label class="f">Day<input type="date" id="m-day" max="' + esc(today) + '" value="' + esc(day) + '"></label></div>' + medsChecklist(day) + "</section>";
-    if (data.meds.length) html += '<ul class="list">' + data.meds.map(function (m) {
+    if (data.meds.length) html += byKind(data.meds, function (l) { return '<ul class="list">' + l.map(function (m) {
       return '<li><button class="open grow" data-editmed="' + esc(m.id) + '"><strong>' + esc(m.name) + "</strong>" + (m.dose ? " " + esc(m.dose) : "") +
-        ' <span class="muted small">' + esc(KINDS[m.kind]) + (m.stopped ? " · stopped" : "") + "</span><br>" +
+        (m.stopped ? ' <span class="muted small">stopped</span>' : "") + "<br>" +
         '<span class="muted small">' + esc((m.times.length ? m.times.join(", ") : "As needed") + (m.stopped ? "" : " · " + lastWeek(m))) + "</span></button></li>";
-    }).join("") + "</ul>";
+    }).join("") + "</ul>"; });
     html += '<form class="card stack" id="med-form"><h2>' + (x ? "Change " + esc(x.name) : "Add a medication or supplement") + "</h2>" +
       '<label class="f">Name<input name="name" maxlength="80" required value="' + esc(x ? x.name : "") + '"></label>' +
       '<div class="row"><label class="f">Kind<select name="kind">' + Object.keys(KINDS).map(function (k) {

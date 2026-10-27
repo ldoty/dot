@@ -185,11 +185,12 @@ test('meds from Dot: what’s due and taken, and ticking off the next dose', asy
   await call('PUT', `/doses/${ymd(1)}/vitd-0800`, { med: 'vitd', slot: '08:00', at: '08:05' });
   assert.match(MANIFEST.description, /Never advise starting, stopping or changing a medication/);
   let m = (await dot('meds')).body;
-  assert.deepEqual(m.taking.map((x) => x.name), ['Ibuprofen', 'Magnesium glycinate', 'Vitamin D'], 'not what they stopped');
+  assert.deepEqual(m.medications.map((x) => x.name), ['Ibuprofen'], 'medications apart');
+  assert.deepEqual(m.supplements.map((x) => x.name), ['Magnesium glycinate', 'Vitamin D'], 'not what they stopped');
   assert.deepEqual(m.stopped, ['Old pill']);
-  assert.deepEqual(m.taking[2].today, [{ due: '08:00', taken_at: null }, { due: '20:00', taken_at: null }]);
-  assert.equal(m.taking[2].last_7_days, '1 of 14 doses');
-  assert.equal(m.taking[0].when, 'as needed');
+  assert.deepEqual(m.supplements[1].today, [{ due: '08:00', taken_at: null }, { due: '20:00', taken_at: null }]);
+  assert.equal(m.supplements[1].last_7_days, '1 of 14 doses');
+  assert.equal(m.medications[0].when, 'as needed');
 
   let r = await dot('log_dose', { name: 'vitamin d', time: '08:30' });
   assert.deepEqual(r.body.logged, { name: 'Vitamin D', dose: '2000 IU', date: ymd(), due: '08:00', taken_at: '08:30' });
@@ -202,9 +203,9 @@ test('meds from Dot: what’s due and taken, and ticking off the next dose', asy
   assert.deepEqual([unknown.error, unknown.candidates.length], ['nothing they take by that name', 3]);
   assert.equal((await dot('log_dose', { name: 'old pill' })).status, 400, 'nothing stopped');
   m = (await dot('meds')).body;
-  assert.equal(m.taking[0].today.length, 2);
+  assert.equal(m.medications[0].today.length, 2);
   assert.deepEqual((await dot('summary')).body.meds_today, { doses_due: 3, taken: 2, not_yet: ['Magnesium glycinate 21:00'] });
-  assert.equal((await dot('meds', {}, dotToken('amber-sub'))).body.taking.length, 0);
+  assert.equal((await dot('meds', {}, dotToken('amber-sub'))).body.supplements.length, 0);
   assert.equal((await dot('log_dose', { name: 'vitamin d' }, dotToken('amber-sub'))).status, 400, 'only their own');
 });
 

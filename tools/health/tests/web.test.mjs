@@ -262,6 +262,10 @@ test('meds: as needed, logged each time; stopped ones drop off the checklist but
   await call('PUT', '/meds/old', { name: 'Old pill', times: ['09:00'] });
   await call('PUT', `/doses/${daysAgo(1)}/old-0900`, { med: 'old', slot: '09:00', at: '09:10' });
   const p = await open();
+  // Medications and supplements apart, each under its own heading
+  assert.deepEqual(p.all('h3.kind').map((h) => h.textContent), ['Medications', 'Supplements']);
+  assert.equal(p.el('h3.kind').nextElementSibling.querySelector('[data-prn="ibu"]') !== null, true, 'ibuprofen under Medications');
+  assert.equal(p.all('h3.kind')[1].nextElementSibling.querySelector('[data-dose="old"]') !== null, true, 'the supplement under Supplements');
   await p.click('[data-prn="ibu"]');
   await wait(30);
   await p.click('[data-prn="ibu"]');
@@ -272,6 +276,7 @@ test('meds: as needed, logged each time; stopped ones drop off the checklist but
   assert.equal((await call('GET', '/all')).body.doses.filter((d) => d.med === 'ibu').length, 1);
 
   await p.click('[data-tab="meds"]');
+  assert.equal(p.all('h3.kind')[3].nextElementSibling.querySelector('[data-editmed="old"]') !== null, true, 'the list is apart too');
   await p.click('[data-editmed="old"]');
   p.el('#med-form [name="stopped"]').checked = true;
   await p.submit('#med-form');

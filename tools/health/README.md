@@ -22,7 +22,8 @@ supplements they take. Nobody sees anyone else's.
 - **Meds**: medications and supplements (`PUT /meds/{id}`: name, kind, dose, the times you take it, or none for
   as needed; mark one stopped to keep its history). Each day's doses are a checklist: tick one and the time
   you took it is kept (`T#<date>#<med>-<HHMM>`, so each due dose once a day); as-needed ones are logged each time.
-  Any day can be filled in afterwards; each one shows the last 7 days' count. No reminders yet.
+  Any day can be filled in afterwards; each one shows the last 7 days' count. Medications and supplements (the
+  kind) are kept apart, each under its own heading, on the page and in what Dot reads. No reminders yet.
 - **History**: finished sessions; opening one lets you fix it.
 - **Progress**: sessions per week against the goal, one exercise's best per session (top weight if
   you log weight, else reps, seconds, meters or breaths), each area's rating, body weight.

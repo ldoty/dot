@@ -69,7 +69,7 @@ export const MANIFEST = validateManifest({
     },
     {
       name: 'meds',
-      description: 'Their medications and supplements: each one’s dose and the times they take it (or as needed), which of today’s doses they’ve taken and when, '
+      description: 'Their medications and their supplements, listed apart: each one’s dose and the times they take it (or as needed), which of today’s doses they’ve taken and when, '
         + 'and how many they took over the last 7 days. Use it for “did I take my vitamin D?”.',
       path: '/dot/meds',
       input: closed({}),
@@ -221,18 +221,21 @@ function medsDay(all, day) {
 }
 export function meds(all, today) {
   const week = Array.from({ length: 7 }, (_, i) => plusDays(today, -i));
+  const one = (m) => {
+    const t = dosesOn(all, today, m), inWeek = all.doses.filter((d) => d.med === m.id && week.includes(d.date));
+    return {
+      name: m.name, ...(m.dose ? { dose: m.dose } : {}), when: m.times.length ? m.times : 'as needed', ...(m.note ? { note: m.note } : {}),
+      today: m.times.length
+        ? m.times.map((s) => ({ due: s, taken_at: t.find((d) => d.slot === s)?.at ?? null }))
+        : t.map((d) => ({ taken_at: d.at })),
+      last_7_days: m.times.length ? `${inWeek.filter((d) => d.slot).length} of ${m.times.length * 7} doses` : `${inWeek.length} taken`,
+    };
+  };
+  // Kept apart, as on their page
   return {
     today,
-    taking: taking(all).map((m) => {
-      const t = dosesOn(all, today, m), inWeek = all.doses.filter((d) => d.med === m.id && week.includes(d.date));
-      return {
-        name: m.name, kind: m.kind, ...(m.dose ? { dose: m.dose } : {}), when: m.times.length ? m.times : 'as needed', ...(m.note ? { note: m.note } : {}),
-        today: m.times.length
-          ? m.times.map((s) => ({ due: s, taken_at: t.find((d) => d.slot === s)?.at ?? null }))
-          : t.map((d) => ({ taken_at: d.at })),
-        last_7_days: m.times.length ? `${inWeek.filter((d) => d.slot).length} of ${m.times.length * 7} doses` : `${inWeek.length} taken`,
-      };
-    }),
+    medications: taking(all).filter((m) => m.kind === 'medication').map(one),
+    supplements: taking(all).filter((m) => m.kind !== 'medication').map(one),
     stopped: all.meds.filter((m) => m.stopped).map((m) => m.name),
   };
 }
