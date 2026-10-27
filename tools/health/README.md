@@ -3,8 +3,8 @@
 `https://health.dot-y.co/` · permission group **`family_health`** (admins: `family_health:admin`)
 
 Each person's own health log: exercises, saved workouts, a plan, sessions logged set by set, body
-weight, how sore spots felt after each session, a daily journal, what they ate, and the medications and
-supplements they take. Nobody sees anyone else's.
+weight, how sore spots felt after each session, a daily journal, what they ate, the medications and
+supplements they take, and their meditation. Nobody sees anyone else's.
 (It was Gym, at gym.dot-y.co, until 2026-10-26.)
 
 - **Today**: this week (planned days, days trained), the next workout in the plan's rotation, a start
@@ -24,6 +24,11 @@ supplements they take. Nobody sees anyone else's.
   you took it is kept (`T#<date>#<med>-<HHMM>`, so each due dose once a day); as-needed ones are logged each time.
   Any day can be filled in afterwards; each one shows the last 7 days' count. Medications and supplements (the
   kind) are kept apart, each under its own heading, on the page and in what Dot reads. No reminders yet.
+- **Meditate**: a timer (5 to 45 minutes or any length, an optional bell every 5 or 10 minutes) that rings a bell
+  (made with Web Audio, no sound file) to start and end, keeps the screen on (Wake Lock) and lives in the device's
+  storage as when it ends, so a reload doesn't lose it. When it ends, or you end it, it asks how it went; saving logs
+  the sit (`PUT /sits/{id}`: date, start time, seconds, note), discarding doesn't. Sits can be logged or fixed by hand.
+  Shows this week's minutes and days in a row, and a card on Today.
 - **History**: finished sessions; opening one lets you fix it.
 - **Progress**: sessions per week against the goal, one exercise's best per session (top weight if
   you log weight, else reps, seconds, meters or breaths), each area's rating, body weight.
@@ -68,7 +73,7 @@ log a body weight, log food (`POST /dot/food`: send it a photo of a meal and it 
 and protein and logs it, marked as Dot's estimate until you edit it; the photo stays with Dot, deleted after 7 days),
 add to a day's journal (`POST /dot/journal`: a new paragraph after what's there, never a rewrite), and tick off a
 dose they say they took (`POST /dot/dose`: the next one due that day, or an as-needed one), and add a supplement they've
-started (`POST /dot/supplement`). Its description tells it never to advise starting, stopping or changing a medication.
+started (`POST /dot/supplement`), and log a meditation they tell it about (`POST /dot/sit`). Its description tells it never to advise starting, stopping or changing a medication.
 Additions don't need a confirmation step. One change does: Dot may change a supplement (`PUT /dot/supplement`: name, dose,
 times, note, stopped), which first answers 202 with the question to ask; Dot sends the same request again with
 `?confirm_id=` only after their own reply, and it goes ahead only if it's the same change to the same version, within

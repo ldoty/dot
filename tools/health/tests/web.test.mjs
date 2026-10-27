@@ -286,6 +286,71 @@ test('meds: as needed, logged each time; stopped ones drop off the checklist but
   p.close();
 });
 
+test('meditate: the timer runs, pauses, ends with a note to save; the Today card shows the week', async () => {
+  const p = await open();
+  assert.equal(p.d.querySelector('[data-tab="meditate"]').textContent, 'Meditate');
+  await p.click('[data-tab="meditate"]');
+  p.el('#sit-start [name="min"][value="5"]').checked = true;
+  await p.submit('#sit-start');
+  let run = JSON.parse(p.w.localStorage.getItem('health-sit-run'));
+  assert.equal(run.total, 300000);
+  assert.match(p.el('.sit-clock').textContent, /^[45]:\d\d$/);
+  await p.click('[data-act="sitpause"]');
+  assert.match(p.el('.sit').textContent, /Paused/);
+  await p.click('[data-act="sitresume"]');
+  // Nearly over: the tick ends it, and asks how it went
+  run = JSON.parse(p.w.localStorage.getItem('health-sit-run'));
+  run.end = Date.now() + 200;
+  p.w.localStorage.setItem('health-sit-run', JSON.stringify(run));
+  await wait(700);
+  assert.ok(p.el('#sit-after'), 'the note after');
+  assert.match(p.el('#sit-after h2').textContent, /5 min sat/);
+  p.el('#sit-after [name="note"]').value = 'Breath, then the birds.';
+  await p.submit('#sit-after');
+  const [sit] = (await call('GET', '/all')).body.sits;
+  assert.deepEqual([sit.date, sit.seconds, sit.note], [daysAgo(0), 300, 'Breath, then the birds.']);
+  assert.equal(p.w.localStorage.getItem('health-sit-run'), null);
+  assert.ok(p.el('#sit-start'), 'ready for the next one');
+  assert.equal(JSON.parse(p.w.localStorage.getItem('health-sit')).min, 5, 'remembers the length');
+  await p.click('[data-tab="today"]');
+  assert.match(p.d.body.textContent, /5 min today · 5 min this week/);
+});
+
+test('meditate: ended while away is logged at full length; End now logs what was sat; a sit logged and fixed by hand', async () => {
+  const away = { date: daysAgo(0), time: '06:30', total: 600000, end: Date.now() - 60000, left: null, bell: 0, rung: 0 };
+  let p = await open({ storage: { 'health-sit-run': JSON.stringify(away) } });
+  await p.click('[data-tab="meditate"]');
+  await wait(400);
+  assert.match(p.el('#sit-after h2').textContent, /10 min sat/);
+  await p.click('[data-act="sitdiscard"]');
+  assert.deepEqual((await call('GET', '/all')).body.sits, [], 'not logged unless saved');
+  p.close();
+
+  const half = { date: daysAgo(0), time: '06:30', total: 600000, end: Date.now() + 350000, left: null, bell: 0, rung: 0 };
+  p = await open({ storage: { 'health-sit-run': JSON.stringify(half) } });
+  await p.click('[data-tab="meditate"]');
+  await p.click('[data-act="sitend"]');
+  assert.match(p.el('#sit-after h2').textContent, /4 min sat/);
+  await p.submit('#sit-after');
+  const [s] = (await call('GET', '/all')).body.sits;
+  assert.ok(s.seconds >= 249 && s.seconds <= 251, String(s.seconds));
+
+  await p.click('[data-act="sitnew"]');
+  p.el('#sit-form [name="date"]').value = daysAgo(1);
+  p.el('#sit-form [name="minutes"]').value = '20';
+  p.el('#sit-form [name="note"]').value = 'Evening sit.';
+  await p.submit('#sit-form');
+  await p.click(`[data-editsit="${s.id}"]`);
+  p.el('#sit-form [name="note"]').value = 'Cut short.';
+  await p.submit('#sit-form');
+  const sits = (await call('GET', '/all')).body.sits;
+  assert.deepEqual(sits.map((x) => [x.date, x.note]), [[daysAgo(1), 'Evening sit.'], [daysAgo(0), 'Cut short.']]);
+  assert.equal(sits[1].seconds, s.seconds, 'unchanged minutes keep the timer’s seconds');
+  assert.equal(sits[0].seconds, 1200);
+  assert.match(p.d.body.textContent, /2 days in a row/);
+  p.close();
+});
+
 test('the plan: pick days and order the rotation', async () => {
   await call('POST', '/starter');
   const p = await open();

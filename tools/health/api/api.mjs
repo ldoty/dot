@@ -1,7 +1,7 @@
 // Health API: each person's own exercises, saved workouts, plan, logged sessions, body weight, a daily journal, what they ate,
-// and the medications and supplements they take.
+// the medications and supplements they take, and their meditation.
 // Routes (a family_health token, or Dot's delegated one for the person asking; everything is that person's own):
-//   GET    /all              -> { settings, plan, exercises, workouts, sessions, weights, journal, food, meds, doses }
+//   GET    /all              -> { settings, plan, exercises, workouts, sessions, weights, journal, food, meds, doses, sits }
 //   PUT    /settings         { unit, areas, rev }
 //   PUT    /plan             { rotation: [workoutId], days: [0-6], from, to, perWeek, rev }
 //   PUT    /exercises/{id}   { name, measure, perSide, note, rev }
@@ -22,22 +22,25 @@
 //   PUT    /doses/{date}/{id}  { med, slot, at }   taken: slot is the HH:MM it was due (id <med>-<HHMM>, so once a day
 //                               each), or null for an as-needed one (id <med>-n…); at is when they took it
 //   DELETE /doses/{date}/{id}  not taken after all
+//   PUT    /sits/{id}        { date, time, seconds, note, rev }   a meditation: how long they sat, and how it went
+//   DELETE /sits/{id}
 //   POST   /starter          loads the starter program (starter.mjs) into an empty account
 //   GET    /dot              this tool's description for Dot (dot.mjs, platform/api/dot-manifest.mjs), and what it
-//   GET    /dot/summary, /dot/sessions, /dot/exercise, /dot/workouts, /dot/journal, /dot/food, /dot/meds   calls: their log in words
+//   GET    /dot/summary, /dot/sessions, /dot/exercise, /dot/workouts, /dot/journal, /dot/food, /dot/meds, /dot/sits   calls: their log in words
 //   POST   /dot/log          Dot logging a session they told it about (a new session, never a change)
 //   POST   /dot/food         Dot logging something they ate (often from a photo they sent): a new entry
 //   POST   /dot/journal      Dot adding to a day's journal: a new paragraph after what's there, never a rewrite
 //   POST   /dot/dose         Dot logging a dose they took (the next one due that day, or an as-needed one)
 //   POST   /dot/supplement   Dot adding a supplement they've started (never a medication)
+//   POST   /dot/sit          Dot logging a meditation they told it about: a new one
 //   PUT    /dot/supplement   Dot changing a supplement: 202 { confirm_id, prompt } first; the same request again with
 //                            ?confirm_id= (Dot sends it only after their own reply) goes ahead if it's the same change,
 //                            to the same version, within CONFIRM_MS, once
 // A via-Dot token may read, and use only the writes the manifest declares (POST /dot/log, /dot/food, /dot/journal,
-// /dot/dose, /dot/supplement, PUT /dot/supplement, /weights/{date}): 403 read-only on every other write, so Dot can add
+// /dot/dose, /dot/supplement, /dot/sit, PUT /dot/supplement, /weights/{date}): 403 read-only on every other write, so Dot can add
 // to someone's log, change a supplement only with their OK, and never delete anything.
 // Rows (pk = P#<username>, so nobody can reach anyone else's): SETTINGS, PLAN, EX#<id>, WO#<id>,
-// S#<id>, BW#<date>, J#<date>, F#<id>, M#<id>, T#<date>#<dose id>. Everything but weights and doses is rev-checked: a PUT sends the rev it was based on
+// S#<id>, BW#<date>, J#<date>, F#<id>, M#<id>, T#<date>#<dose id>, SIT#<id>. Everything but weights and doses is rev-checked: a PUT sends the rev it was based on
 // (none for a new row) and gets 409 { current } if someone (another tab, another phone) got there first.
 // The token is re-verified here (signature, issuer, client, expiry, group); API Gateway's
 // authorizer is not trusted on its own.
@@ -66,6 +69,7 @@ const KINDS = ['medication', 'supplement'];
 // A dose's id: the medicine's, then the time it was due (so a scheduled dose is logged once a day) or n… (as needed)
 const DOSE_ID = /^([A-Za-z0-9_]{1,30})-(\d{4}|n[A-Za-z0-9]{1,12})$/;
 const MAX = { exercises: 300, workouts: 100, meds: 60 };
+const SIT_MAX = 6 * 3600;
 const CONFIRM_MS = 10 * 60_000;
 
 class Bad extends Error {}
@@ -194,6 +198,15 @@ const clean = {
     if (meal !== null && !MEALS.includes(meal)) bad('meal is breakfast, lunch, dinner or snack');
     return { date, time, meal, what, kcal: int(b.kcal, 0, 10000, 'calories', null), protein: int(b.protein, 0, 1000, 'protein', null), note: text(b.note, 500) };
   },
+  sit(b) {
+    const date = optDate(b.date, 'date');
+    if (!date) bad('date required');
+    const time = b.time == null || b.time === '' ? null : b.time;
+    if (time !== null && (typeof time !== 'string' || !TIME.test(time))) bad('time is HH:MM');
+    const seconds = int(b.seconds, 1, SIT_MAX, 'seconds', null);
+    if (seconds === null) bad('say how long');
+    return { date, time, seconds, note: text(b.note, JOURNAL_MAX) };
+  },
 };
 
 // Row shapes the page sees: everything but the keys and bookkeeping
@@ -206,6 +219,7 @@ const shape = {
   J: (i) => ({ date: i.sk.slice(2), ...strip(i) }),
   F: (i) => ({ id: i.sk.slice(2), ...strip(i) }),
   M: (i) => ({ id: i.sk.slice(2), ...strip(i) }),
+  SIT: (i) => ({ id: i.sk.slice(4), ...strip(i) }),
 };
 const rowShape = (i) => (i.sk === 'SETTINGS' || i.sk === 'PLAN' ? strip(i) : shape[i.sk.split('#')[0]](i));
 
@@ -223,7 +237,7 @@ async function rows(pk) {
 }
 
 async function getAll(pk) {
-  const out = { settings: null, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [], food: [], meds: [], doses: [] };
+  const out = { settings: null, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [], food: [], meds: [], doses: [], sits: [] };
   for (const i of await rows(pk)) {
     if (i.sk === 'SETTINGS') out.settings = strip(i);
     else if (i.sk === 'PLAN') out.plan = strip(i);
@@ -234,6 +248,7 @@ async function getAll(pk) {
     else if (i.sk.startsWith('J#')) out.journal.push(shape.J(i));
     else if (i.sk.startsWith('F#')) out.food.push(shape.F(i));
     else if (i.sk.startsWith('M#')) out.meds.push(shape.M(i));
+    else if (i.sk.startsWith('SIT#')) out.sits.push(shape.SIT(i));
     else if (i.sk.startsWith('T#')) out.doses.push({ date: i.sk.slice(2, 12), id: i.sk.slice(13), med: i.med, slot: i.slot ?? null, at: i.at });
   }
   out.settings ??= { ...SETTINGS, areas: [] };
@@ -243,6 +258,7 @@ async function getAll(pk) {
   out.meds.sort((a, b) => a.name.localeCompare(b.name));
   out.doses.sort((a, b) => (a.date === b.date ? (a.at || '').localeCompare(b.at || '') : a.date < b.date ? -1 : 1));
   out.food.sort((a, b) => (a.date === b.date ? (a.time || '').localeCompare(b.time || '') : a.date < b.date ? -1 : 1));
+  out.sits.sort((a, b) => (a.date === b.date ? (a.time || '').localeCompare(b.time || '') : a.date < b.date ? -1 : 1));
   out.sessions.sort((a, b) => (a.date === b.date ? (a.startedAt || '').localeCompare(b.startedAt || '') : a.date < b.date ? -1 : 1));
   return out;
 }
@@ -423,6 +439,10 @@ export const handler = async (event) => {
         return json(200, await putDose(pk, date, id, body));
       case 'DELETE /doses/{date}/{id}':
         return await del(`T#${date}#${id}`);
+      case 'PUT /sits/{id}':
+        return await save(pk, `SIT#${id}`, clean.sit(body), body.rev);
+      case 'DELETE /sits/{id}':
+        return await del(`SIT#${id}`);
       case 'POST /starter':
         return await loadStarter(pk);
       case 'GET /dot':
@@ -470,6 +490,18 @@ export const handler = async (event) => {
         if (r.statusCode !== 200) return r;
         console.log('supplement via dot', JSON.stringify({ by: claims.username, id: mid }));
         return json(200, { added: dot.supplementOut(JSON.parse(r.body)), note: 'They can change or delete it on Health’s Meds tab.' });
+      }
+      case 'GET /dot/sits': {
+        const q = event.queryStringParameters ?? {};
+        return json(200, dot.sits(await getAll(pk), dot.localDay(new Date(), TZ_HOME), { from: optDate(q.from, 'from'), to: optDate(q.to, 'to'), limit: q.limit }));
+      }
+      case 'POST /dot/sit': {
+        const now = new Date();
+        const sit = clean.sit(dot.sitEntry(body, dot.localDay(now, TZ_HOME), dot.localTime(now, TZ_HOME)));
+        const sid = newId(), r = await save(pk, `SIT#${sid}`, sit, undefined);
+        if (r.statusCode !== 200) return r;
+        console.log('sit via dot', JSON.stringify({ by: claims.username, id: sid, date: sit.date }));
+        return json(200, { logged: dot.sitOut(JSON.parse(r.body)), note: 'They can fix or delete it on Health’s Meditate tab.' });
       }
       case 'PUT /dot/supplement':
         return await changeSupplement(pk, body, event.queryStringParameters?.confirm_id, claims.username);

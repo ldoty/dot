@@ -104,6 +104,10 @@ textarea.journal { min-height: 120px }
 .meds .tick.on { background: var(--leaf); border-color: var(--leaf); color: var(--on-accent) }
 #med-form .row label.f { flex: 1 1 120px }
 h3.kind { margin: 8px 0 0; font-size: 15px; color: var(--muted) }
+
+/* Meditate: one big clock while sitting, nothing else to look at */
+.sit-clock { font: 500 clamp(56px, 18vw, 96px) var(--mono); text-align: center; letter-spacing: -0.02em }
+.sit .row { justify-content: center }
 </style>
 </head>
 <body>
@@ -118,9 +122,9 @@ h3.kind { margin: 8px 0 0; font-size: 15px; color: var(--muted) }
 <script src="family-auth.js"></script>
 <script>
 (function () {
-  var cfg, data, tab = "today", openId = null, editId = null, confirmDel = null, chartEx = null, jDay = null, fDay = null, fEdit = null, mDay = null, mEdit = null;
+  var cfg, data, tab = "today", openId = null, editId = null, confirmDel = null, chartEx = null, jDay = null, fDay = null, fEdit = null, mDay = null, mEdit = null, sitEdit = null;
   var main = document.getElementById("main"), tabsEl = document.getElementById("tabs");
-  var TABS = [["today", "Today"], ["journal", "Journal"], ["food", "Food"], ["meds", "Meds"], ["history", "History"], ["progress", "Progress"], ["plan", "Plan"], ["workouts", "Workouts"], ["exercises", "Exercises"]];
+  var TABS = [["today", "Today"], ["journal", "Journal"], ["food", "Food"], ["meds", "Meds"], ["meditate", "Meditate"], ["history", "History"], ["progress", "Progress"], ["plan", "Plan"], ["workouts", "Workouts"], ["exercises", "Exercises"]];
   var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var LONG_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   var MEASURE = { reps: "Reps", time: "Time (s)", distance: "Distance (m)", breaths: "Breaths (a hold)" };
@@ -496,6 +500,129 @@ h3.kind { margin: 8px 0 0; font-size: 15px; color: var(--muted) }
     return html;
   }
 
+  /* ---------- meditation: a timer with a bell, then a note on how it went ---------- */
+  // The sit in progress lives in this device's storage (when it ends, not a countdown), so a reload or a locked
+  // phone doesn't lose it; it's logged only when they save the note after.
+  var SIT_RUN = "health-sit-run", SIT_PREFS = "health-sit", SIT_MINS = [5, 10, 15, 20, 30, 45], sitTick = null, audio = null, wake = null;
+  function sitPrefs() { return store(function (s) { return JSON.parse(s.getItem(SIT_PREFS)); }) || { min: 10, bell: 0 }; }
+  function sitRun() { return store(function (s) { return JSON.parse(s.getItem(SIT_RUN)); }); }
+  function setRun(r) { store(function (s) { if (r) s.setItem(SIT_RUN, JSON.stringify(r)); else s.removeItem(SIT_RUN); }); }
+  function sitLeft(r) { return r.end ? r.end - Date.now() : r.left; }
+  function mmss(ms) { var t = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(t / 60) + ":" + pad(t % 60); }
+  function minutes(sec) { return Math.max(1, Math.round(sec / 60)) + " min"; }
+  // A struck bowl: a few partials, each fading over seconds. Made here, so there's no sound file to load
+  function bell() {
+    try {
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (C) {
+        audio = audio || new C(); if (audio.state === "suspended") audio.resume();
+        var t = audio.currentTime;
+        [[432, 0.5, 6], [864, 0.18, 4], [1296, 0.08, 2.5]].forEach(function (p) {
+          var o = audio.createOscillator(), g = audio.createGain();
+          o.frequency.value = p[0];
+          g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(p[1], t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + p[2]);
+          o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + p[2]);
+        });
+      }
+    } catch (e) { /* no sound here; the screen still says it's done */ }
+    if (navigator.vibrate) navigator.vibrate(300);
+  }
+  // The screen stays on while sitting: a locked phone stops the page, and with it the bell
+  function holdScreen(on) {
+    try {
+      if (on && !wake && navigator.wakeLock) navigator.wakeLock.request("screen").then(function (w) { wake = w; w.addEventListener("release", function () { wake = null; }); }).catch(function () {});
+      if (!on && wake) { wake.release(); wake = null; }
+    } catch (e) { /* not on this browser */ }
+  }
+  document.addEventListener("visibilitychange", function () { var r = sitRun(); if (!document.hidden && r && r.end) holdScreen(true); });
+  function startSit(min, every) {
+    var now = new Date();
+    store(function (s) { s.setItem(SIT_PREFS, JSON.stringify({ min: min, bell: every })); });
+    setRun({ date: ymd(now), time: hhmm(now), total: min * 60000, end: Date.now() + min * 60000, left: null, bell: every, rung: 0 });
+    bell(); holdScreen(true); sitTicking(); render();
+  }
+  function sitTicking() { clearInterval(sitTick); sitTick = setInterval(drawSit, 250); }
+  function endSit(r, ms, ring) {
+    setRun({ date: r.date, time: r.time, seconds: Math.max(1, Math.round(ms / 1000)), finished: true });
+    clearInterval(sitTick); sitTick = null; holdScreen(false);
+    if (ring) { bell(); setTimeout(bell, 2500); setTimeout(bell, 5000); }
+    if (tab === "meditate" || tab === "today") render(); else status("Your sit is done. Note how it went on Meditate.");
+  }
+  function drawSit() {
+    var r = sitRun();
+    if (!r || r.finished) { clearInterval(sitTick); sitTick = null; return; }
+    var left = sitLeft(r);
+    // Ended while the page was away: logged at its full length, without a late bell
+    if (left <= 0) { endSit(r, r.total, left > -5000); return; }
+    var n = r.bell && r.end ? Math.floor((r.total - left) / (r.bell * 60000)) : 0;
+    if (n > r.rung) { r.rung = n; setRun(r); if (left > 3000) bell(); }
+    [].forEach.call(document.querySelectorAll(".sit-clock"), function (c) { c.textContent = mmss(left); });
+  }
+  function sitWeek() {
+    var from = ymd(monday(new Date())), days = {}, secs = 0, d = new Date(), n = 0;
+    data.sits.forEach(function (x) { days[x.date] = 1; if (x.date >= from) secs += x.seconds; });
+    if (!days[ymd(d)]) d = addDays(d, -1);
+    while (days[ymd(d)]) { n++; d = addDays(d, -1); }
+    return Math.round(secs / 60) + " min this week" + (n > 1 ? " · " + n + " days in a row" : "");
+  }
+  function sitNow() {
+    var r = sitRun();
+    if (r && r.finished) {
+      return '<form class="card stack" id="sit-after"><h2>' + esc(minutes(r.seconds)) + ' sat</h2><label class="f">How was it?' +
+        '<textarea name="note" maxlength="5000" rows="4" placeholder="What came up, what you noticed"></textarea></label>' +
+        '<div class="row"><button class="btn primary">Save</button><button type="button" class="link danger" data-act="sitdiscard">Don’t log it</button></div></form>';
+    }
+    if (r) {
+      return '<section class="card stack sit"><p class="eyebrow" style="text-align:center">' + (r.end ? "Sitting" : "Paused") + '</p><div class="sit-clock">' + mmss(sitLeft(r)) + "</div>" +
+        '<div class="row"><button class="btn ghost" data-act="' + (r.end ? "sitpause" : "sitresume") + '">' + (r.end ? "Pause" : "Resume") + "</button>" +
+        '<button class="btn ghost" data-act="sitend">End now</button></div></section>';
+    }
+    return "";
+  }
+  function sitCard() {
+    var now = sitNow();
+    if (now) return now;
+    if (!data.sits.length) return "";
+    var today = ymd(new Date()), secs = data.sits.filter(function (x) { return x.date === today; }).reduce(function (n, x) { return n + x.seconds; }, 0);
+    return '<section class="card row" style="justify-content:space-between"><div><h2>Meditation</h2><span class="muted small">' +
+      esc((secs ? minutes(secs) + " today · " : "") + sitWeek()) + '</span></div><button class="btn ghost" data-tab="meditate">Sit</button></section>';
+  }
+  function viewMeditate() {
+    var html = sitNow(), x = sitEdit && sitEdit !== "new" ? byId(data.sits, sitEdit) : null;
+    if (!html) {
+      var p = sitPrefs(), other = SIT_MINS.indexOf(p.min) < 0;
+      html = '<form class="card stack" id="sit-start"><h2>Sit</h2><div class="days" role="group" aria-label="Minutes">' + SIT_MINS.map(function (m) {
+        return '<label><input type="radio" name="min" value="' + m + '"' + (p.min === m ? " checked" : "") + ">" + m + " min</label>";
+      }).join("") + "</div>" +
+        '<div class="row"><label class="f">Or minutes<input name="other" type="number" inputmode="numeric" min="1" max="360" value="' + (other ? esc(p.min) : "") + '"></label>' +
+        '<label class="f">A bell between<select name="bell">' + [[0, "None"], [5, "Every 5 min"], [10, "Every 10 min"]].map(function (b) {
+          return '<option value="' + b[0] + '"' + (p.bell === b[0] ? " selected" : "") + ">" + b[1] + "</option>";
+        }).join("") + "</select></label></div>" +
+        '<p class="muted small">A bell starts and ends it. The screen stays on while you sit.</p><button class="btn primary">Start</button></form>';
+    }
+    if (data.sits.length) html += '<p class="muted small">' + esc(sitWeek()) + "</p>";
+    if (sitEdit) {
+      var today = ymd(new Date());
+      html += '<form class="card stack" id="sit-form"><h2>' + (x ? "Change this sit" : "Log a sit") + "</h2>" +
+        '<div class="row"><label class="f">Day<input type="date" name="date" max="' + esc(today) + '" required value="' + esc(x ? x.date : today) + '"></label>' +
+        '<label class="f">Started<input type="time" name="time" value="' + esc(x ? x.time || "" : "") + '"></label>' +
+        '<label class="f">Minutes<input type="number" name="minutes" inputmode="numeric" min="1" max="360" required value="' + (x ? Math.max(1, Math.round(x.seconds / 60)) : "") + '"></label></div>' +
+        '<label class="f">How was it?<textarea name="note" maxlength="5000" rows="4">' + esc(x ? x.note : "") + "</textarea></label>" +
+        '<div class="row"><button class="btn primary">Save</button><button type="button" class="btn ghost" data-act="cancelsit">Cancel</button>' +
+        (x ? '<button type="button" class="link danger" data-act="delsit">' + (confirmDel === "sit" ? "Delete this?" : "Delete") + "</button>" : "") + "</div></form>";
+    } else html += '<button class="link" data-act="sitnew" style="justify-self:start">Log a sit without the timer</button>';
+    if (data.sits.length) html += '<ul class="list">' + data.sits.slice().reverse().map(function (s) {
+      return '<li><button class="open grow" data-editsit="' + esc(s.id) + '"><strong>' + esc(nice(s.date)) + "</strong> " +
+        '<span class="muted small">' + esc((s.time ? s.time + " · " : "") + minutes(s.seconds)) + "</span>" +
+        (s.note ? '<br><span class="small jtext">' + esc(s.note) + "</span>" : "") + "</button></li>";
+    }).join("") + "</ul>";
+    return html;
+  }
+  function saveSit(id, body, done) {
+    saveRow("/sits/" + id, body, function (row) { upsert(data.sits, row); data.sits.sort(function (a, b) { return a.date === b.date ? (a.time || "").localeCompare(b.time || "") : a.date < b.date ? -1 : 1; }); })
+      .then(function (ok) { if (ok) { if (done) done(); render(); } });
+  }
+
   /* ---------- rest timer ---------- */
   var restEnd = 0, restTick = null;
   function startRest(sec) {
@@ -529,7 +656,7 @@ h3.kind { margin: 8px 0 0; font-size: 15px; color: var(--muted) }
     tabsEl.innerHTML = TABS.map(function (t) {
       return '<button data-tab="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '">' + t[1] + "</button>";
     }).join("");
-    var v = { today: viewToday, journal: viewJournal, food: viewFood, meds: viewMeds, history: viewHistory, progress: viewProgress, plan: viewPlan, workouts: viewWorkouts, exercises: viewExercises }[tab];
+    var v = { today: viewToday, journal: viewJournal, food: viewFood, meds: viewMeds, meditate: viewMeditate, history: viewHistory, progress: viewProgress, plan: viewPlan, workouts: viewWorkouts, exercises: viewExercises }[tab];
     main.innerHTML = v();
   }
 
@@ -540,7 +667,7 @@ h3.kind { margin: 8px 0 0; font-size: 15px; color: var(--muted) }
       return '<div class="card stack"><h2>Get started</h2><p>Load the starter program: Sessions A and B (full body, easy on shoulders and the lower back), ' +
         'a 10-minute mobility routine, and a Monday, Wednesday, Friday plan alternating A and B. You can change all of it.</p>' +
         '<div class="row"><button class="btn primary" data-act="starter">Load the starter program</button>' +
-        '<button class="btn ghost" data-tab="exercises">Build my own</button></div></div>' + medsCard() + journalCard() + foodCard();
+        '<button class="btn ghost" data-tab="exercises">Build my own</button></div></div>' + sitCard() + medsCard() + journalCard() + foodCard();
     }
     var today = ymd(new Date()), start = monday(new Date()), p = data.plan, done = finished(), html = "";
     var thisWeek = done.filter(function (x) { return x.date >= ymd(start) && x.date <= ymd(addDays(start, 6)); });
@@ -573,7 +700,7 @@ h3.kind { margin: 8px 0 0; font-size: 15px; color: var(--muted) }
     html += '<form class="card row" id="bw-form"><label class="f" style="flex:1">Body weight today (' + esc(unit()) + ')' +
       '<input name="weight" type="number" inputmode="decimal" step="any" min="20" max="1000" value="' + esc(bw ? bw.weight : "") + '"></label>' +
       '<button class="btn ghost" style="align-self:end">Save</button></form>';
-    return html + medsCard() + journalCard() + foodCard();
+    return html + sitCard() + medsCard() + journalCard() + foodCard();
   }
 
   function pairLabels(entries) {
@@ -860,6 +987,7 @@ h3.kind { margin: 8px 0 0; font-size: 15px; color: var(--muted) }
     if (d.prn) { takeDose(d.day, byId(data.meds, d.prn), null); return; }
     if (d.undose) { untakeDose(d.day, d.undose); return; }
     if (d.editmed) { mEdit = d.editmed; confirmDel = null; render(); return; }
+    if (d.editsit) { sitEdit = d.editsit; confirmDel = null; render(); return; }
     if (d.fday) { fDay = d.fday; fEdit = null; render(); window.scrollTo(0, 0); return; }
     if (d.editfood) { var ef = byId(data.food, d.editfood); tab = "food"; fDay = ef ? ef.date : fDay; fEdit = d.editfood; confirmDel = null; render(); return; }
     if (d.jday) { jDay = d.jday; render(); window.scrollTo(0, 0); return; }
@@ -890,7 +1018,7 @@ h3.kind { margin: 8px 0 0; font-size: 15px; color: var(--muted) }
     if (d.itemup !== undefined) { readWoForm(); var n = +d.itemup, it = woDraft.items; if (n > 0) it.splice(n - 1, 0, it.splice(n, 1)[0]); render(); return; }
     if (d.itemdel !== undefined) { readWoForm(); woDraft.items.splice(+d.itemdel, 1); render(); return; }
     var act = d.act; if (!act) return;
-    if (act !== "delsession" && act !== "delworkout" && act !== "delexercise" && act !== "delfood" && act !== "delmed") confirmDel = null;
+    if (act !== "delsession" && act !== "delworkout" && act !== "delexercise" && act !== "delfood" && act !== "delmed" && act !== "delsit") confirmDel = null;
     ({
       starter: function () {
         b.disabled = true;
@@ -915,6 +1043,21 @@ h3.kind { margin: 8px 0 0; font-size: 15px; color: var(--muted) }
       },
       cancelfood: function () { fEdit = null; render(); },
       cancelmed: function () { mEdit = null; render(); },
+      sitpause: function () { var r = sitRun(); r.left = sitLeft(r); r.end = null; setRun(r); clearInterval(sitTick); holdScreen(false); render(); },
+      sitresume: function () { var r = sitRun(); r.end = Date.now() + r.left; r.left = null; setRun(r); holdScreen(true); sitTicking(); render(); },
+      sitend: function () { var r = sitRun(); endSit(r, r.total - sitLeft(r), false); },
+      sitdiscard: function () { setRun(null); render(); },
+      sitnew: function () { sitEdit = "new"; render(); },
+      cancelsit: function () { sitEdit = null; render(); },
+      delsit: function () {
+        if (confirmDel !== "sit") { confirmDel = "sit"; render(); return; }
+        confirmDel = null;
+        var id = sitEdit;
+        api("DELETE", "/sits/" + id).then(function (r) {
+          if (!r.ok) { status("Couldn’t delete. Try again.", true); return; }
+          data.sits = data.sits.filter(function (x) { return x.id !== id; }); sitEdit = null; status("Deleted."); render();
+        });
+      },
       delmed: function () {
         if (confirmDel !== "med") { confirmDel = "med"; render(); return; }
         confirmDel = null;
@@ -969,6 +1112,21 @@ h3.kind { margin: 8px 0 0; font-size: 15px; color: var(--muted) }
         note: field(f, "note").value, stopped: om ? field(f, "stopped").checked : false, rev: om ? om.rev : undefined },
         function (row) { upsert(data.meds, row); data.meds.sort(function (a, b) { return a.name.localeCompare(b.name); }); })
         .then(function (ok) { if (ok) { mEdit = null; render(); } });
+    } else if (f.id === "sit-start") {
+      var other = parseInt(field(f, "other").value, 10), pick = f.querySelector('[name="min"]:checked');
+      var min = other > 0 ? Math.min(other, 360) : pick ? +pick.value : 0;
+      if (!min) { status("Pick how many minutes.", true); return; }
+      startSit(min, +field(f, "bell").value);
+    } else if (f.id === "sit-after") {
+      var run = sitRun();
+      saveSit(uid(), { date: run.date, time: run.time, seconds: run.seconds, note: field(f, "note").value }, function () { setRun(null); status("Logged."); });
+    } else if (f.id === "sit-form") {
+      var os = sitEdit !== "new" ? byId(data.sits, sitEdit) : null, mins = parseInt(field(f, "minutes").value, 10);
+      if (!(mins > 0)) { status("Say how many minutes.", true); return; }
+      // Unchanged minutes keep the seconds the timer measured
+      saveSit(os ? os.id : uid(), { date: field(f, "date").value, time: field(f, "time").value || null,
+        seconds: os && Math.max(1, Math.round(os.seconds / 60)) === mins ? os.seconds : mins * 60, note: field(f, "note").value, rev: os ? os.rev : undefined },
+        function () { sitEdit = null; });
     } else if (f.id === "food-quick") {
       var what = field(f, "what").value.trim(), t = hhmm(new Date());
       if (!what) return;
@@ -1008,7 +1166,7 @@ h3.kind { margin: 8px 0 0; font-size: 15px; color: var(--muted) }
   });
   tabsEl.addEventListener("click", function (e) {
     var b = e.target.closest("[data-tab]"); if (!b) return;
-    tab = b.dataset.tab; editId = null; woDraft = null; confirmDel = null; jDay = null; fDay = null; fEdit = null; mDay = null; mEdit = null;
+    tab = b.dataset.tab; editId = null; woDraft = null; confirmDel = null; jDay = null; fDay = null; fEdit = null; mDay = null; mEdit = null; sitEdit = null;
     if (tab !== "today" && openId) { var s = current(); if (s && s.finishedAt) openId = null; }
     status(""); render();
   });
@@ -1028,7 +1186,9 @@ h3.kind { margin: 8px 0 0; font-size: 15px; color: var(--muted) }
     return api("GET", "/all").then(function (r) {
       if (r.status === 403) return gate("Your account doesn’t have access to Health yet.");
       if (!r.ok) throw new Error("Couldn’t load (" + r.status + "). Reload to try again.");
-      data = r.body; restoreDraft(); render();
+      data = r.body; restoreDraft();
+      var run = sitRun(); if (run && !run.finished) { if (run.end) holdScreen(true); sitTicking(); }
+      render();
     });
   }).catch(function (e) { gate(e.message); });
 })();

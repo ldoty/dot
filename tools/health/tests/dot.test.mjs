@@ -22,7 +22,7 @@ test('Dot reads a valid manifest, and every operation is a real route', async ()
   for (const o of MANIFEST.operations) {
     assert.ok(ROUTES.includes(`${o.method ?? 'GET'} ${o.path}`), `${o.name}: ${o.path}`);
   }
-  assert.deepEqual(writeRoutes(MANIFEST).sort(), ['POST /dot/dose', 'POST /dot/food', 'POST /dot/journal', 'POST /dot/log', 'POST /dot/supplement', 'PUT /dot/supplement', 'PUT /weights/{date}']);
+  assert.deepEqual(writeRoutes(MANIFEST).sort(), ['POST /dot/dose', 'POST /dot/food', 'POST /dot/journal', 'POST /dot/log', 'POST /dot/sit', 'POST /dot/supplement', 'PUT /dot/supplement', 'PUT /weights/{date}']);
 });
 
 test('from Dot: reads and the two declared writes; every other change is refused', async () => {
@@ -269,4 +269,25 @@ test('supplements from Dot: added straight away; a change only once they say yes
   assert.match((await dot('change_supplement', { name: 'vitamin d', dose: '4000 IU' })).body.error, /already/);
   assert.equal((await call('DELETE', `/meds/${vitd.id}`, undefined, dotToken())).status, 403, 'never deletes');
   assert.equal((await call('PUT', '/meds/ibu', { name: 'Ibuprofen', kind: 'medication', dose: '800 mg' }, dotToken())).status, 403);
+});
+
+test('meditation from Dot: this week, days in a row, each sit; and logging one', async () => {
+  await call('PUT', '/sits/a', { date: ymd(2), time: '07:00', seconds: 600 });
+  await call('PUT', '/sits/b', { date: ymd(1), time: '07:00', seconds: 1210, note: 'Calm.' });
+  let m = (await dot('meditation')).body;
+  assert.equal(m.days_in_a_row, 2, 'up to yesterday, before today’s');
+  assert.deepEqual(m.sits[0], { date: m.sits[0].date, time: '07:00', minutes: 20, note: 'Calm.' });
+  assert.equal(m.sits.length, 2);
+  let r = await dot('log_meditation', { minutes: 15, note: 'Sat by the window.' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.logged.minutes, 15);
+  assert.match(r.body.logged.time, /^\d\d:\d\d$/);
+  m = (await dot('meditation')).body;
+  assert.equal(m.days_in_a_row, 3);
+  assert.equal(m.sits[0].note, 'Sat by the window.');
+  assert.equal((await dot('summary')).body.meditation.days_in_a_row, 3);
+  assert.equal((await dot('log_meditation', { minutes: 0 })).status, 400);
+  assert.equal((await call('PUT', '/sits/a', { date: ymd(2), seconds: 60, rev: 1 }, dotToken())).status, 403, 'changes stay on the page');
+  assert.equal((await call('DELETE', '/sits/a', undefined, dotToken())).status, 403);
+  assert.equal((await dot('meditation', {}, dotToken('amber-sub'))).body.sits.length, 0, 'only their own');
 });

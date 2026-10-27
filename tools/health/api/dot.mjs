@@ -1,6 +1,6 @@
 // Health for Dot: the manifest (platform/api/dot-manifest.mjs) and the shapes Dot reads.
 // Dot calls these with a token for the person asking, so it only ever sees and logs their own
-// workouts, exactly as their page does. It can add (log a session, a body weight, food, a journal paragraph, a dose, a supplement)
+// workouts, exactly as their page does. It can add (log a session, a body weight, food, a journal paragraph, a dose, a supplement, a meditation)
 // and change a supplement, only once they've said yes (a 202 first); never a medication, and never deletes: every other write
 // refuses a via-Dot token (api.mjs, writeRoutes).
 // Answers are words and short numbers ("135 × 8"), not ids, so Claude reads them easily.
@@ -16,11 +16,11 @@ const TIMES_IN = {
 export const MANIFEST = validateManifest({
   name: 'health',
   title: 'Health',
-  description: 'This person’s own health log: saved workouts, their plan (which workout is next, which days), sessions logged set by set (holds are counted in breaths, not seconds), body weight, how sore spots (e.g. shoulders, lower back) felt after each session, 0–10, a daily journal of how they felt physically, a food log of what they ate, and the medications and supplements they take, with each dose they’ve ticked off. Never advise starting, stopping or changing a medication or its dose: that is for their doctor or pharmacist.',
+  description: 'This person’s own health log: saved workouts, their plan (which workout is next, which days), sessions logged set by set (holds are counted in breaths, not seconds), body weight, how sore spots (e.g. shoulders, lower back) felt after each session, 0–10, a daily journal of how they felt physically, a food log of what they ate, the medications and supplements they take, with each dose they’ve ticked off, and their meditation (each sit, how long, and what they noted). Never advise starting, stopping or changing a medication or its dose: that is for their doctor or pharmacist.',
   operations: [
     {
       name: 'summary',
-      description: 'Where they are: this week’s sessions against their weekly goal, the next workout and day in their plan, any session still open, their last few sessions, latest body weight, recent soreness ratings, their last few journal days, what they’ve eaten today, and today’s medication and supplement doses. Start here.',
+      description: 'Where they are: this week’s sessions against their weekly goal, the next workout and day in their plan, any session still open, their last few sessions, latest body weight, recent soreness ratings, their last few journal days, what they’ve eaten today, today’s medication and supplement doses, and their meditation this week. Start here.',
       path: '/dot/summary',
       input: closed({}),
     },
@@ -90,6 +90,24 @@ export const MANIFEST = validateManifest({
         date: { ...DATE_IN, description: 'YYYY-MM-DD; today if left out' },
         time: { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$', description: 'When they took it, HH:MM, 24-hour; now if left out' },
       }, ['name']),
+    },
+    {
+      name: 'meditation',
+      description: 'Their meditation: minutes this week, how many days in a row, and each sit (newest first) with how long and what they noted after. Optionally between two dates (inclusive); up to 60 sits.',
+      path: '/dot/sits',
+      input: closed({ from: DATE_IN, to: DATE_IN, limit: { type: 'integer', minimum: 1, maximum: 60 } }),
+    },
+    {
+      name: 'log_meditation',
+      method: 'POST',
+      description: 'Log a meditation they tell you about (“sat for 20 minutes this morning, mind was busy”): how long, and their note in their words. Adds a new one; never changes one. Only what they said they did.',
+      path: '/dot/sit',
+      input: closed({
+        minutes: { type: 'integer', minimum: 1, maximum: 360 },
+        date: { ...DATE_IN, description: 'YYYY-MM-DD; today if left out' },
+        time: { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$', description: 'When they started, HH:MM, 24-hour; now if left out' },
+        note: { type: 'string', maxLength: 2000, description: 'How it went, in their words' },
+      }, ['minutes']),
     },
     {
       name: 'add_supplement',
@@ -229,6 +247,7 @@ export function summary(all, today) {
     rated_areas: all.settings.areas,
     food_today: foodDay(all, today),
     ...(all.meds.some((m) => !m.stopped) ? { meds_today: medsDay(all, today) } : {}),
+    ...(all.sits.length ? { meditation: sitWeek(all, today) } : {}),
     journal: journal(all, { limit: 3 }).map((j) => ({ ...j, text: j.text.length > 300 ? `${j.text.slice(0, 300)}…` : j.text })),
   };
 }
@@ -315,6 +334,25 @@ export function supplementChange(all, b) {
   const prompt = stop ? `${stop}${said.length ? ` and change its ${said.join(', ')}` : ''}?` : `Change ${match.name}’s ${said.join(', ')}?`;
   return { med: match, next, prompt };
 }
+
+// Meditation: minutes, not seconds, for Claude; a streak counts days in a row up to today (or yesterday, if not yet today)
+const mins = (s) => Math.round(s / 60);
+export const sitOut = (x) => ({ date: `${DAYS[dayNum(x.date)]} ${x.date}`, ...(x.time ? { time: x.time } : {}), minutes: mins(x.seconds), ...(x.note ? { note: x.note } : {}) });
+function sitWeek(all, today) {
+  const monday = plusDays(today, -((dayNum(today) + 6) % 7)), days = new Set(all.sits.map((x) => x.date));
+  let d = days.has(today) ? today : plusDays(today, -1), streak = 0;
+  while (days.has(d)) { streak++; d = plusDays(d, -1); }
+  const week = all.sits.filter((x) => x.date >= monday && x.date <= today);
+  return { minutes_this_week: mins(week.reduce((n, x) => n + x.seconds, 0)), sits_this_week: week.length, days_in_a_row: streak };
+}
+export function sits(all, today, { from, to, limit }) {
+  const n = Math.min(Math.max(parseInt(limit, 10) || 14, 1), 60);
+  return { ...sitWeek(all, today), sits: all.sits.filter((x) => (!from || x.date >= from) && (!to || x.date <= to)).slice(-n).reverse().map(sitOut) };
+}
+/** The sit Dot logs, in the page's shape: today and now unless they said */
+export const sitEntry = (b, today, now) => ({
+  date: b.date || today, time: b.time || now, seconds: Number.isFinite(b.minutes) ? b.minutes * 60 : null, note: b.note,
+});
 
 /** A supplement in words */
 export const supplementOut = (m) => ({

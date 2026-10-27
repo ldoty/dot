@@ -40,7 +40,7 @@ test('everyone has their own data: nobody sees or changes anyone else’s', asyn
 
 test('an empty account gets defaults', async () => {
   assert.deepEqual((await call('GET', '/all')).body, {
-    settings: { unit: 'lb', areas: [] }, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [], food: [], meds: [], doses: [],
+    settings: { unit: 'lb', areas: [] }, plan: null, exercises: [], workouts: [], sessions: [], weights: [], journal: [], food: [], meds: [], doses: [], sits: [],
   });
 });
 
@@ -223,4 +223,17 @@ test('the starter refuses an account that already has exercises', async () => {
   await call('PUT', '/exercises/sq', { name: 'Squat' });
   assert.equal((await call('POST', '/starter')).status, 409);
   assert.equal((await call('GET', '/all')).body.exercises.length, 1);
+});
+
+test('sits: how long and how it went, kept and changed like the rest', async () => {
+  assert.equal((await call('PUT', '/sits/z1', { date: '2026-10-20', time: '07:05', seconds: 600, note: 'Busy mind, settled.' })).status, 200);
+  assert.equal((await call('PUT', '/sits/z1', { date: '2026-10-20', seconds: 600, rev: 0 })).status, 409, 'rev-checked');
+  assert.equal((await call('PUT', '/sits/z1', { date: '2026-10-20', seconds: 900, rev: 1 })).body.seconds, 900);
+  for (const bad of [{ seconds: 600 }, { date: '2026-10-20' }, { date: '2026-10-20', seconds: 0 }, { date: '2026-10-20', seconds: 30000 }, { date: '2026-10-20', seconds: 60, time: '7am' }]) {
+    assert.equal((await call('PUT', '/sits/z2', bad)).status, 400, JSON.stringify(bad));
+  }
+  assert.deepEqual((await call('GET', '/all')).body.sits.map((x) => [x.id, x.seconds, x.time]), [['z1', 900, null]]);
+  await call('DELETE', '/sits/z1');
+  assert.deepEqual((await call('GET', '/all')).body.sits, []);
+  assert.deepEqual((await call('GET', '/all', undefined, memberToken('amber-sub'))).body.sits, [], 'nobody else’s');
 });
