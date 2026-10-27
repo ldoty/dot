@@ -22,7 +22,7 @@ test('Dot reads a valid manifest, and every operation is a real route', async ()
   for (const o of MANIFEST.operations) {
     assert.ok(ROUTES.includes(`${o.method ?? 'GET'} ${o.path}`), `${o.name}: ${o.path}`);
   }
-  assert.deepEqual(writeRoutes(MANIFEST).sort(), ['POST /dot/dose', 'POST /dot/food', 'POST /dot/journal', 'POST /dot/log', 'PUT /weights/{date}']);
+  assert.deepEqual(writeRoutes(MANIFEST).sort(), ['POST /dot/dose', 'POST /dot/food', 'POST /dot/journal', 'POST /dot/log', 'POST /dot/supplement', 'PUT /dot/supplement', 'PUT /weights/{date}']);
 });
 
 test('from Dot: reads and the two declared writes; every other change is refused', async () => {
@@ -230,4 +230,43 @@ test('sessions: newest first, between dates, at most 30', async () => {
 test('“today” is the day at home, not in UTC', () => {
   assert.equal(localDay(new Date('2026-10-26T02:30:00Z'), 'America/New_York'), '2026-10-25');
   assert.equal(localDay(new Date('2026-10-26T13:00:00Z'), 'America/New_York'), '2026-10-26');
+});
+
+test('supplements from Dot: added straight away; a change only once they say yes; never a medication', async () => {
+  await call('PUT', '/meds/ibu', { name: 'Ibuprofen', kind: 'medication', dose: '200 mg' });
+  let r = await dot('add_supplement', { name: 'Vitamin D', dose: '2000 IU', times: ['08:00'] });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.added, { name: 'Vitamin D', dose: '2000 IU', when: ['08:00'] });
+  const [vitd] = (await call('GET', '/all')).body.meds.filter((m) => m.kind === 'supplement');
+  assert.equal(vitd.name, 'Vitamin D');
+  assert.match((await dot('add_supplement', { name: 'vitamin d' })).body.error, /already have Vitamin D/);
+  assert.match((await dot('add_supplement', { name: 'ibuprofen' })).body.error, /a medication/, 'not a medication under another kind');
+
+  // A change asks first, and nothing changes until it's confirmed
+  r = await dot('change_supplement', { name: 'vitamin d', dose: '4000 IU', times: ['08:00', '20:00'] });
+  assert.equal(r.status, 202);
+  assert.equal(r.body.prompt, 'Change Vitamin D’s dose 2000 IU → 4000 IU, times 08:00 → 08:00, 20:00?');
+  assert.equal((await call('GET', '/all')).body.meds.find((m) => m.id === vitd.id).dose, '2000 IU');
+  const again = (input, cid) => call('PUT', `/dot/supplement?confirm_id=${cid}`, input, dotToken());
+  // Another person, another change, or a made-up id: refused
+  assert.equal((await call('PUT', `/dot/supplement?confirm_id=${r.body.confirm_id}`, { name: 'vitamin d', dose: '4000 IU', times: ['08:00', '20:00'] }, dotToken('amber-sub'))).status, 400);
+  assert.equal((await again({ name: 'vitamin d', dose: '9000 IU' }, r.body.confirm_id)).status, 400, 'not the change they were asked about');
+  r = await dot('change_supplement', { name: 'vitamin d', dose: '4000 IU', times: ['08:00', '20:00'] });
+  const ok = await again({ name: 'vitamin d', dose: '4000 IU', times: ['08:00', '20:00'] }, r.body.confirm_id);
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.body.changed, { name: 'Vitamin D', dose: '4000 IU', when: ['08:00', '20:00'] });
+  assert.equal((await again({ name: 'vitamin d', dose: '4000 IU', times: ['08:00', '20:00'] }, r.body.confirm_id)).status, 400, 'once');
+  assert.equal(table.keys().filter((k) => k.startsWith('PENDING#')).length, 0, 'nothing left waiting');
+
+  // An edit on the page in between: the confirmation is for the version they were asked about
+  r = await dot('change_supplement', { name: 'vitamin d', stopped: true });
+  assert.equal(r.body.prompt, 'Mark Vitamin D stopped?');
+  const cur = (await call('GET', '/all')).body.meds.find((m) => m.id === vitd.id);
+  await call('PUT', `/meds/${vitd.id}`, cur); // saved again on the page, nothing different
+  assert.equal((await again({ name: 'vitamin d', stopped: true }, r.body.confirm_id)).status, 400);
+
+  assert.match((await dot('change_supplement', { name: 'ibuprofen', dose: '400 mg' })).body.error, /is a medication/);
+  assert.match((await dot('change_supplement', { name: 'vitamin d', dose: '4000 IU' })).body.error, /already/);
+  assert.equal((await call('DELETE', `/meds/${vitd.id}`, undefined, dotToken())).status, 403, 'never deletes');
+  assert.equal((await call('PUT', '/meds/ibu', { name: 'Ibuprofen', kind: 'medication', dose: '800 mg' }, dotToken())).status, 403);
 });

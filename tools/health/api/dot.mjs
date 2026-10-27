@@ -1,12 +1,17 @@
 // Health for Dot: the manifest (platform/api/dot-manifest.mjs) and the shapes Dot reads.
 // Dot calls these with a token for the person asking, so it only ever sees and logs their own
-// workouts, exactly as their page does. It can add (log a session, a body weight, food, a journal paragraph, a dose) but never change
-// or delete what's there: every other write refuses a via-Dot token (api.mjs, writeRoutes).
+// workouts, exactly as their page does. It can add (log a session, a body weight, food, a journal paragraph, a dose, a supplement)
+// and change a supplement, only once they've said yes (a 202 first); never a medication, and never deletes: every other write
+// refuses a via-Dot token (api.mjs, writeRoutes).
 // Answers are words and short numbers ("135 × 8"), not ids, so Claude reads them easily.
 import { validateManifest } from './dot-manifest.mjs';
 
 const closed = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const DATE_IN = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'YYYY-MM-DD' };
+const TIMES_IN = {
+  type: 'array', maxItems: 6, items: { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$' },
+  description: 'When they take it each day, HH:MM, 24-hour; empty: as needed',
+};
 
 export const MANIFEST = validateManifest({
   name: 'health',
@@ -84,6 +89,34 @@ export const MANIFEST = validateManifest({
         name: { type: 'string', minLength: 2, maxLength: 80, description: 'The medication or supplement, as named in meds' },
         date: { ...DATE_IN, description: 'YYYY-MM-DD; today if left out' },
         time: { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$', description: 'When they took it, HH:MM, 24-hour; now if left out' },
+      }, ['name']),
+    },
+    {
+      name: 'add_supplement',
+      method: 'POST',
+      description: 'Add a supplement they say they’ve started taking (“I’m taking magnesium 400 mg at night now”), with its dose and the times they take it '
+        + '(none: as needed). Supplements only: medications are added on Health’s page. Only what they told you.',
+      path: '/dot/supplement',
+      input: closed({
+        name: { type: 'string', minLength: 1, maxLength: 80 },
+        dose: { type: 'string', maxLength: 40, description: 'e.g. 400 mg' },
+        times: TIMES_IN,
+        note: { type: 'string', maxLength: 500, description: 'e.g. with food' },
+      }, ['name']),
+    },
+    {
+      name: 'change_supplement',
+      method: 'PUT',
+      description: 'Change one of their supplements as they ask: its name, dose, times or note, or mark it stopped (or taking it again). Give only what changes. '
+        + 'It asks them first. Supplements only: medications are changed on Health’s page.',
+      path: '/dot/supplement',
+      input: closed({
+        name: { type: 'string', minLength: 2, maxLength: 80, description: 'The supplement, as named in meds' },
+        new_name: { type: 'string', minLength: 1, maxLength: 80 },
+        dose: { type: 'string', maxLength: 40 },
+        times: TIMES_IN,
+        note: { type: 'string', maxLength: 500 },
+        stopped: { type: 'boolean', description: 'true: they stopped taking it (its history is kept); false: taking it again' },
       }, ['name']),
     },
     {
@@ -249,6 +282,44 @@ export function doseFor(all, name, day, nonce) {
   if (!slot) return { error: `all of that day’s doses of ${match.name} are already ticked off` };
   return { med: match, slot, id: `${match.id}-${slot.replace(':', '')}` };
 }
+
+// Supplements from Dot. Medications aren't Dot's to add or change: that stays with them, on the page.
+const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+/** A new supplement's fields, or { error } if they already have one by that name */
+export function supplementNew(all, b) {
+  const name = String(b.name ?? '').trim();
+  const had = all.meds.find((m) => sameName(m.name, name));
+  if (had) return { error: `they already have ${had.name}${had.kind === 'medication' ? ' (a medication)' : ''}; change it instead` };
+  return { fields: { name, kind: 'supplement', dose: b.dose, times: b.times ?? [], note: b.note } };
+}
+/** One of their supplements and its fields with what they asked changed, and the question to ask them; or { error } */
+export function supplementChange(all, b) {
+  const { match, matches } = findExercise(all.meds.filter((m) => m.kind !== 'medication'), b.name);
+  if (!match) {
+    const med = findExercise(all.meds.filter((m) => m.kind === 'medication'), b.name).match;
+    if (med) return { error: `${med.name} is a medication: they change it on Health’s page` };
+    return { error: matches.length ? 'more than one matches' : 'no supplement by that name', candidates: (matches.length ? matches : all.meds.filter((m) => m.kind !== 'medication')).map((m) => m.name) };
+  }
+  const next = {
+    name: b.new_name ?? match.name, kind: 'supplement', dose: b.dose ?? match.dose, times: b.times ?? match.times,
+    note: b.note ?? match.note, stopped: b.stopped ?? match.stopped,
+  };
+  const when = (t) => (t.length ? t.join(', ') : 'as needed');
+  const said = [];
+  if (next.name !== match.name) said.push(`name to “${next.name}”`);
+  if (next.dose !== match.dose) said.push(`dose ${match.dose || '(none)'} → ${next.dose || '(none)'}`);
+  if (when(next.times) !== when(match.times)) said.push(`times ${when(match.times)} → ${when(next.times)}`);
+  if (next.note !== match.note) said.push(next.note ? `note to “${next.note}”` : 'no note');
+  if (!said.length && next.stopped === !!match.stopped) return { error: 'that’s how it is already' };
+  const stop = next.stopped === !!match.stopped ? '' : next.stopped ? `Mark ${match.name} stopped` : `Start ${match.name} again`;
+  const prompt = stop ? `${stop}${said.length ? ` and change its ${said.join(', ')}` : ''}?` : `Change ${match.name}’s ${said.join(', ')}?`;
+  return { med: match, next, prompt };
+}
+
+/** A supplement in words */
+export const supplementOut = (m) => ({
+  name: m.name, ...(m.dose ? { dose: m.dose } : {}), when: m.times.length ? m.times : 'as needed', ...(m.note ? { note: m.note } : {}), ...(m.stopped ? { stopped: true } : {}),
+});
 
 /** A food entry in words: only what's known */
 export const foodOut = (f) => ({

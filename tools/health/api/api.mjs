@@ -29,8 +29,13 @@
 //   POST   /dot/food         Dot logging something they ate (often from a photo they sent): a new entry
 //   POST   /dot/journal      Dot adding to a day's journal: a new paragraph after what's there, never a rewrite
 //   POST   /dot/dose         Dot logging a dose they took (the next one due that day, or an as-needed one)
+//   POST   /dot/supplement   Dot adding a supplement they've started (never a medication)
+//   PUT    /dot/supplement   Dot changing a supplement: 202 { confirm_id, prompt } first; the same request again with
+//                            ?confirm_id= (Dot sends it only after their own reply) goes ahead if it's the same change,
+//                            to the same version, within CONFIRM_MS, once
 // A via-Dot token may read, and use only the writes the manifest declares (POST /dot/log, /dot/food, /dot/journal,
-// /dot/dose, PUT /weights/{date}): 403 read-only on every other write, so Dot can add to someone's log but never change or delete it.
+// /dot/dose, /dot/supplement, PUT /dot/supplement, /weights/{date}): 403 read-only on every other write, so Dot can add
+// to someone's log, change a supplement only with their OK, and never delete anything.
 // Rows (pk = P#<username>, so nobody can reach anyone else's): SETTINGS, PLAN, EX#<id>, WO#<id>,
 // S#<id>, BW#<date>, J#<date>, F#<id>, M#<id>, T#<date>#<dose id>. Everything but weights and doses is rev-checked: a PUT sends the rev it was based on
 // (none for a new row) and gets 409 { current } if someone (another tab, another phone) got there first.
@@ -61,6 +66,7 @@ const KINDS = ['medication', 'supplement'];
 // A dose's id: the medicine's, then the time it was due (so a scheduled dose is logged once a day) or n… (as needed)
 const DOSE_ID = /^([A-Za-z0-9_]{1,30})-(\d{4}|n[A-Za-z0-9]{1,12})$/;
 const MAX = { exercises: 300, workouts: 100, meds: 60 };
+const CONFIRM_MS = 10 * 60_000;
 
 class Bad extends Error {}
 const bad = (msg) => { throw new Bad(msg); };
@@ -276,6 +282,34 @@ async function putDose(pk, date, id, b) {
   return { date, id, med: m[1], slot, at: b.at };
 }
 
+/**
+ * Dot changing a supplement waits for the person's OK. Without a confirm id: keep what was asked (PENDING#<id>) and answer
+ * 202. With one: go ahead only if it's the same change to the same version, in time, once; the save is rev-checked too.
+ */
+async function changeSupplement(pk, body, confirmId, by) {
+  const ch = dot.supplementChange(await getAll(pk), body);
+  if (ch.error) return json(400, ch);
+  const next = clean.med(ch.next), what = JSON.stringify(next), t = Date.now();
+  if (!confirmId) {
+    // Old asks nobody answered go when a new one comes
+    for (const p of (await rows(pk)).filter((i) => i.sk.startsWith('PENDING#') && i.until < t)) {
+      await db.send(new DeleteCommand({ TableName: TABLE, Key: { pk, sk: p.sk } }));
+    }
+    const cid = randomBytes(12).toString('hex');
+    await db.send(new PutCommand({ TableName: TABLE, Item: { pk, sk: `PENDING#${cid}`, med: ch.med.id, rev: ch.med.rev, what, until: t + CONFIRM_MS } }));
+    return json(202, { confirm_id: cid, prompt: ch.prompt });
+  }
+  const p = /^[a-f0-9]{24}$/.test(confirmId) ? (await db.send(new GetCommand({ TableName: TABLE, Key: { pk, sk: `PENDING#${confirmId}` } }))).Item : null;
+  if (p) await db.send(new DeleteCommand({ TableName: TABLE, Key: { pk, sk: p.sk } }));
+  if (!p || p.med !== ch.med.id || p.rev !== ch.med.rev || p.what !== what || p.until < t) {
+    return json(400, { error: 'that confirmation doesn’t match or has expired; ask again' });
+  }
+  const r = await save(pk, `M#${ch.med.id}`, next, ch.med.rev);
+  if (r.statusCode !== 200) return r;
+  console.log('supplement changed via dot', JSON.stringify({ by, id: ch.med.id }));
+  return json(200, { changed: dot.supplementOut(JSON.parse(r.body)) });
+}
+
 async function loadStarter(pk) {
   const existing = await rows(pk);
   if (existing.some((i) => i.sk.startsWith('EX#') || i.sk.startsWith('WO#'))) {
@@ -429,6 +463,16 @@ export const handler = async (event) => {
         console.log('dose via dot', JSON.stringify({ by: claims.username, med: d.med, date: day }));
         return json(200, { logged: { name: pick.med.name, dose: pick.med.dose || undefined, date: day, due: d.slot ?? 'as needed', taken_at: d.at } });
       }
+      case 'POST /dot/supplement': {
+        const add = dot.supplementNew(await getAll(pk), body);
+        if (add.error) return json(400, add);
+        const mid = newId(), r = (await capped('M#', 'meds')) ?? await save(pk, `M#${mid}`, clean.med(add.fields), undefined);
+        if (r.statusCode !== 200) return r;
+        console.log('supplement via dot', JSON.stringify({ by: claims.username, id: mid }));
+        return json(200, { added: dot.supplementOut(JSON.parse(r.body)), note: 'They can change or delete it on Health’s Meds tab.' });
+      }
+      case 'PUT /dot/supplement':
+        return await changeSupplement(pk, body, event.queryStringParameters?.confirm_id, claims.username);
       case 'POST /dot/journal': {
         // Added after what's there, so nothing they wrote is ever replaced; a race with their page is retried
         const day = optDate(body.date, 'date') ?? dot.localDay(new Date(), TZ_HOME), add = text(body.text, 2000);

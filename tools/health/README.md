@@ -67,8 +67,12 @@ log a session someone describes (`POST /dot/log`, names matched to their own wor
 log a body weight, log food (`POST /dot/food`: send it a photo of a meal and it says what it is, estimates calories
 and protein and logs it, marked as Dot's estimate until you edit it; the photo stays with Dot, deleted after 7 days),
 add to a day's journal (`POST /dot/journal`: a new paragraph after what's there, never a rewrite), and tick off a
-dose they say they took (`POST /dot/dose`: the next one due that day, or an as-needed one). Its description tells it
-never to advise starting, stopping or changing a medication. Additions don't need a confirmation step. Every other write refuses a via-Dot token (403 `read-only`), so
-Dot never changes or deletes what's logged. "Today" for Dot is the day in `TZ_HOME` (America/New_York).
+dose they say they took (`POST /dot/dose`: the next one due that day, or an as-needed one), and add a supplement they've
+started (`POST /dot/supplement`). Its description tells it never to advise starting, stopping or changing a medication.
+Additions don't need a confirmation step. One change does: Dot may change a supplement (`PUT /dot/supplement`: name, dose,
+times, note, stopped), which first answers 202 with the question to ask; Dot sends the same request again with
+`?confirm_id=` only after their own reply, and it goes ahead only if it's the same change to the same version, within
+10 minutes, once (a `PENDING#<id>` row, removed when used or when a later ask finds it expired). Medications are never
+Dot's to add or change. Every other write refuses a via-Dot token (403 `read-only`), so Dot never deletes anything. "Today" for Dot is the day in `TZ_HOME` (America/New_York).
 
 Not yet: reminders, calendar events.
