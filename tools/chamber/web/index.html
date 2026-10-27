@@ -25,6 +25,8 @@ h1 { font-size: clamp(32px, 6vw, 48px) }
 .tile .k { color: var(--muted); font-size: 13px }
 .tile .v { font: 600 22px var(--display); font-variant-numeric: tabular-nums }
 .tile .v small { font: 400 13px var(--body); color: var(--muted) }
+.water { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 10px 0 }
+.water.bad { color: var(--ember) }
 
 .controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-pill); overflow: hidden; background: var(--surface) }
@@ -86,7 +88,8 @@ th { color: var(--muted); font-weight: 500 }
   var BLOCK = { 0: "—", 1: "budget spent", 2: "duty ceiling", 3: "dry run?", 4: "sensor wet",
                 5: "no sensor", 6: "colonization", 7: "force cap", 8: "cooling down" };
   var FIELDS = ["rh_pct", "temp_c", "dewpoint_c", "fan_duty_pct", "fan_rpm", "light_duty_pct", "mist_state",
-                "mist_block", "atomizer_on", "mist_ml", "mist_on_s", "mist_bursts", "uptime_s"];
+                "mist_block", "atomizer_on", "mist_ml", "mist_on_s", "mist_bursts", "uptime_s",
+                "mist_budget_ml", "refill_id"];
   var MAX_MIN = 3 * 24 * 60;    // the API serves at most three days
   // Longer than this between readings: the board was off or offline. Above a full mist burst
   // (up to 60 s, with no sends) plus a publish interval, so a burst is never mistaken for an outage.
@@ -133,6 +136,7 @@ th { color: var(--muted); font-weight: 500 }
     main.innerHTML =
       '<p class="status" id="status">Loading…</p>' +
       '<div class="tiles" id="tiles"></div>' +
+      '<div class="water" id="water" hidden></div>' +
       '<details class="card" id="settingsBox"><summary>Controller settings <span class="badge" id="cfgBadge">Loading…</span></summary>' +
       '<form id="cfgForm" autocomplete="off"><div class="cfg-groups" id="cfgGroups"></div>' +
       '<div class="cfg-actions"><button type="submit" class="btn primary" id="cfgSave" disabled>Apply to chamber</button>' +
@@ -423,12 +427,50 @@ th { color: var(--muted); font-weight: 500 }
       ["Mist bursts", r.mist_bursts + "<small> · " + fix(r.mist_ml, 0, "") + " mL est.</small>"],
       ["Light", r.light_duty_pct + "<small>%</small>"]
     ].map(function (kv) { return '<div class="tile"><div class="k">' + kv[0] + '</div><div class="v">' + kv[1] + "</div></div>"; }).join("");
+    renderWater(r);
 
     $("table").innerHTML = "<table><tr><th>Time</th><th>RH %</th><th>Temp °C</th><th>State</th><th>Fan rpm</th><th>Block</th></tr>" +
       rows.slice(-15).reverse().map(function (x) {
         return "<tr><td>" + new Date(x.t).toLocaleTimeString() + "</td><td>" + fix(x.rh_pct, 2, "") + "</td><td>" + fix(x.temp_c, 2, "") +
           "</td><td>" + (STATE[x.mist_state] || "") + "</td><td>" + x.fan_rpm + "</td><td>" + (BLOCK[x.mist_block] || "") + "</td></tr>";
       }).join("") + "</table>";
+  }
+
+  // ---- Water ---------------------------------------------------------------
+  // The board counts the water it has misted and stops at the reservoir's size. Saying it was
+  // refilled raises a count the board reads from its next reply; it reports the count it has, so
+  // until the two match the refill is still on its way. Build 15 and later (older ones send no
+  // refill_id, and -1 means it hasn't heard since it started).
+  function renderWater(r) {
+    var w = $("water"), html = "";
+    if (typeof r.refill_id === "number") {
+      var asked = settings && settings.refill ? settings.refill.id : 0;
+      var used = fix(r.mist_ml, 0, ""), budget = fix(r.mist_budget_ml, 0, " mL");
+      if (r.refill_id >= 0 && r.refill_id < asked) {
+        html = "<span>Refill noted. The chamber resets its water count on its next report.</span>";
+      } else {
+        html = "<span>" + (r.mist_block === 1
+          ? "Misting stopped: the water count reached " + budget + ". Refill the reservoir, then say so here."
+          : "Water misted since the last refill: about " + used + " of " + budget + " (counted high, so it stops early).") +
+          '</span><button type="button" class="btn ghost" id="refill">I refilled it</button>';
+      }
+    }
+    if (w.innerHTML === html) return;
+    w.innerHTML = html;
+    w.hidden = !html;
+    w.className = "water" + (r.mist_block === 1 ? " bad" : "");
+    if ($("refill")) $("refill").onclick = refill;
+  }
+
+  function refill() {
+    if (!confirm("Reset the chamber’s water count? Only once the reservoir is full.")) return;
+    api("POST", "/refill").then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      return res.json();
+    }).then(function (body) {
+      settings = body;
+      renderTiles();
+    }).catch(function () { $("water").firstChild.textContent = "Couldn’t save the refill. Try again."; });
   }
 
   // ---- Settings ------------------------------------------------------------

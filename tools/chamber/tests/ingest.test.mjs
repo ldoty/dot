@@ -26,17 +26,18 @@ test('stores a reading under its UTC day, stamped on receipt, and keeps the late
 
 test('replies with local time of day, through daylight saving time', async () => {
   // 14:00Z on 12 October is 10:00 EDT; 17:00Z on 15 January is 12:00 EST
-  assert.match((await post(reading())).body, /^time=36000\n$/);
+  assert.match((await post(reading())).body, /^time=36000\n/);
   clock.now = new Date('2026-01-15T17:00:00Z');
-  assert.match((await post(reading())).body, /^time=43200\n$/);
+  assert.match((await post(reading())).body, /^time=43200\n/);
   assert.equal(secondsSinceMidnight(new Date('2026-10-12T04:00:00Z'), 'America/New_York'), 0, 'midnight is 0, not 24h');
 });
 
 test('hands the board saved settings in the cfg line it parses', async () => {
   await call('PUT', '/settings', { values: { mist_burst_s: 25 } });
   const { body } = await post(reading());
-  const [time, cfg, end] = body.split('\n');
+  const [time, refill, cfg, end] = body.split('\n');
   assert.match(time, /^time=\d+$/);
+  assert.equal(refill, 'refill=0');
   assert.match(cfg, /^cfg=1;/);
   assert.ok(cfg.includes(';mist_burst_s=25'));
   assert.equal(end, '', 'ends in a newline, which readTimeSync() relies on');
@@ -46,6 +47,13 @@ test('hands the board saved settings in the cfg line it parses', async () => {
   const widest = Object.fromEntries(spec.map((s) => [s.key, s.kind === 'bool' ? 1 : s.max - (s.step < 1 ? s.step : 0)]));
   assert.equal((await call('PUT', '/settings', { values: widest })).status, 200);
   assert.ok(Buffer.byteLength((await post(reading())).body) < 400);
+});
+
+test('hands the board the refill count, which only the page raises', async () => {
+  assert.equal((await post(reading())).body.split('\n')[1], 'refill=0', 'none counted yet');
+  await call('POST', '/refill');
+  await call('POST', '/refill');
+  assert.equal((await post(reading())).body.split('\n')[1], 'refill=2');
 });
 
 test('records what the board runs, and logs applied, defaults and refused versions', async () => {
@@ -79,4 +87,20 @@ test('the firmware sends what this endpoint expects', async () => {
   assert.match(ino, /POST \/ingest HTTP\/1\.1/);
   assert.match(ino, /x-chamber-key: /);
   assert.match(ino, /WiFiSSLClient client;/, 'API Gateway only speaks HTTPS');
+  assert.match(ino, /strstr\(buf, "refill="\)/, 'reads the refill count from the reply');
+  assert.match(ino, /refill_id=%ldi/, 'reports the count it has, so the page can say when a refill took');
+});
+
+test('the firmware rebuilds WiFi after failed posts, not only when WiFi says it is down', async () => {
+  // 2026-10-27: status() said connected for six hours while every post failed
+  const ino = await readFile(new URL('../firmware/chamber_telemetry/chamber_telemetry.ino', import.meta.url), 'utf8');
+  const publish = ino.slice(ino.indexOf('void publish()'), ino.indexOf('void setup()'));
+  assert.match(publish, /if \(!client\.connect\([^}]*notePostFailed\(\);[^}]*\}/, 'a failed connect counts');
+  assert.match(publish, /bool replied = readTimeSync\(client\);[\s\S]*?postFailStreak = 0;[\s\S]*?notePostFailed\(\);/,
+    'a reply clears the streak, no reply counts');
+  const burstCheck = publish.indexOf('mistBurstCanAbsorb(MIST_BURST_MAX_MS)');
+  assert.ok(burstCheck > 0 && burstCheck < publish.indexOf('notePostFailed'), 'never resets the modem during a mist burst');
+  const note = ino.slice(ino.indexOf('void notePostFailed()'), ino.indexOf('void tachISR()'));
+  assert.match(note, /WiFi\.disconnect\(\);/);
+  assert.match(note, /lastWifiAttempt = /, 'and makes the reconnect due');
 });

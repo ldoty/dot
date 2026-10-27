@@ -122,6 +122,18 @@ test('a save that lost a race is refused, not merged blindly', async () => {
   assert.equal((await call('GET', '/settings')).body.desired.version, 2);
 });
 
+test('refill: counted up, logged with who said so, and shown with the settings', async () => {
+  assert.equal((await call('GET', '/settings')).body.refill, null);
+  const r = await call('POST', '/refill');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.refill.id, 1);
+  assert.ok(r.body.refill.by && r.body.refill.at);
+  assert.equal((await call('POST', '/refill')).body.refill.id, 2);
+  assert.equal((await call('GET', '/settings')).body.refill.id, 2);
+  const log = table.dump().filter(([k]) => k.startsWith('SETLOG|')).map(([, v]) => [v.event, v.version]);
+  assert.deepEqual(log, [['refilled', 1], ['refilled', 2]]);
+});
+
 test('API Gateway routes match the ones the handler serves', async () => {
   const tf = await readFile(new URL('../infra/api.tf', import.meta.url), 'utf8');
   const block = /routes = \[([\s\S]*?)\]/.exec(tf)[1];

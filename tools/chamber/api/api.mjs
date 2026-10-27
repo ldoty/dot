@@ -11,6 +11,8 @@
 //   PUT /settings  { values: {...} }      -> the same, after saving a new desired version
 //       Edits merge onto what's saved (or what the board runs), are checked as a whole, and get a
 //       version above any the board has applied or refused, so it always picks them up.
+//   POST /refill                          -> the same, after counting a refill of the reservoir
+//       The board resets its water count when the count goes up (it learns it from the ingest reply).
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { verifyAccessToken } from './verify-token.mjs';
@@ -23,7 +25,7 @@ const MAX_JSON_SPAN = 72 * HOUR;
 const MAX_CSV_SPAN = 24 * HOUR;
 const NOT_FIELDS = new Set(['pk', 'sk', 'expires']);
 
-export const ROUTES = ['GET /readings', 'GET /readings.csv', 'GET /settings', 'PUT /settings'];
+export const ROUTES = ['GET /readings', 'GET /readings.csv', 'GET /settings', 'PUT /settings', 'POST /refill'];
 
 const json = (statusCode, body) => ({
   statusCode, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -66,13 +68,39 @@ function fieldNames(items) {
 }
 
 async function settingsState() {
-  const [desired, active] = await Promise.all([get('DESIRED'), get('ACTIVE')]);
+  const [desired, active, refill] = await Promise.all([get('DESIRED'), get('ACTIVE'), get('REFILL')]);
   return {
     spec: SPEC,
     desired: desired ? { version: desired.version, values: desired.values } : null,
     active: active?.fields ?? null,
     activeAt: active?.at ?? null,
+    refill: refill ? { id: refill.id, at: refill.at, by: refill.by } : null,
   };
+}
+
+// Count a refill. The count only goes up, and the board resets on any rise, so two people
+// saying so at once is one refill: the one that lost the race is answered with the winner's.
+async function refilled(username) {
+  const prev = await get('REFILL');
+  const id = (prev?.id ?? 0) + 1;
+  const at = new Date().toISOString();
+  try {
+    await db.send(new PutCommand({
+      TableName: TABLE,
+      Item: { pk: 'STATE', sk: 'REFILL', id, rev: id, at, by: username },
+      ...(prev
+        ? { ConditionExpression: 'rev = :rev', ExpressionAttributeValues: { ':rev': prev.rev } }
+        : { ConditionExpression: 'attribute_not_exists(pk)' }),
+    }));
+  } catch (e) {
+    if (e.name !== 'ConditionalCheckFailedException') throw e;
+    return json(200, await settingsState());
+  }
+  await db.send(new PutCommand({
+    TableName: TABLE,
+    Item: { pk: 'SETLOG', sk: `${at}#refilled#${id}`, event: 'refilled', version: id, by: username },
+  }));
+  return json(200, await settingsState());
 }
 
 async function saveSettings(values, username) {
@@ -152,6 +180,8 @@ export const handler = async (event) => {
       return json(200, await settingsState());
     case 'PUT /settings':
       return saveSettings(body.values, claims.username);
+    case 'POST /refill':
+      return refilled(claims.username);
     default:
       return json(404, { error: 'no route' });
   }

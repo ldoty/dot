@@ -32,7 +32,7 @@ Adafruit_SHT4x sht4 = Adafruit_SHT4x();
 
 // Bump on every flash. Published as fw_build so each CSV row says which
 // firmware produced it -- 2026-09-27 saw six flashes in one afternoon.
-const int FW_BUILD = 14;
+const int FW_BUILD = 15;
 
 // The fan is wired but has no control logic yet. It still has to be driven:
 // a 4-wire fan with an UNDRIVEN PWM line runs at 100%, not off. Leaving D3
@@ -210,7 +210,11 @@ unsigned long MIST_SETTLE_MS = 100UL * 1000UL;
 // atomizer. Overestimating makes the budget trip early (safe: a nuisance
 // stop); underestimating lets the reservoir run dry before it trips.
 const float MIST_ML_PER_MIN = 8.0;
-const float RESERVOIR_ML = 500.0;
+// 750 from build 15: the reservoir bin holds ~750 mL (BUILD.md), and the 24V
+// atomizer's own float cuts it out before it runs dry, so this no longer has
+// to trip early to be safe. MIST_ML_PER_MIN above still overestimates, so the
+// count runs ahead of the real water used.
+const float RESERVOIR_ML = 750.0;
 
 // Rate limit, so a slow leak of duty cannot drain the reservoir unnoticed
 // even while every individual burst looks reasonable.
@@ -355,6 +359,17 @@ const unsigned long PUBLISH_INTERVAL_MS = 10000;  // telemetry cadence
 const unsigned long WIFI_RETRY_MS       = 30000;  // between reconnect tries
 const unsigned long SENSOR_RETRY_MS     = 5000;   // between re-init tries
 
+// WiFi.status() can say WL_CONNECTED while nothing gets through: on
+// 2026-10-27 the board ran 6 h with every POST failing, the modem still
+// answering ping on the LAN, and maintainWifi() never stepping in because
+// status never changed. So failed POSTs count too: this many in a row (a
+// minute at the publish cadence) drops the connection for maintainWifi() to
+// rebuild, and every WIFI_SOFT_RESET_EVERY-th time the modem's WiFi state is
+// reset as well (the reset the library sends at startup, which should also
+// free sockets the modem has stuck open).
+const int POST_FAILS_BEFORE_RESET = 6;
+const int WIFI_SOFT_RESET_EVERY = 3;
+
 // Bounds how long a single POST can stall the loop. Fire-and-forget means
 // we would rather drop a sample than hold up control logic.
 // 3s from build 14: the connect now includes a TLS handshake to AWS.
@@ -408,6 +423,22 @@ unsigned long lastSampleAt = 0, lastPublishAt = 0;
 unsigned long lastWifiAttempt = 0, lastSensorAttempt = 0;
 
 unsigned long sensorErrors = 0, wifiReconnects = 0, publishFailures = 0;
+
+// POSTs that reached the network but got no reply, in a row; reset by any
+// reply. Skipped sends (WiFi down, mist burst) don't count either way.
+int postFailStreak = 0;
+unsigned long wifiResets = 0;
+// The modem's firmware (major << 16 | minor << 8 | patch), read once at boot,
+// so the data says which modem build a network fault happened on.
+unsigned long wifiFw = 0;
+
+// Refill handshake. The page counts refills; the board learns the count from
+// each ingest reply and resets the volume budget when it goes up. The first
+// count after boot is only a baseline: the budget already starts at zero, and
+// treating an old count as new would reset it for a refill that never
+// happened (e.g. after hours misting offline).
+bool refillKnown = false;
+long refillId = 0;
 
 // Longest single loop() pass since the last publish. The evidence needed
 // before enabling the watchdog: every pass must stay well under WATCHDOG_MS.
@@ -602,8 +633,29 @@ int formatSettings(char *out, size_t n) {
       LIGHT_ON_HOUR, LIGHT_OFF_HOUR, e, LIGHT_ENABLED ? 1 : 0);
 }
 
-void readTimeSync(WiFiClient &client) {
-  // Headers come first, then "time=...\n" and an optional "cfg=...\n".
+// Someone refilled the reservoir and said so on the page. Clears the volume
+// budget and only that latch: a dry-run latch still needs a power cycle,
+// since it means the water isn't reaching the air, not that it ran out.
+void noteRefill(long id) {
+  if (id < 0) return;
+  if (!refillKnown) {
+    refillKnown = true;
+    refillId = id;
+    return;
+  }
+  if (id <= refillId) return;
+  refillId = id;
+  mistOnMsTotal = 0;
+  if (mistLatchedFault == MIST_BLOCK_BUDGET) mistLatchedFault = MIST_BLOCK_NONE;
+  Serial.print("# mist: refilled (");
+  Serial.print(id);
+  Serial.println("), volume budget reset");
+}
+
+// True when the collector replied (its reply always carries the time).
+bool readTimeSync(WiFiClient &client) {
+  // Headers come first, then "time=...\n", "refill=...\n" and an optional
+  // "cfg=...\n".
   // static, not stack: the R4's main stack is nominally 1 KB
   // (BSP_CFG_STACK_MAIN_BYTES) and publish() already holds the payload.
   static char buf[768];
@@ -625,11 +677,14 @@ void readTimeSync(WiFiClient &client) {
     applySettings(cfg + 4);
   }
 
+  const char *r = strstr(buf, "refill=");
+  if (r) noteRefill(atol(r + 7));
+
   const char *p = strstr(buf, "time=");
-  if (!p) return;
+  if (!p) return false;
 
   long tod = atol(p + 5);
-  if (tod < 0 || tod >= 86400) return;  // ignore anything implausible
+  if (tod < 0 || tod >= 86400) return true;  // ignore anything implausible
 
   timeOfDaySec = (unsigned long)tod;
   timeSyncedAtMs = millis();
@@ -642,6 +697,7 @@ void readTimeSync(WiFiClient &client) {
     Serial.print("h");
     Serial.println((tod % 3600) / 60);
   }
+  return true;
 }
 
 // True during a heater pulse and its cool-down, when readings are wrong.
@@ -760,6 +816,26 @@ void maintainWifi(unsigned long now) {
   }
 }
 
+// A POST got no reply. After POST_FAILS_BEFORE_RESET in a row, drop the
+// connection so maintainWifi() rebuilds it on this same loop pass. Only
+// called from publish(), after its mist-burst check, so the blocking modem
+// commands here never stretch a burst.
+void notePostFailed() {
+  publishFailures++;
+  postFailStreak++;
+  if (postFailStreak % POST_FAILS_BEFORE_RESET != 0) return;
+
+  wifiResets++;
+  bool soft = (postFailStreak / POST_FAILS_BEFORE_RESET) % WIFI_SOFT_RESET_EVERY == 0;
+  Serial.print("# wifi: ");
+  Serial.print(postFailStreak);
+  Serial.println(soft ? " posts failed, resetting modem WiFi" : " posts failed, reconnecting");
+  if (soft) WiFi.end();  // AT+SOFTRESETWIFI, the reset the library sends at startup
+  WiFi.disconnect();
+  // Due now. Unsigned arithmetic, so this is right even in the first minute.
+  lastWifiAttempt = millis() - 2 * WIFI_RETRY_MS;
+}
+
 void tachISR() {
   tachPulses++;
 }
@@ -856,7 +932,7 @@ MistBlock evaluateMistBlock(unsigned long now) {
 
   if (mistMlTotal() >= RESERVOIR_ML) {
     mistLatchedFault = MIST_BLOCK_BUDGET;
-    Serial.println("# mist: FAULT volume budget spent -- refill and reboot");
+    Serial.println("# mist: FAULT volume budget spent -- refill, then Refilled on the page (or reboot)");
     return MIST_BLOCK_BUDGET;
   }
 
@@ -1052,12 +1128,14 @@ void publish() {
   fmt2(f, sizeof(f), fanDutyPct);
   fmt2(l, sizeof(l), lightDutyPct);
   fmt2(m, sizeof(m), mistMlTotal());
+  char budget[16];
+  fmt2(budget, sizeof(budget), RESERVOIR_ML);
 
   // BUILD.md:405 -- log actuator state, not just sensors, or you can see that
   // RH dropped but not whether anything was trying to do something about it.
   // mist_state and mist_block are integer codes (see the enums) so they land
   // in the CSV as plottable columns.
-  static char payload[600];  // static: see readTimeSync()
+  static char payload[720];  // static: see readTimeSync()
   snprintf(payload, sizeof(payload),
            "chamber temp_c=%s,rh_pct=%s,dewpoint_c=%s,"
            "fan_duty_pct=%s,fan_rpm=%ldi,light_duty_pct=%s,"
@@ -1066,14 +1144,17 @@ void publish() {
            "rssi=%ldi,uptime_s=%lui,sensor_errors=%lui,"
            "wifi_reconnects=%lui,publish_failures=%lui,time_synced=%di,"
            "heater_pulses=%lui,sensor_held=%di,rh_median=%s,"
-           "loop_max_ms=%lui,fw_build=%di,cfg_version=%ldi,cfg_rejects=%lui",
+           "loop_max_ms=%lui,fw_build=%di,cfg_version=%ldi,cfg_rejects=%lui,"
+           "mist_budget_ml=%s,refill_id=%ldi,wifi_resets=%lui,wifi_fw=%lui",
            t, h, d, f, fanRpm, l,
            (int)climateState, (int)mistBlock, atomizerOn ? 1 : 0,
            m, mistOnMsTotal / 1000UL, mistBursts,
            (long)WiFi.RSSI(), millis() / 1000,
            sensorErrors, wifiReconnects, publishFailures, haveTime ? 1 : 0,
            heaterPulses, sensorBlanked(millis()) ? 1 : 0, med, loopMaxMs,
-           FW_BUILD, cfgVersion, cfgRejects);
+           FW_BUILD, cfgVersion, cfgRejects, budget,
+           refillKnown ? refillId : -1L,  // -1 until the first reply after boot
+           wifiResets, wifiFw);
   loopMaxMs = 0;  // max since the previous publish
 
   // Always echo to serial, so USB logging still works with WiFi down.
@@ -1101,8 +1182,8 @@ void publish() {
   client.setConnectionTimeout(HTTP_TIMEOUT_MS);
 
   if (!client.connect(COLLECTOR_HOST, COLLECTOR_PORT)) {
-    publishFailures++;
     Serial.println("# post: connect failed");
+    notePostFailed();
     return;
   }
 
@@ -1134,9 +1215,14 @@ void publish() {
   // out or the reply is malformed we simply carry on with the last known
   // time, and the light falls back to its boot-relative cycle if we never
   // got one at all.
-  readTimeSync(client);
-
+  bool replied = readTimeSync(client);
   client.stop();
+  if (replied) {
+    postFailStreak = 0;
+  } else {
+    Serial.println("# post: no reply");
+    notePostFailed();
+  }
 }
 
 void setup() {
@@ -1205,6 +1291,7 @@ void setup() {
     Serial.println("# sht41: not found on Wire1, will keep retrying");
   }
 
+  wifiFw = WiFi.firmwareVersionU32();
   WiFi.setTimeout(WIFI_CONNECT_TIMEOUT_MS);
   WiFi.begin(SECRET_SSID, SECRET_PASS);
   if (WiFi.status() == WL_CONNECTED) {

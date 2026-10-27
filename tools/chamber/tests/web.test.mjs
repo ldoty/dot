@@ -55,6 +55,33 @@ test('shows the latest reading as tiles, with charts', async (t) => {
   assert.equal(p.d.querySelectorAll('#table tr').length, 3, 'header + two readings, newest first');
 });
 
+test('water: shows the count, takes a refill once confirmed, and says when the board has it', async (t) => {
+  await boardSays({ mist_ml: 288.01, mist_budget_ml: 750, refill_id: 0 });
+  const p = await open(t);
+  assert.match(p.el('#water').textContent, /about 288 of 750 mL/);
+  p.w.confirm = () => false;
+  p.el('#refill').click();
+  await wait();
+  assert.ok(!p.requests.includes('POST /refill'), 'nothing without confirming');
+  p.w.confirm = () => true;
+  p.el('#refill').click();
+  await wait();
+  assert.equal(table.get('STATE', 'REFILL').id, 1);
+  assert.match(p.el('#water').textContent, /^Refill noted/);
+  assert.equal(p.d.querySelector('#refill'), null);
+});
+
+test('water: says why misting stopped, and stays quiet for firmware without the count', async (t) => {
+  await boardSays({ mist_ml: 750.5, mist_budget_ml: 750, refill_id: 3, mist_block: 1 });
+  let p = await open(t);
+  assert.match(p.el('#water').textContent, /^Misting stopped: the water count reached 750 mL/);
+  assert.ok(p.el('#water').classList.contains('bad'));
+  table.clear();
+  await boardSays({ mist_ml: 100 });
+  p = await open(t);
+  assert.ok(p.el('#water').hidden);
+});
+
 test('says so when there are no readings, and flags stale ones', async (t) => {
   let p = await open(t);
   assert.match(p.el('#status').textContent, /No readings/);

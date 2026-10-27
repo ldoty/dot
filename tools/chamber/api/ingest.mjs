@@ -11,12 +11,14 @@
 //   chamber_cfg version=13i,rejected=0i,rh_on=87.00,...      (only now and then)
 // Reply (text/plain, which the firmware's readTimeSync() parses):
 //   time=<seconds since local midnight>\n
+//   refill=<how many refills the page has counted>\n            (build 15 resets its water count when it rises)
 //   cfg=<version>;key=value;...\n                              (once settings have been saved)
 // Seconds since local midnight, not an epoch, so the board never handles time zones or DST.
 //
 // Rows: R#<UTC day> / <ISO time>   one reading (expires after a year)
 //       STATE / LATEST                 the newest reading, for alerts and Dot later
 //       STATE / ACTIVE                 the board's last chamber_cfg: what it really runs
+//       STATE / REFILL                 refills counted on the page (api/api.mjs writes it)
 //       SETLOG / <ISO time>#<event>#<v> settings history ("board applied", "board rejected")
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -25,7 +27,7 @@ import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { cfgLine, settingsOf } from './settings.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-const MAX_BODY = 2048; // a reading plus a chamber_cfg line is under 1 KB
+const MAX_BODY = 2048; // a reading plus a chamber_cfg line is about 1.1 KB
 const MAX_FIELDS = 60;
 const KEEP_DAYS = 365;
 const RESERVED = new Set(['pk', 'sk', 'expires', 't']); // row keys, and the API's time column
@@ -91,8 +93,10 @@ export function createIngest({ deviceKey, now = () => new Date(), timeZone = 'Am
     const { TABLE } = process.env;
     const cfg = extra.find((r) => r.measurement === 'chamber_cfg');
     // All at once: the board only listens for the reply for a few hundred milliseconds
-    const [desired] = await Promise.all([
-      (async () => (await db.send(new GetCommand({ TableName: TABLE, Key: { pk: 'STATE', sk: 'DESIRED' } }))).Item)(),
+    const state = async (sk) => (await db.send(new GetCommand({ TableName: TABLE, Key: { pk: 'STATE', sk } }))).Item;
+    const [desired, refill] = await Promise.all([
+      state('DESIRED'),
+      state('REFILL'),
       db.send(new PutCommand({
         TableName: TABLE,
         Item: { pk: `R#${iso.slice(0, 10)}`, sk: iso, ...reading.fields, expires: Math.floor(at / 1000) + KEEP_DAYS * 86400 },
@@ -100,7 +104,7 @@ export function createIngest({ deviceKey, now = () => new Date(), timeZone = 'Am
       db.send(new PutCommand({ TableName: TABLE, Item: { pk: 'STATE', sk: 'LATEST', at: iso, fields: reading.fields } })),
       cfg && boardReported(TABLE, cfg.fields, iso),
     ]);
-    return text(200, `time=${secondsSinceMidnight(at, timeZone)}\n${cfgLine(desired)}`);
+    return text(200, `time=${secondsSinceMidnight(at, timeZone)}\nrefill=${refill?.id ?? 0}\n${cfgLine(desired)}`);
   };
 }
 

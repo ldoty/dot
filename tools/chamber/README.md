@@ -34,7 +34,8 @@ from that time are lost.
 | `STATE` | `LATEST` | The newest reading (for alerts / Dot, later) |
 | `STATE` | `DESIRED` | Settings saved on the page: `version`, `values`, `rev` |
 | `STATE` | `ACTIVE` | The board's last `chamber_cfg`: what it really runs, and any version it refused |
-| `SETLOG` | `<ISO>#<event>#<version>` | Settings history: saved, board applied, board defaults, board rejected |
+| `STATE` | `REFILL` | Refills counted on the page (`POST /refill`): `id`, `rev`, who and when. The ingest reply hands the board `refill=<id>`; build 15+ resets its water count when it rises |
+| `SETLOG` | `<ISO>#<event>#<version>` | Settings history: saved, board applied, board defaults, board rejected, refilled |
 
 ## Settings handshake
 

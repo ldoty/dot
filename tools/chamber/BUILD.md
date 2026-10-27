@@ -399,8 +399,11 @@ That case relies on the firmware RH-response check and volume budget.
   hardware dry-run interlock the old setup lacked: it holds even if the
   MOSFET fails short or firmware hangs. The firmware guards stay as a second
   layer (a cut-out atomizer makes no RH rise, so the dry-run check flags it)
-- Reservoir is now **~750 mL** (firmware `RESERVOIR_ML` still 500 -- trips
-  early, the safe direction; raise once `MIST_ML_PER_MIN` is measured)
+- Reservoir is now **~750 mL**; `RESERVOIR_ML` is 750 from build 15 (was 500).
+  The atomizer's own float covers running dry, and `MIST_ML_PER_MIN` (8)
+  still overestimates, so the count trips before the water is really gone.
+  Reset it after a refill with "I refilled it" on the page (build 15), or
+  by power-cycling
 - **`MIST_ML_PER_MIN` (1.5) was a placeholder for the old atomizer.** A 24W
   unit almost certainly outputs far more, so the volume budget undercounts
   until `atomizer_output` is rerun on the new unit
