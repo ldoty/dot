@@ -48,7 +48,8 @@ test('shows the latest reading as tiles, with charts', async (t) => {
   const p = await open(t);
   const tiles = [...p.d.querySelectorAll('.tile')].map((t) => t.textContent);
   assert.ok(tiles.includes('RH86.4% in band'), tiles.join(' | '));
-  assert.ok(tiles.includes('Temp23.9°C'));
+  assert.ok(tiles.includes('Temp75.0°F'), 'the board’s 23.9 °C, shown in °F');
+  assert.match(p.el('#table').textContent, /Temp °F/);
   assert.ok(tiles.includes('Statemist settle'));
   assert.match(p.el('#status').textContent, /^last reading \d+ s ago/);
   assert.equal(p.d.querySelectorAll('.panel svg').length, 6, 'state lanes + one chart per measure');

@@ -107,11 +107,11 @@ th { color: var(--muted); font-weight: 500 }
       { v: 2, label: "vent settle", color: "var(--ember)", op: 0.35 }
     ] },
     { key: "rh_pct", title: "Relative humidity (%)", h: 220, fmt: function (v) { return v.toFixed(1) + "%"; }, band: [85, 95], pad: 2 },
-    { key: "temp_c", title: "Temperature (°C)", h: 130, pad: 0.3 },
+    { key: "temp_f", title: "Temperature (°F)", h: 130, pad: 0.5 },
     { key: "fan_rpm", title: "Fan (rpm)", h: 110, min0: true },
     // On or off in practice, so a filled step: the light holds until the next reading
     { key: "light_duty_pct", title: "Light (duty %)", h: 90, min0: true, step: true, fill: true, pad: 0 },
-    { key: "dewpoint_c", title: "Dewpoint (°C): absolute water content", h: 130, pad: 0.3 }
+    { key: "dewpoint_f", title: "Dewpoint (°F): absolute water content", h: 130, pad: 0.5 }
   ];
 
   var cfg, rows = [], loadedFrom = null, rangeMin = 120, hoverT = null;
@@ -183,6 +183,8 @@ th { color: var(--muted); font-weight: 500 }
         if (rows.length && r[0] <= rows[rows.length - 1].t) return; // a poll that overlapped a reload
         var o = { t: r[0] };
         data.fields.forEach(function (f, i) { o[f] = r[i + 1]; });
+        // The board measures and stores °C; the page shows °F
+        o.temp_f = toF(o.temp_c); o.dewpoint_f = toF(o.dewpoint_c);
         rows.push(o);
       });
       var oldest = Date.now() - MAX_MIN * 60000;
@@ -385,6 +387,7 @@ th { color: var(--muted); font-weight: 500 }
     }
   }
 
+  function toF(c) { return typeof c === "number" ? c * 9 / 5 + 32 : c; }
   function fix(v, n, unit) { return typeof v === "number" ? v.toFixed(n) + unit : "—"; }
   function line(k, v) { return "<div><span>" + k + "</span><span>" + v + "</span></div>"; }
 
@@ -399,7 +402,7 @@ th { color: var(--muted); font-weight: 500 }
     if (!e) return;
     var tip = $("tip");
     tip.innerHTML = "<b>" + new Date(r.t).toLocaleTimeString() + "</b>" +
-      line("RH", fix(r.rh_pct, 2, "%")) + line("Temp", fix(r.temp_c, 2, "°C")) + line("Dewpoint", fix(r.dewpoint_c, 2, "°C")) +
+      line("RH", fix(r.rh_pct, 2, "%")) + line("Temp", fix(r.temp_f, 1, "°F")) + line("Dewpoint", fix(r.dewpoint_f, 1, "°F")) +
       line("State", STATE[r.mist_state] || r.mist_state) + line("Fan", r.fan_duty_pct + "% · " + r.fan_rpm + " rpm") +
       line("Light", r.light_duty_pct + "%") + line("Mist block", BLOCK[r.mist_block] || r.mist_block) +
       line("Mist total", fix(r.mist_ml, 1, " mL"));
@@ -421,7 +424,7 @@ th { color: var(--muted); font-weight: 500 }
     var band = r.rh_pct >= 85 && r.rh_pct <= 95 ? "in band" : r.rh_pct < 85 ? "below band" : "above band";
     $("tiles").innerHTML = [
       ["RH", fix(r.rh_pct, 1, "") + "<small>% " + band + "</small>"],
-      ["Temp", fix(r.temp_c, 1, "") + "<small>°C</small>"],
+      ["Temp", fix(r.temp_f, 1, "") + "<small>°F</small>"],
       ["State", STATE[r.mist_state] || r.mist_state],
       ["Mist block", BLOCK[r.mist_block] || r.mist_block],
       ["Mist bursts", r.mist_bursts + "<small> · " + fix(r.mist_ml, 0, "") + " mL est.</small>"],
@@ -429,9 +432,9 @@ th { color: var(--muted); font-weight: 500 }
     ].map(function (kv) { return '<div class="tile"><div class="k">' + kv[0] + '</div><div class="v">' + kv[1] + "</div></div>"; }).join("");
     renderWater(r);
 
-    $("table").innerHTML = "<table><tr><th>Time</th><th>RH %</th><th>Temp °C</th><th>State</th><th>Fan rpm</th><th>Block</th></tr>" +
+    $("table").innerHTML = "<table><tr><th>Time</th><th>RH %</th><th>Temp °F</th><th>State</th><th>Fan rpm</th><th>Block</th></tr>" +
       rows.slice(-15).reverse().map(function (x) {
-        return "<tr><td>" + new Date(x.t).toLocaleTimeString() + "</td><td>" + fix(x.rh_pct, 2, "") + "</td><td>" + fix(x.temp_c, 2, "") +
+        return "<tr><td>" + new Date(x.t).toLocaleTimeString() + "</td><td>" + fix(x.rh_pct, 2, "") + "</td><td>" + fix(x.temp_f, 1, "") +
           "</td><td>" + (STATE[x.mist_state] || "") + "</td><td>" + x.fan_rpm + "</td><td>" + (BLOCK[x.mist_block] || "") + "</td></tr>";
       }).join("") + "</table>";
   }
