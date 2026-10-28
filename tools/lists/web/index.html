@@ -35,6 +35,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--pool); outline: 
 .items li { border-top: 1px solid var(--line); padding: 8px 0 }
 .items li:first-child { border-top: 0 }
 .item { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: start }
+.item.movable { grid-template-columns: 20px 24px minmax(0, 1fr) auto }
+.grip { border: 0; background: none; padding: 2px 0 0; color: var(--muted); cursor: grab; font-size: 16px; line-height: 1; touch-action: none; user-select: none }
+.grip:focus-visible { color: var(--pool) }
+.items li.dragging { opacity: 0.6 }
 .item .more { border: 1.5px solid var(--line); background: none; border-radius: var(--r-pill); padding: 2px 10px; font: inherit; font-size: 13px; color: var(--pool); cursor: pointer; white-space: nowrap }
 .item .more[aria-expanded="true"] { background: var(--raised) }
 .item input[type=checkbox] { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--leaf) }
@@ -66,7 +70,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 14px }
 <script src="family-auth.js"></script>
 <script>
 (function () {
-  var cfg, lists = [], current = null, editing = null, msg = "", options = null, prefs = null;
+  var cfg, lists = [], current = null, editing = null, dragging = false, msg = "", options = null, prefs = null;
   var main = document.getElementById("main");
   var LAYOUT = { checklist: "Checklist", matrix: "Matrix", board: "Board" };
   var QUADS = [
@@ -129,7 +133,10 @@ details summary { cursor: pointer; color: var(--muted); font-size: 14px }
     if (i.remind && !i.remind.sentAt) bits.push("🔔 " + new Date(i.remind.at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }));
     if (i.repeat && !i.repeat.ended) bits.push("↻ " + i.repeat.text);
     if (i.notes) bits.push("Notes");
-    var html = '<li data-item="' + esc(i.id) + '"><div class="item' + (i.done ? " done" : "") + '"><input type="checkbox" data-done aria-label="Done: ' + esc(i.text) + '"' + (i.done ? " checked" : "") + (canEdit() ? "" : " disabled") + ">" +
+    // Open items can be put in order (drag the handle, or arrow keys on it); done ones keep theirs
+    var movable = canEdit() && !i.done;
+    var html = '<li data-item="' + esc(i.id) + '"><div class="item' + (i.done ? " done" : "") + (movable ? " movable" : "") + '">' +
+      (movable ? '<button type="button" class="grip" data-grip aria-label="Move: ' + esc(i.text) + '" title="Drag to move, or use the arrow keys">⠿</button>' : "") + '<input type="checkbox" data-done aria-label="Done: ' + esc(i.text) + '"' + (i.done ? " checked" : "") + (canEdit() ? "" : " disabled") + ">" +
       '<button class="open" data-open><span>' + esc(i.text) + "</span>" + (bits.length ? '<span class="meta">' + esc(bits.join(" · ")) + "</span>" : "") + "</button>" +
       // Due date, reminder, notes and the rest live behind this; say so, rather than hiding it on a tap of the text
       '<button class="more" data-open aria-expanded="' + (editing === i.id) + '" aria-label="Details: ' + esc(i.text) + '">' + (canEdit() ? "Details" : "View") + "</button></div>";
@@ -286,6 +293,24 @@ details summary { cursor: pointer; color: var(--muted); font-size: 14px }
     body.rev = i.rev;
     return apiJson("PUT", "/lists/" + current.list.id + "/items/" + i.id, body).then(function () { return openList(current.list.id); }).catch(fail);
   }
+  // Put an item where it now sits among its neighbours (the same list, quadrant or column):
+  // usually one save, between the two around it; when they leave no room, number the group again
+  function saveOrder(ul, id) {
+    var group = [].map.call(ul.querySelectorAll(":scope > [data-item]"), function (li) {
+      for (var n = 0; n < current.items.length; n++) if (current.items[n].id === li.dataset.item) return current.items[n];
+    });
+    var k = group.map(function (x) { return x.id; }).indexOf(id), prev = group[k - 1], next = group[k + 1], at;
+    if (prev && next) at = (prev.order + next.order) / 2;
+    else if (prev) at = prev.order + 1;
+    else if (next) at = next.order - 1;
+    else return Promise.resolve();
+    var changes = [];
+    if ((!prev || at > prev.order) && (!next || at < next.order)) changes.push([group[k], at]);
+    else group.forEach(function (x, n) { if (x.order !== n + 1) changes.push([x, n + 1]); });
+    return changes.reduce(function (p, c) {
+      return p.then(function () { return apiJson("PUT", "/lists/" + current.list.id + "/items/" + c[0].id, Object.assign(fields(c[0]), { order: c[1], rev: c[0].rev })); });
+    }, Promise.resolve()).then(function () { return openList(current.list.id); }).catch(fail);
+  }
   function saveList(changes) {
     var l = current.list, body = { name: l.name, layout: l.layout, columns: l.columns, share: l.share, rev: l.rev };
     for (var k in changes) body[k] = changes[k];
@@ -314,6 +339,40 @@ details summary { cursor: pointer; color: var(--muted); font-size: 14px }
       var n = Number(t.closest("[data-unshare]").dataset.unshare);
       return saveList({ share: current.list.share.filter(function (_, k) { return k !== n; }) });
     }
+  });
+  // Dragging by the handle: pointer events, so it works by touch as well as mouse
+  main.addEventListener("pointerdown", function (e) {
+    var grip = e.target.closest && e.target.closest("[data-grip]");
+    if (!grip || !canEdit()) return;
+    e.preventDefault();
+    var li = grip.closest("[data-item]"), ul = li.parentNode, before = li.nextSibling;
+    dragging = true; li.classList.add("dragging");
+    if (grip.setPointerCapture) grip.setPointerCapture(e.pointerId);
+    function move(ev) {
+      var others = [].filter.call(ul.querySelectorAll(":scope > [data-item]"), function (x) { return x !== li; });
+      var target = null;
+      for (var n = 0; n < others.length; n++) {
+        var r = others[n].getBoundingClientRect();
+        if (ev.clientY < r.top + r.height / 2) { target = others[n]; break; }
+      }
+      if (target !== li.nextSibling) ul.insertBefore(li, target);
+    }
+    function up() {
+      grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); grip.removeEventListener("pointercancel", up);
+      dragging = false; li.classList.remove("dragging");
+      if (li.nextSibling !== before) saveOrder(ul, li.dataset.item);
+    }
+    grip.addEventListener("pointermove", move); grip.addEventListener("pointerup", up); grip.addEventListener("pointercancel", up);
+  });
+  main.addEventListener("keydown", function (e) {
+    var grip = e.target.closest && e.target.closest("[data-grip]");
+    if (!grip || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    e.preventDefault();
+    var li = grip.closest("[data-item]"), ul = li.parentNode, id = li.dataset.item;
+    var sib = e.key === "ArrowUp" ? li.previousElementSibling : li.nextElementSibling;
+    if (!sib) return;
+    ul.insertBefore(li, e.key === "ArrowUp" ? sib : sib.nextSibling);
+    saveOrder(ul, id).then(function () { var g = main.querySelector('[data-item="' + id + '"] [data-grip]'); if (g) g.focus(); });
   });
   main.addEventListener("change", function (e) {
     var t = e.target, i;
@@ -379,7 +438,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 14px }
   window.addEventListener("hashchange", route);
   // Keep it current while open, but never under someone typing
   setInterval(function () {
-    if (document.hidden || editing || (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) return;
+    if (document.hidden || editing || dragging || (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) return;
     (current ? openList(current.list.id) : loadHome()).catch(function () {});
   }, 20000);
 

@@ -105,6 +105,7 @@ test('a list shared to see: no adding, no ticking, no settings', async () => {
   const p = await open(AMBER, `#l=${l.id}`);
   assert.equal(p.d.querySelector('[data-add]'), null);
   assert.equal(p.$('[data-done]').disabled, true);
+  assert.equal(p.d.querySelector('[data-grip]'), null, 'no moving things around');
   assert.equal(p.d.getElementById('settings'), null);
   assert.match(p.text('.meta').join(' '), /Shared with you to see/);
 });
@@ -204,4 +205,36 @@ test('ticking off a repeating item on the page moves it to next time', async () 
   const [i] = items(l.id);
   assert.deepEqual([i.done, i.due], [false, '2026-12-01']);
   assert.match(p.$('[data-open] .meta').textContent, /Due Dec 1/);
+});
+
+test('put items in order: arrow keys on the handle move one, with a single save between its neighbours', async () => {
+  const l = await newList('Errands');
+  for (const [id, text, order] of [['i00001', 'Bank', 1], ['i00002', 'Post office', 2], ['i00003', 'Pharmacy', 3]]) {
+    await call('PUT', `/lists/${l.id}/items/${id}`, { text, order });
+  }
+  const p = await open(LUKE, `#l=${l.id}`);
+  const key = async (id, k) => {
+    p.$(`[data-item="${id}"] [data-grip]`).dispatchEvent(new p.w.KeyboardEvent('keydown', { key: k, bubbles: true }));
+    await wait(200);
+  };
+  await key('i00003', 'ArrowUp');
+  assert.deepEqual(p.text('.items [data-open] span:first-child'), ['Bank', 'Pharmacy', 'Post office']);
+  const saved = Object.fromEntries(items(l.id).map((i) => [i.text, i]));
+  assert.equal(saved.Pharmacy.order, 1.5);
+  assert.equal(saved['Post office'].rev, 1, 'only the moved item is saved');
+  assert.equal(p.d.activeElement, p.$('[data-item="i00003"] [data-grip]'), 'the handle keeps focus for the next move');
+  await key('i00001', 'ArrowDown');
+  assert.deepEqual(p.text('.items [data-open] span:first-child'), ['Pharmacy', 'Bank', 'Post office']);
+});
+
+test('put items in order: items with the same order are numbered again', async () => {
+  const l = await newList('Packing');
+  for (const [id, text] of [['i00001', 'Tent'], ['i00002', 'Stove'], ['i00003', 'Boots']]) {
+    await call('PUT', `/lists/${l.id}/items/${id}`, { text });
+  }
+  const p = await open(LUKE, `#l=${l.id}`);
+  p.$('[data-item="i00002"] [data-grip]').dispatchEvent(new p.w.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  await wait(250);
+  assert.deepEqual(p.text('.items [data-open] span:first-child'), ['Tent', 'Boots', 'Stove']);
+  assert.deepEqual(items(l.id).sort((a, b) => a.order - b.order).map((i) => i.text), ['Tent', 'Boots', 'Stove']);
 });

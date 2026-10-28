@@ -24,6 +24,8 @@ they can edit, never who a list is shared with, and it deletes a list only after
 
 A layout is a view of the same items, so switching never loses anything: **checklist**, **matrix**
 (Eisenhower: each item's urgent and important flags), **board** (each item's column).
+Within a list, quadrant or column, open items keep their `order`: drag the handle on the page (or
+use the arrow keys on it) and it saves the moved item between its neighbours.
 
 ## Routes and rows
 
