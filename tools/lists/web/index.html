@@ -15,10 +15,14 @@
    Eisenhower matrix, or board), with one item opened for editing at a time, inline. */
 .wrap { max-width: 860px; margin: 0 auto; padding: 20px 16px 64px; display: grid; gap: 20px }
 .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+#main { display: grid; gap: 16px; align-content: start }
+#main > .back { justify-self: start }
 .top a, .back { color: var(--muted); text-decoration: none; font-size: 14px; background: none; border: 0; cursor: pointer; padding: 0 }
 h1 { font-size: clamp(30px, 6vw, 44px) }
 .status { color: var(--muted); font-size: 14px; min-height: 1.4em; margin: 0 }
 .status.warn { color: var(--ember) }
+/* A choice inside a sentence: sized to the text, not like a form field */
+.status select { padding: 2px 6px; margin: 0 2px }
 .lists { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px }
 .lists a { color: inherit; text-decoration: none; display: grid; gap: 4px }
 .lists a:hover { border-color: var(--pool) }
