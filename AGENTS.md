@@ -19,7 +19,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/amber-finances` | amber-finances.dot-y.co | `amber_finances` | Amber’s, the same way |
 | `tools/shared-finances` | shared-finances.dot-y.co | `shared_finances` | The joint accounts from both, against the Shared budget |
 | `tools/assistant` | assistant.dot-y.co | `family_assistant` | **Dot**: chat with Claude (Bedrock) + calendars + any tool that describes itself |
-| `tools/calendars` | calendars.dot-y.co | `family_calendars` | The family's Google calendars and who may see or change each; the week ahead. The only holder of the Google key: Dot's calendar tools call it as the person. Notes in `tools/calendars/AGENTS.md` |
+| `tools/calendars` | calendars.dot-y.co | `family_calendars` | The family's Google calendars and who may see or change each; the week ahead. The only holder of the Google key: Dot's calendar tools call it as the person. Emails calendar invitations to the people on an event (from invites@, the person as organizer; from Dot only after their OK). Notes in `tools/calendars/AGENTS.md` |
 | `tools/lists` | lists.dot-y.co | `family_lists` | To-dos and checklists (checklist, Eisenhower matrix, board), private until shared with people or family groups; reminders by text or email from an every-minute sweep. Notes in `tools/lists/AGENTS.md` |
 | `tools/links` | links.dot-y.co | `family_links` | Bookmarks in sections, private until shared with people or family groups (as Lists; `platform/api/sharing.mjs`) |
 | `tools/health` | health.dot-y.co | `family_health` | Each person’s own workouts and how they feel: saved workouts, a plan, sessions logged set by set (last time’s numbers, rest timer, works offline; holds counted in breaths), body weight, how sore spots felt, a daily journal, a food log, medications and supplements with each day's doses, a meditation timer and log; a starter program. Dot reads it and logs sessions, food (from a photo), journal notes, meditations and doses as the person, and adds or (with their OK) changes supplements |
@@ -67,11 +67,11 @@ person* from the other tool's **delegated client** (`platform/api/delegation.mjs
   `writeRoutes()` in `platform/api/dot-manifest.mjs` gives the tool its own allowlist from the same manifest). A declared
   write that needs the person's OK answers 202 `{ confirm_id, prompt }`, and Dot sends the confirmation only after their own
   reply. Declared today: House's automations (create, change, delete; each asks first), and Health's logging a session, a body weight, food or a dose, adding to the journal, a meditation or a supplement (additions only, so no asking), and changing a supplement (asks first; never a medication). Built into Dot instead: House's
-  `POST /commands` (Dot's `house_control`), editing lists the person can edit (Dot's `lists_change`), never sharing, and events on calendars they may change (Dot's calendar tools). Reads are audited by the reader.
+  `POST /commands` (Dot's `house_control`), editing lists the person can edit (Dot's `lists_change`), never sharing, and events on calendars they may change (Dot's calendar tools; deleting one, or emailing invitations for one with `invite_people`, asks first). Reads are audited by the reader.
 
-Current links: Dot → any tool with a manifest (today the three finances tools, House, Lists and Health); finances tools → Budget (as their person);
+Current links: Dot → any tool with a manifest (today the three finances tools, House, Lists, Health and the Archive); finances tools → Budget (as their person);
 Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`); Claude Code (`platform/mcp`, signer `mcp`, Luke only for now) → the tools
-whose `delegates` list `"mcp"` (Luke’s and Shared Finances, House, Lists, Health). It never confirms a write that needs the person's OK.
+whose `delegates` list `"mcp"` (Luke’s and Shared Finances, House, Lists, Health, Archive). It never confirms a write that needs the person's OK.
 
 ### Dot (the assistant) and tool discovery
 

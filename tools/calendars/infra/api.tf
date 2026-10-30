@@ -2,7 +2,10 @@ locals {
   routes = [
     "GET /calendars", "GET /events", "GET /agenda", "POST /events", "PUT /events/{calendar}/{eventId}", "DELETE /events/{calendar}/{eventId}",
     "GET /admin", "PUT /calendars/{alias}", "DELETE /calendars/{alias}", "PUT /grants/{id}", "DELETE /grants/{id}",
+    "POST /events/{calendar}/{eventId}/invite",
   ]
+  # Calendar invitations to people outside the family come from here, the person as organizer (api/invite.mjs)
+  invite_address   = "invites@dot-y.co"
   google_key_param = "/family/calendar/google-key" # SecureString set by hand: the service account calendars are shared with
 }
 
@@ -29,6 +32,10 @@ data "archive_file" "api" {
   source {
     content  = file("${path.module}/../api/google.mjs")
     filename = "google.mjs"
+  }
+  source {
+    content  = file("${path.module}/../api/invite.mjs")
+    filename = "invite.mjs"
   }
 }
 
@@ -75,6 +82,13 @@ resource "aws_iam_role_policy" "api_table" {
         Action   = "cognito-idp:ListUsersInGroup"
         Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}"
       },
+      {
+        # Invitations to the people on an event, from invites@ only (each one the person's own say-so; from Dot, after their reply)
+        Effect    = "Allow"
+        Action    = ["ses:SendEmail", "ses:SendRawEmail"]
+        Resource  = "arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:identity/dot-y.co"
+        Condition = { StringEquals = { "ses:FromAddress" = local.invite_address } }
+      },
     ]
   })
 }
@@ -100,6 +114,7 @@ resource "aws_lambda_function" "api" {
       USER_POOL_ID     = local.pool_id
       GOOGLE_KEY_PARAM = local.google_key_param
       TIME_ZONE        = "America/New_York"
+      INVITE_ADDRESS   = local.invite_address
     }
   }
 }

@@ -29,6 +29,8 @@ export const archiveApi = createApi({
     getUrl: async ({ key, name }) => `https://s3.test/${key}?download=${encodeURIComponent(name)}`,
     text: async (key) => bucket.get(key)?.toString() ?? null,
     remove: async (key) => { bucket.delete(key); },
+    bucket: 'archive-test',
+    credentials: async ({ prefix, expiresIn }) => ({ accessKeyId: 'AKIATEST', secretAccessKey: `secret-for-${prefix}`, sessionToken: 'tok', expiration: null, expiresIn }),
   },
 });
 export const intake = createIntake({
@@ -42,6 +44,7 @@ export const intake = createIntake({
 export const ROUTES = [
   'GET /dot', 'GET /drawers', 'PUT /drawers/{id}', 'GET /files', 'GET /files/{id}', 'GET /files/{id}/text', 'GET /files/{id}/download',
   'POST /uploads', 'PATCH /files/{id}', 'PUT /files/{id}/links/{to}', 'DELETE /files/{id}/links/{to}', 'DELETE /files/{id}', 'GET /share-options',
+  'POST /batches', 'GET /batches/{id}',
 ];
 export const token = (sub = LUKE) => accessToken({ clientId: CLIENT_ID, group: 'family_archive', sub, username: sub });
 /** A token Claude Code (or Dot) borrowed for this person */

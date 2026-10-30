@@ -10,8 +10,9 @@ it with people or family groups, to see (read) or to file into (edit), as Lists 
 |---|---|
 | `api/api.mjs` | The API: drawers, search, files, uploads, links (routes at the top of the file) |
 | `api/intake.mjs` | Runs on every new file: checks it, reads its text (PDFs, text files), files it. No Claude |
+| `api/bulk.mjs` | Bulk uploads: each file a batch drops in `incoming/` is hashed (never opened), registered as the batch's maker, and copied to `f/` for intake |
 | `api/molly.mjs` | Molly, by email: saves attachments in Inbox/, a reader with no tools describes them, she files with the archive's tools and answers in the thread |
-| `api/dot.mjs` | The manifest: how Claude Code (`platform/mcp`), and later Dot, use the archive as the person |
+| `api/dot.mjs` | The manifest: how Dot and Claude Code (`platform/mcp`) use the archive as the person |
 | `infra/` | OpenTofu root: table, bucket + key (`storage.tf`), intake (`intake.tf`), API (`api.tf`) |
 | `web/` | The page: drawers and their folders, search, upload (hashed in the browser, straight to S3), a file's card (describe, move, trash, restore), drawers and sharing, delete for good |
 
@@ -23,6 +24,11 @@ it with people or family groups, to see (read) or to file into (edit), as Lists 
    drawers they can't see aren't mentioned, so an upload never reveals someone else's private files.
 2. **Intake** (S3 event on `f/`): checks the size and checksum against what was promised, reads the text
    into `text/<id>.txt`, and marks the file `filed`. A mismatch is `rejected` and never shown.
+   **A whole folder** (`POST /batches`, Claude Code's `archive_bulk_upload`): an hour's credentials as the
+   uploader role, narrowed by a session policy to `incoming/<sub>/<batch>/`, and the `aws s3 cp --recursive`
+   command to run. Each file landing there goes to the bulk Lambda, which registers it through the same
+   upload code (drawer access, duplicates) and copies it to `f/`; subfolders become folders. `GET /batches/{id}`
+   says what was filed, skipped as a duplicate, or refused. `incoming/` empties itself after two days.
 3. **Filing**: rename, move (folder or drawer), describe (title, summary, kind, the document's own date,
    tags), link (`renews`, `receipt for`, …), trash and restore: all `rev`-checked, all logged.
 
@@ -45,13 +51,17 @@ that person (`handler.as`: the archive's own code, held to a borrowed token's wr
    drawers' notes and the sender's words, and answers in the thread from molly@, asking numbered questions
    when she can't tell. What she can't place stays in `Inbox/`.
 
+Nothing waits in `Inbox/` for good: a week after an email's attachments arrive, a daily sweep
+(`molly.sweep`, 15:00 UTC) moves what's still there to `Unsorted/` and says so once in the thread, counted
+toward the daily limit on what Dot-y sends unasked (`MOLLYWAIT` / `<due>#<sub>#<thread>` rows).
+
 She never sees a document's raw text, only the reader's description, marked as the document's; she can't
 read text, download, upload, make or share drawers, or delete for good. Conversations are `MOLLY#<sub>` /
 `<thread id>` rows (the words of the last 20 turns). Model: `var.model` (Opus 4.6 on Bedrock).
 
 ## Access
 
-The four checks, plus: a borrowed token (Claude Code through `platform/mcp`; `delegates = ["mcp"]`) reads
+The four checks, plus: a borrowed token (Dot, and Claude Code through `platform/mcp`; `delegates = ["dot", "mcp"]`) reads
 and uses only the manifest's writes (upload, update, link, unlink), never drawers or sharing. Document
 text is someone else's writing: the API says so with every chunk (`TEXT_NOTE`). Intake's role is the
 narrowest (read `f/`, write `text/`, write rows), because it parses untrusted files.

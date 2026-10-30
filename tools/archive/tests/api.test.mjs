@@ -180,7 +180,7 @@ test('download links name the file', async () => {
 test('the manifest is valid, and every route it names is one the handler and API Gateway serve', () => {
   validateManifest(MANIFEST);
   for (const op of MANIFEST.operations) assert.ok(ROUTES.includes(`${op.method ?? 'GET'} ${op.path}`), op.name);
-  assert.deepEqual(writeRoutes(MANIFEST).sort(), ['DELETE /files/{id}/links/{to}', 'PATCH /files/{id}', 'POST /uploads', 'PUT /files/{id}/links/{to}']);
+  assert.deepEqual(writeRoutes(MANIFEST).sort(), ['DELETE /files/{id}/links/{to}', 'PATCH /files/{id}', 'POST /batches', 'POST /uploads', 'PUT /files/{id}/links/{to}']);
 });
 
 test('infra/api.tf routes are exactly the handler’s', () => {

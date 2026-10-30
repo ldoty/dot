@@ -16,6 +16,7 @@ export const KID = '11111111-1111-1111-1111-111111111111';
 export const ROUTES = [
   'GET /calendars', 'GET /events', 'GET /agenda', 'POST /events', 'PUT /events/{calendar}/{eventId}', 'DELETE /events/{calendar}/{eventId}',
   'GET /admin', 'PUT /calendars/{alias}', 'DELETE /calendars/{alias}', 'PUT /grants/{id}', 'DELETE /grants/{id}',
+  'POST /events/{calendar}/{eventId}/invite',
 ];
 
 /** Google, as far as these tests need it: calendars Dot's account can see, with a role each */
@@ -40,10 +41,11 @@ async function googleFetch(url, o = {}) {
   m = /^\/calendar\/v3\/calendars\/([^/]+)\/events(?:\/([^/]+))?$/.exec(u.pathname);
   if (m) {
     const id = decodeURIComponent(m[1]), list = (google.events[id] ??= []);
-    if (method === 'GET') return ok({ items: list });
-    if (method === 'POST') { const e = { id: `e${++seq}`, ...body }; list.push(e); return ok(e); }
+    if (method === 'GET' && !m[2]) return ok({ items: list });
+    if (method === 'POST') { const e = { id: `e${++seq}`, iCalUID: `e${seq}@google.com`, sequence: 0, ...body }; list.push(e); return ok(e); }
     const ev = list.find((e) => e.id === decodeURIComponent(m[2]));
     if (!ev) return no(404);
+    if (method === 'GET') return ok(ev);
     if (method === 'PATCH') { Object.assign(ev, body); return ok(ev); }
     if (method === 'DELETE') { list.splice(list.indexOf(ev), 1); return { ok: true, status: 204, json: async () => ({}) }; }
   }
@@ -51,11 +53,14 @@ async function googleFetch(url, o = {}) {
 }
 
 export const clock = { now: new Date('2026-10-19T14:00:00Z') };
+/** Invitations emailed: { to, raw } */
+export const sent = [];
 export const handler = createApi({
   table: 'family-calendars', group: 'family_calendars', issuer: ISSUER,
   clientIds: ['cal-client', 'cal-via-dot'], dotClientId: 'cal-via-dot',
   people: makePeople({ db: DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' })), table: 'family-people', ttlMs: 0 }),
-  members: async () => [{ sub: LUKE, name: 'Luke' }, { sub: AMBER, name: 'amber@x.test' }, { sub: KID, name: 'Kid' }],
+  members: async () => [{ sub: LUKE, name: 'Luke', email: 'luke@x.test' }, { sub: AMBER, name: 'amber@x.test', email: 'amber@x.test' }, { sub: KID, name: 'Kid', email: null }],
+  invites: { from: 'invites@dot-y.co', send: async (m) => sent.push(m) },
   google: { accessToken: async () => 'gtok', fetch: googleFetch }, timeZone: 'America/New_York', now: () => clock.now,
 });
 
@@ -68,7 +73,7 @@ export const call = (m, p, b, t = token()) => callApi(m, p, b, t);
 /** Today's setup: luke and kids (Luke edits, Amber sees), amber (Amber edits, Luke sees) */
 export async function seed() {
   table.clear();
-  google.events = {}; google.requests = [];
+  google.events = {}; google.requests = []; sent.length = 0;
   clock.now = new Date('2026-10-19T14:00:00Z');
   const a = adminToken();
   await call('PUT', '/calendars/luke', { googleId: 'luke.doty@gmail.com' }, a);

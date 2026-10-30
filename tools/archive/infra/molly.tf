@@ -6,6 +6,10 @@
 # Her role: the archive's table and the family's groups, the files (save into f/, read f/ and text/; never
 # delete), Claude on Bedrock, sending from molly@ only, and reading the mail the gate hands her (molly/).
 # Apply this before platform/email, which reads /family/archive/molly-worker.
+#
+# The same code and role run a daily sweep (molly.sweep): a week after an email's attachments arrive,
+# what's still in Inbox/ goes to Unsorted/, and she says so once in the thread, counted toward the
+# daily limit on what Dot-y sends unasked. For that the role also counts sends and checks membership.
 
 variable "model" {
   type        = string
@@ -57,6 +61,9 @@ resource "aws_iam_role_policy" "molly" {
         Resource  = "arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:identity/${var.domain_name}"
         Condition = { StringEquals = { "ses:FromAddress" = local.molly_address } }
       },
+      # The sweep: the daily limit on what Dot-y sends unasked (tools/sms), and whether they're still a member
+      { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:PutItem"], Resource = nonsensitive(data.aws_ssm_parameter.sends_table_arn.value) },
+      { Effect = "Allow", Action = "cognito-idp:AdminListGroupsForUser", Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}" },
       {
         # us.* inference profiles route to any US region, so allow the models there too
         Effect = "Allow"
@@ -93,6 +100,53 @@ resource "aws_lambda_function" "molly" {
       MOLLY_ADDRESS       = local.molly_address
     }
   }
+}
+
+# Every morning (10:00 New York in winter, 11:00 in summer): what's waited a week in Inbox/
+resource "aws_lambda_function" "molly_sweep" {
+  function_name    = "family-archive-molly-sweep"
+  role             = aws_iam_role.molly.arn
+  runtime          = "nodejs22.x"
+  handler          = "molly.sweep"
+  filename         = data.archive_file.molly.output_path
+  source_code_hash = data.archive_file.molly.output_base64sha256
+  timeout          = 300
+  memory_size      = 512
+  environment {
+    variables = merge(aws_lambda_function.molly.environment[0].variables, {
+      SENDS_TABLE  = element(split("/", nonsensitive(data.aws_ssm_parameter.sends_table_arn.value)), 1)
+      USER_POOL_ID = local.pool_id
+    })
+  }
+}
+
+resource "aws_cloudwatch_log_group" "molly_sweep" {
+  name              = "/aws/lambda/${aws_lambda_function.molly_sweep.function_name}"
+  retention_in_days = 30
+}
+
+resource "aws_cloudwatch_event_rule" "molly_sweep" {
+  name                = "family-archive-molly-sweep"
+  description         = "Move what's waited a week in Inbox/ to Unsorted/, and tell them"
+  schedule_expression = "cron(0 15 * * ? *)"
+}
+
+resource "aws_cloudwatch_event_target" "molly_sweep" {
+  rule = aws_cloudwatch_event_rule.molly_sweep.name
+  arn  = aws_lambda_function.molly_sweep.arn
+}
+
+resource "aws_lambda_permission" "molly_sweep" {
+  statement_id  = "AllowDaily"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.molly_sweep.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.molly_sweep.arn
+}
+
+# The daily limit on what Dot-y sends unasked (tools/sms/infra/sends.tf; apply that first)
+data "aws_ssm_parameter" "sends_table_arn" {
+  name = "/family/sms/sends-table-arn"
 }
 
 # One try: a retry would file and answer twice

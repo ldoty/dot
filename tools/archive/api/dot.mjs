@@ -1,5 +1,5 @@
-// The archive's manifest (platform/api/dot-manifest.mjs): how Claude Code (platform/mcp), and later Dot,
-// use it as the person. Reads, plus the writes a filer needs: start uploads, rename, move, describe,
+// The archive's manifest (platform/api/dot-manifest.mjs): how Dot and Claude Code (platform/mcp) use it
+// as the person. Reads, plus the writes a filer needs: start uploads, rename, move, describe,
 // trash or restore, link. Never a drawer, never sharing, never deleting for good: those stay on the page.
 
 const FILE_ID = { type: 'string', pattern: '^f[a-z0-9]{16}$', description: 'A file’s id' };
@@ -52,7 +52,7 @@ export const MANIFEST = {
     {
       name: 'upload',
       method: 'POST',
-      description: 'Start uploading up to 50 files into a drawer you can file into. Give each file’s name, size in bytes and SHA-256 (shasum -a 256). For each new file you get a URL and headers: send the bytes with curl -X PUT -T <path> -H for each header "<url>" within 15 minutes. Files already in a drawer you can see come back as duplicates instead. Uploaded files are read and filed within a minute.',
+      description: 'From a computer (Claude Code), not from chat: start uploading up to 50 files into a drawer you can file into. Give each file’s name, size in bytes and SHA-256 (shasum -a 256). For each new file you get a URL and headers: send the bytes with curl -X PUT -T <path> -H for each header "<url>" within 15 minutes. Files already in a drawer you can see come back as duplicates instead. Uploaded files are read and filed within a minute.',
       path: '/uploads',
       input: closed({
         drawer: { type: 'string', description: 'A drawer id, or “mine”' },
@@ -65,6 +65,19 @@ export const MANIFEST = {
           }, ['name', 'size', 'sha256']),
         },
       }, ['drawer', 'files']),
+    },
+    {
+      name: 'bulk_upload',
+      method: 'POST',
+      description: 'From a computer (Claude Code): upload a whole folder at once. Returns credentials good for an hour that may only write into this batch, and the exact aws s3 cp command to run (put the folder’s path in place of <folder>). Files land in the drawer under the folder given, keeping their subfolders; files already in a drawer you can see are skipped as duplicates; files over 100 MB are refused. The credentials are secret: use them in the command, don’t repeat them.',
+      path: '/batches',
+      input: closed({ drawer: { type: 'string', description: 'A drawer id, or “mine”' }, folder: { type: 'string', description: 'e.g. Imported/Documents' } }, ['drawer']),
+    },
+    {
+      name: 'batch',
+      description: 'How a bulk upload went: how many files were filed, how many were duplicates, and what was refused and why. Files keep arriving for a minute or two after the copy finishes.',
+      path: '/batches/{id}',
+      input: closed({ id: { type: 'string', pattern: '^b[a-z0-9]{16}$' } }, ['id']),
     },
     {
       name: 'update',

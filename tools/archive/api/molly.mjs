@@ -13,16 +13,22 @@
 // The documents are someone else's writing: the filing model never sees their text, only the reader's
 // description, marked as coming from the document. She can't read raw text, download, upload, share a
 // drawer or delete anything for good; what she can't place stays in Inbox/, never lost.
+//
+// Nothing waits in Inbox/ for good: a week after an email's attachments arrive, the daily sweep
+// (sweep below) moves whatever of them is still in Inbox/ to Unsorted/ and says so once, in the same
+// thread (counted toward the daily limit on what Dot-y sends unasked, platform/api/send-limit.mjs).
 import { createHash } from 'node:crypto';
 import { simpleParser } from 'mailparser';
 import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { conversationIdFor, oneLine, replyMessage, threadRoot, withoutQuotes } from './mail-thread.mjs';
 import { requestBody, requestPath } from './dot-manifest.mjs';
 import { MANIFEST } from './dot.mjs';
+import { makeSendLimit } from './send-limit.mjs';
+import { CognitoIdentityProviderClient, AdminListGroupsForUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { liveApi } from './api.mjs';
 
 export const MAX_BODY = 20_000;
@@ -34,6 +40,7 @@ const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const MAX_IMAGE = 3_750_000; // Bedrock's limit for one image
 const MAX_PDF = 4_500_000;
 const MAX_ROUNDS = 15;
+export const WAIT_DAYS = 7; // then what's still in Inbox/ goes to Unsorted/, and she says so
 const KEEP_TURNS = 20;
 const EMAIL = /^[^\s@<>"',;()[\]\\]+@[a-z0-9.-]+\.[a-z]{2,}$/;
 // Her tools: the archive's manifest, less what would put a document's raw text (or bytes) in front of her
@@ -227,11 +234,13 @@ export function createMolly(deps) {
     if (body.length > MAX_BODY) body = `${body.slice(0, MAX_BODY)}\n\n[The rest of the email was cut]`;
 
     let reply;
+    const waiting = []; // new attachments, saved in Inbox/: the sweep checks on them in a week
     let said = [subject && !conv ? `Subject: ${subject}` : '', body || '(no words, just attachments)'].filter(Boolean).join('\n\n');
     try {
       const { docs, skipped } = documentsIn(parsed.attachments);
       if (docs.length) {
         const saved = await save(person, docs);
+        waiting.push(...saved.filter((f) => !f.duplicate).map((f) => f.id));
         const described = [];
         for (const f of saved) {
           if (f.duplicate) { described.push({ id: f.id, name: f.name, already_filed: f.duplicate }); continue; }
@@ -256,10 +265,76 @@ export function createMolly(deps) {
       to: from,
       raw: replyMessage({ name: 'Molly', from: deps.address, to: from, subject: parsed.subject, inReplyTo: parsed.messageId, references: [].concat(parsed.references || []), body: reply, date: at }),
     });
-    // The thread so far, in words (what was attached is in the archive, and in what was said)
+    // The thread so far, in words (what was attached is in the archive, and in what was said), and where
+    // to answer it later (the sweep's follow-up goes in the same thread)
     const turns = [...(conv?.turns ?? []), { role: 'user', text: said.slice(0, 40_000) }, { role: 'assistant', text: reply.slice(0, 8_000) }].slice(-KEEP_TURNS);
-    await db.send(new PutCommand({ TableName: table, Item: { pk: `MOLLY#${userId}`, sk: id, subject: subject || conv?.subject || '', turns, updatedAt: at.toISOString() } }));
+    const references = [...new Set([...[].concat(parsed.references || []), parsed.messageId].filter(Boolean))].slice(-10);
+    await db.send(new PutCommand({
+      TableName: table,
+      Item: { pk: `MOLLY#${userId}`, sk: id, subject: subject || conv?.subject || '', from, lastMessageId: parsed.messageId ?? null, references, turns, updatedAt: at.toISOString() },
+    }));
+    if (waiting.length) {
+      const due = new Date(at.getTime() + WAIT_DAYS * 86_400_000).toISOString();
+      await db.send(new PutCommand({ TableName: table, Item: { pk: 'MOLLYWAIT', sk: `${due}#${userId}#${id}`, sub: userId, username, conversation: id, files: waiting } }));
+    }
     log({ molly: 'replied', key, conversation: id });
+  };
+}
+
+/**
+ * The daily sweep: for each email whose week is up, what's still in Inbox/ in the person's own drawer
+ * goes to Unsorted/, and Molly says so once in that thread (if they're still a member, and within the
+ * daily limit; the files move either way). Rows: MOLLYWAIT / <due>#<sub>#<conversation> { files }.
+ * deps: archive, db, table, address, send, take(sub) -> { ok } (send-limit.mjs), isMember(username), now?, log?
+ */
+export function createSweep(deps) {
+  const { archive, db, table } = deps;
+  const now = deps.now ?? (() => new Date());
+  const log = deps.log ?? ((x) => console.log(JSON.stringify(x)));
+  const act = async (person, routeKey, pathParameters, body) => {
+    const r = await archive.as(person, { routeKey, pathParameters, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: r.statusCode, body: JSON.parse(r.body) };
+  };
+  return async () => {
+    const at = now();
+    const due = [];
+    let ExclusiveStartKey;
+    do {
+      const r = await db.send(new QueryCommand({ TableName: table, KeyConditionExpression: 'pk = :pk', ExpressionAttributeValues: { ':pk': 'MOLLYWAIT' }, ExclusiveStartKey }));
+      due.push(...r.Items.filter((w) => w.sk.slice(0, 24) <= at.toISOString()));
+      ExclusiveStartKey = r.LastEvaluatedKey;
+    } while (ExclusiveStartKey);
+    for (const w of due) {
+      const person = { sub: w.sub, username: w.username };
+      const moved = [];
+      if (await deps.isMember(w.username)) {
+        for (const id of w.files) {
+          const f = await act(person, 'GET /files/{id}', { id });
+          // Still where she left it: their own drawer's Inbox/ (anything they or she moved since is theirs)
+          if (f.status !== 200 || f.body.status !== 'filed' || f.body.folder !== 'Inbox' || f.body.drawer !== `p-${w.sub}`) continue;
+          const r = await act(person, 'PATCH /files/{id}', { id }, { rev: f.body.rev, folder: 'Unsorted' });
+          if (r.status === 200) moved.push(f.body.name);
+        }
+      }
+      if (moved.length) {
+        const conv = (await db.send(new GetCommand({ TableName: table, Key: { pk: `MOLLY#${w.sub}`, sk: w.conversation } }))).Item;
+        const body = `A week ago you sent me ${moved.length === 1 ? 'this, and I haven’t been able to file it' : 'these, and I haven’t been able to file them'}:\n${moved.map((n) => `- ${n}`).join('\n')}\n\n${moved.length === 1 ? 'It’s' : 'They’re'} in Unsorted/ in your drawer now, so nothing sits in Inbox/. Reply here with where ${moved.length === 1 ? 'it goes' : 'they go'} and I’ll file ${moved.length === 1 ? 'it' : 'them'}.\n\nMolly`;
+        if (conv?.from && (await deps.take(w.sub)).ok) {
+          await deps.send({
+            to: conv.from,
+            raw: replyMessage({ name: 'Molly', from: deps.address, to: conv.from, subject: conv.subject || 'Your files', inReplyTo: conv.lastMessageId, references: conv.references ?? [], body, date: at }),
+          });
+          // So a reply to it makes sense to her
+          const turns = [...(conv.turns ?? []), { role: 'user', text: '(A week passed with no reply.)' }, { role: 'assistant', text: body }].slice(-KEEP_TURNS);
+          await db.send(new PutCommand({ TableName: table, Item: { ...conv, turns, updatedAt: at.toISOString() } }));
+          log({ sweep: 'told', sub: w.sub, moved: moved.length });
+        } else {
+          log({ sweep: 'moved, not told', sub: w.sub, moved: moved.length, why: conv?.from ? 'daily limit' : 'no thread' });
+        }
+      }
+      await db.send(new DeleteCommand({ TableName: table, Key: { pk: w.pk, sk: w.sk } }));
+    }
+    log({ sweep: 'done', due: due.length });
   };
 }
 
@@ -282,3 +357,19 @@ export const handler = async (event) => (live ??= (() => {
     })),
   });
 })())(event);
+
+let liveSweep;
+export const sweep = async () => (liveSweep ??= (() => {
+  const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+  const ses = new SESv2Client({});
+  const idp = new CognitoIdentityProviderClient({});
+  const take = makeSendLimit({ db, table: process.env.SENDS_TABLE });
+  return createSweep({
+    archive: liveApi(), db, table: process.env.TABLE, address: process.env.MOLLY_ADDRESS, take,
+    isMember: async (username) => ((await idp.send(new AdminListGroupsForUserCommand({ UserPoolId: process.env.USER_POOL_ID, Username: username }))).Groups ?? [])
+      .some((g) => g.GroupName === process.env.GROUP),
+    send: ({ to, raw }) => ses.send(new SendEmailCommand({
+      FromEmailAddress: process.env.MOLLY_ADDRESS, Destination: { ToAddresses: [to] }, Content: { Raw: { Data: Buffer.from(raw) } },
+    })),
+  });
+})())();

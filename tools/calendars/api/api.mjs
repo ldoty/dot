@@ -9,6 +9,10 @@
 //   PUT    /events/{calendar}/{eventId}     { only what changes } -> the event                         edit
 //   DELETE /events/{calendar}/{eventId}     edit. From Dot: 202 { confirm_id, prompt } first, then again with
 //                                           ?confirm_id= (Dot's code sends it only after the person's own reply)
+//   POST   /events/{calendar}/{eventId}/invite  { emails? } -> { sent: [email] }   edit. Emails a calendar invitation
+//                                           (invite.mjs) to the people noted on the event (all, or those given), from
+//                                           invites@ with the person as organizer. From Dot: 202 { confirm_id, prompt }
+//                                           first, like a delete. At most INVITES_PER_DAY a person a day
 //   GET    /admin                           -> { calendars, grants, people, groups }       family_calendars:admin,
 //   PUT    /calendars/{alias}               { googleId } -> the calendar (checked live    never via Dot
 //                                           with Google: shared with Dot's account, and how)
@@ -21,13 +25,15 @@
 //
 // Rows: CAL / <alias>     { googleId, name, role (Google's: reader | writer | owner), rev, addedBy, addedAt }
 //       GRANT / <id>      { who: sub:… | group:…, calendar: alias | '*', level, rev, changedBy, changedAt }
-//       PENDING / <id>    an event deletion waiting for its confirmation (2 minutes)
+//       PENDING / <id>    an event deletion or invitation waiting for its confirmation (2 minutes)
+//       INVITES#<sub> / <date>  { n, rev }: invitations they sent that day
 import { randomBytes } from 'node:crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { verifyAccessToken } from './verify-token.mjs';
 import { makePeople } from './people.mjs';
 import { makeCalendar } from './google-calendar.mjs';
+import { icsInvite, inviteMessage, whenText } from './invite.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const ALIAS = /^[a-z][a-z0-9_]{0,23}$/;
@@ -36,6 +42,7 @@ const WHO = /^(sub:[0-9a-f-]{36}|group:g[a-z0-9]{8,20})$/;
 const GOOGLE_ID = /^[A-Za-z0-9._%+-]{1,200}@[A-Za-z0-9.-]{1,120}$/;
 const LEVELS = ['none', 'read', 'edit'];
 const CONFIRM_MS = 2 * 60_000;
+export const INVITES_PER_DAY = 30;
 const ADMIN_ROUTES = ['GET /admin', 'PUT /calendars/{alias}', 'DELETE /calendars/{alias}', 'PUT /grants/{id}', 'DELETE /grants/{id}'];
 
 const json = (statusCode, body) => ({
@@ -54,7 +61,10 @@ export function levelsFor({ sub, groupIds }, grants, aliases) {
   return Object.fromEntries(Object.entries(out).map(([a, r]) => [a, LEVELS[r]]));
 }
 
-/** deps: table, group, issuer, clientIds, dotClientId, people, members(), google: { accessToken, fetch? }, timeZone, now() */
+/**
+ * deps: table, group, issuer, clientIds, dotClientId, people, members() -> [{ sub, name, email }],
+ *   google: { accessToken, fetch? }, timeZone, now(), invites: { from, send({ to, raw }) }
+ */
 export function createApi(deps) {
   const { table } = deps;
   const get = async (pk, sk) => (await db.send(new GetCommand({ TableName: table, Key: { pk, sk } }))).Item;
@@ -225,6 +235,54 @@ export function createApi(deps) {
         }
         return run(() => cal.deleteEvent({ calendar: p.calendar, event_id: p.eventId }));
       }
+      case 'POST /events/{calendar}/{eventId}/invite': {
+        // The event as it is now, from a calendar they may change (403 otherwise)
+        let ev;
+        try {
+          ev = await cal.getEvent({ calendar: p.calendar, event_id: p.eventId, writable: true });
+        } catch (e) {
+          return json(/^Unknown calendar|read-only for you/.test(e.message) ? 403 : 502, { error: e.message });
+        }
+        if (ev.cancelled) return json(404, { error: 'that event was deleted' });
+        const noted = (ev.people ?? []).filter((x) => x.email);
+        const asked = Array.isArray(body.emails) ? body.emails.map((x) => String(x).trim().toLowerCase()) : null;
+        const to = asked ? noted.filter((x) => asked.includes(x.email.toLowerCase())) : noted;
+        if (asked && to.length !== asked.length) return json(400, { error: 'invitations go to people noted on the event: add them to its people first' });
+        if (!to.length) return json(400, { error: 'nobody on this event has an email address to invite' });
+        const me = (await deps.members()).find((m) => m.sub === sub);
+        if (!me?.email) return json(400, { error: 'your account has no email address to send invitations from' });
+        const summary = whenText(ev, deps.timeZone);
+        if (viaDot) {
+          const confirmId = q.confirm_id;
+          if (!confirmId) {
+            const id = randomBytes(12).toString('hex');
+            await db.send(new PutCommand({ TableName: table, Item: { pk: 'PENDING', sk: id, kind: 'invite', who: sub, calendar: p.calendar, eventId: p.eventId, emails: to.map((x) => x.email), until: deps.now().getTime() + CONFIRM_MS, expires: Math.floor(deps.now().getTime() / 1000) + 86_400 } }));
+            const names = to.map((x) => (x.name ? `${x.name} (${x.email})` : x.email)).join(', ');
+            return json(202, { confirm_id: id, prompt: `Email an invitation to “${ev.title}” (${summary}) to ${names}, from you?` });
+          }
+          // Single use, the same person, the same event and the same people, within two minutes
+          const pending = /^[a-f0-9]{24}$/.test(confirmId) ? await get('PENDING', confirmId) : null;
+          if (pending) await del('PENDING', confirmId);
+          if (!pending || pending.kind !== 'invite' || pending.who !== sub || pending.calendar !== p.calendar || pending.eventId !== p.eventId
+            || pending.until < deps.now().getTime() || JSON.stringify(pending.emails) !== JSON.stringify(to.map((x) => x.email))) {
+            return json(400, { error: 'that confirmation doesn’t match or has expired; ask again' });
+          }
+        }
+        // Counted before sending, so two at once can't both pass the limit
+        const dayKey = { pk: `INVITES#${sub}`, sk: at.slice(0, 10) };
+        const row = await get(dayKey.pk, dayKey.sk);
+        if ((row?.n ?? 0) + to.length > INVITES_PER_DAY) return json(429, { error: `that’s past today’s limit of ${INVITES_PER_DAY} invitations` });
+        if (!(await putAt({ ...dayKey, n: (row?.n ?? 0) + to.length, rev: (row?.rev ?? 0) + 1, expires: Math.floor(deps.now().getTime() / 1000) + 3 * 86_400 }, row?.rev))) {
+          return json(409, { error: 'try again' });
+        }
+        const organizer = { name: (await deps.people.names()).get(sub) ?? me.name, email: me.email };
+        const ics = icsInvite({ event: ev, organizer, attendees: to, now: deps.now() });
+        for (const x of to) {
+          await deps.invites.send({ to: x.email, raw: inviteMessage({ from: deps.invites.from, organizer, to: x.email, event: ev, ics, summary }) });
+        }
+        console.log('invited', JSON.stringify({ calendar: p.calendar, event: p.eventId, n: to.length, by: claims.username, viaDot }));
+        return json(200, { sent: to.map((x) => x.email), event: ev.title, when: summary });
+      }
       default:
         return json(404, { error: 'no route' });
     }
@@ -242,7 +300,7 @@ async function members() {
     const r = await idp.send(new ListUsersInGroupCommand({ UserPoolId: process.env.USER_POOL_ID, GroupName: process.env.GROUP, NextToken }));
     for (const u of r.Users) {
       const attr = (n) => u.Attributes?.find((a) => a.Name === n)?.Value;
-      out.push({ sub: attr('sub') ?? u.Username, name: attr('name') || attr('given_name') || attr('email') || u.Username });
+      out.push({ sub: attr('sub') ?? u.Username, name: attr('name') || attr('given_name') || attr('email') || u.Username, email: attr('email_verified') === 'true' ? attr('email') : null });
     }
     NextToken = r.NextToken;
   } while (NextToken);
@@ -266,4 +324,11 @@ export const handler = createApi({
   clientIds: [env.CLIENT_ID, env.DOT_CLIENT_ID].filter(Boolean), dotClientId: env.DOT_CLIENT_ID,
   people: makePeople({ db, table: env.PEOPLE_TABLE }), members,
   google: { accessToken: googleToken }, timeZone: env.TIME_ZONE ?? 'America/New_York', now: () => new Date(),
+  invites: {
+    from: env.INVITE_ADDRESS,
+    send: async ({ to, raw }) => {
+      const { SESv2Client, SendEmailCommand } = await import('@aws-sdk/client-sesv2');
+      await new SESv2Client({}).send(new SendEmailCommand({ FromEmailAddress: env.INVITE_ADDRESS, Destination: { ToAddresses: [to] }, Content: { Raw: { Data: Buffer.from(raw) } } }));
+    },
+  },
 });

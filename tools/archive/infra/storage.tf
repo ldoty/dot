@@ -62,6 +62,14 @@ resource "aws_s3_bucket_lifecycle_configuration" "files" {
     noncurrent_version_expiration { noncurrent_days = 30 }
     expiration { expired_object_delete_marker = true }
   }
+  # What a bulk upload dropped off: copied into f/ within minutes, then not needed
+  rule {
+    id     = "incoming-2-days"
+    status = "Enabled"
+    filter { prefix = "incoming/" }
+    expiration { days = 2 }
+    noncurrent_version_expiration { noncurrent_days = 1 }
+  }
   rule {
     id     = "unfinished-uploads"
     status = "Enabled"
@@ -99,7 +107,7 @@ resource "aws_s3_bucket_cors_configuration" "files" {
   }
 }
 
-# Every new file goes to intake
+# Every new file goes to intake; every file a bulk upload drops in incoming/ goes to bulk (bulk.tf)
 resource "aws_s3_bucket_notification" "files" {
   bucket = aws_s3_bucket.files.id
   lambda_function {
@@ -107,5 +115,10 @@ resource "aws_s3_bucket_notification" "files" {
     events              = ["s3:ObjectCreated:*"]
     filter_prefix       = "f/"
   }
-  depends_on = [aws_lambda_permission.intake]
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.bulk.arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = "incoming/"
+  }
+  depends_on = [aws_lambda_permission.intake, aws_lambda_permission.bulk]
 }

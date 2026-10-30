@@ -4,7 +4,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { LUKE, archiveApi, bucket, call, intake, reset, table, upload } from './helpers/archive.mjs';
 import { tinyPdf } from './helpers/pdf.mjs';
-import { createMolly, documentsIn, SYSTEM } from '../api/molly.mjs';
+import { createMolly, createSweep, documentsIn, SYSTEM } from '../api/molly.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }));
 const FROM = 'luke@example.com';
@@ -50,6 +50,7 @@ const words = (raw) => Buffer.from(raw.split('\r\n\r\n')[1].replace(/\s/g, ''), 
 const say = (text) => ({ stop_reason: 'end_turn', usage: {}, content: [{ type: 'text', text }] });
 const use = (name, input, id = `tu_${name}`) => ({ stop_reason: 'tool_use', usage: {}, content: [{ type: 'tool_use', id, name, input }] });
 
+let clock = new Date('2026-10-30T15:00:00Z');
 function molly(turns) {
   const sent = [], mail = new Map();
   const { client, calls } = fakeClaude(turns);
@@ -59,13 +60,13 @@ function molly(turns) {
     // S3 keeps the bytes; the bucket event starts intake
     putFile: async (key, bytes) => { bucket.set(key, bytes); await intake({ Records: [{ s3: { object: { key } } }] }); },
     send: async (m) => sent.push(m),
-    sleep: async () => {}, log: () => {},
+    sleep: async () => {}, log: () => {}, now: () => clock,
   });
   const deliver = (key, raw) => { mail.set(key, raw); return run({ userId: LUKE, username: LUKE, from: FROM, bucket: 'dot-y-mail-x', key }); };
   return { deliver, sent, calls };
 }
 
-beforeEach(reset);
+beforeEach(() => { reset(); clock = new Date('2026-10-30T15:00:00Z'); });
 
 test('attachments are saved in Inbox/, read by a reader with no tools, described, then filed by Molly; the reply is threaded', async () => {
   let fileId;
@@ -162,4 +163,61 @@ test('attachments: logos and signatures aren’t documents; too many or too big 
   const { docs, skipped } = documentsIn([small, doc, huge]);
   assert.deepEqual(docs.map((d) => d.name), ['a b.pdf']);
   assert.equal(skipped, 1);
+});
+
+// --- a week later: the sweep ---
+function sweeper({ member = true, limit = true } = {}) {
+  const sent = [], taken = [];
+  const run = createSweep({
+    archive: archiveApi, db, table: 'family-archive', address: 'molly@dot-y.co', now: () => clock, log: () => {},
+    take: async (sub) => { taken.push(sub); return { ok: limit }; }, isMember: async () => member, send: async (m) => sent.push(m),
+  });
+  return { run, sent, taken };
+}
+const two = [{ name: 'a.txt', type: 'text/plain', bytes: Buffer.from('first thing') }, { name: 'b.txt', type: 'text/plain', bytes: Buffer.from('second thing') }];
+
+test('a week on, what’s still in Inbox/ goes to Unsorted/, and she says so once, in the thread', async () => {
+  let ids;
+  const m = molly([
+    (params) => {
+      ids = [...params.messages.at(-1).content.matchAll(/"id": "(f\d+)"/g)].map((x) => x[1]);
+      return use('update', { id: ids[0], rev: 3, folder: 'Notes' });
+    },
+    say('Filed a.txt in Notes. Whose is b.txt?\n\nMolly'),
+  ]);
+  await m.deliver('molly/abc1', email({ attachments: two }));
+  const s = sweeper();
+  await s.run();
+  assert.equal(s.sent.length, 0, 'not due yet');
+  clock = new Date(clock.getTime() + 8 * 86_400_000);
+  await s.run();
+  assert.equal((await call('GET', `/files/${ids[0]}`)).body.folder, 'Notes', 'what she filed stays put');
+  assert.equal((await call('GET', `/files/${ids[1]}`)).body.folder, 'Unsorted');
+  assert.equal(s.sent.length, 1);
+  assert.deepEqual(s.taken, [LUKE], 'counted toward the daily limit');
+  assert.match(s.sent[0].raw, /^In-Reply-To: <m1@example\.com>/m);
+  assert.match(words(s.sent[0].raw), /b\.txt[\s\S]*Unsorted\//);
+  assert.doesNotMatch(words(s.sent[0].raw), /a\.txt/);
+  await s.run();
+  assert.equal(s.sent.length, 1, 'once');
+  // Her reply to it has the follow-up in the conversation
+  const conv = table.get(`MOLLY#${LUKE}`, [...table.dump()].find(([k]) => k.startsWith(`MOLLY#${LUKE}|`))[0].split('|')[1]);
+  assert.match(conv.turns.at(-1).text, /Unsorted/);
+});
+
+test('the sweep moves files even past the daily limit, and does nothing for someone no longer a member', async () => {
+  const m = molly([say('Whose are these?\n\nMolly')]);
+  await m.deliver('molly/abc1', email({ attachments: two }));
+  clock = new Date(clock.getTime() + 8 * 86_400_000);
+  const out = sweeper({ member: false });
+  await out.run();
+  assert.equal((await call('GET', '/files?folder=Inbox')).body.total, 2);
+  // (the row is gone either way: one check per email)
+  const m2 = molly([say('Whose are these?\n\nMolly')]);
+  await m2.deliver('molly/abc2', email({ attachments: [{ name: 'c.txt', type: 'text/plain', bytes: Buffer.from('third') }], messageId: '<m9@example.com>' }));
+  clock = new Date(clock.getTime() + 8 * 86_400_000);
+  const capped = sweeper({ limit: false });
+  await capped.run();
+  assert.equal(capped.sent.length, 0);
+  assert.equal((await call('GET', '/files?folder=Unsorted')).body.total, 1);
 });

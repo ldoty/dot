@@ -2,7 +2,7 @@ locals {
   routes = [
     "GET /dot", "GET /drawers", "PUT /drawers/{id}", "GET /files", "GET /files/{id}", "GET /files/{id}/text", "GET /files/{id}/download",
     "POST /uploads", "PATCH /files/{id}", "PUT /files/{id}/links/{to}", "DELETE /files/{id}/links/{to}",
-    "DELETE /files/{id}", "GET /share-options",
+    "DELETE /files/{id}", "GET /share-options", "POST /batches", "GET /batches/{id}",
   ]
 }
 
@@ -53,6 +53,8 @@ resource "aws_iam_role_policy" "api_table" {
       { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:Query"], Resource = nonsensitive(data.aws_ssm_parameter.people_table_arn.value) },
       { Effect = "Allow", Action = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"], Resource = "${aws_s3_bucket.files.arn}/f/*" },
       { Effect = "Allow", Action = ["s3:GetObject", "s3:DeleteObject"], Resource = "${aws_s3_bucket.files.arn}/text/*" },
+      # Bulk uploads: become the uploader role, narrowed to one batch's prefix (bulk.tf)
+      { Effect = "Allow", Action = "sts:AssumeRole", Resource = aws_iam_role.uploader.arn },
       { Effect = "Allow", Action = "cognito-idp:ListUsersInGroup", Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}" },
       { Effect = "Allow", Action = ["kms:Decrypt", "kms:GenerateDataKey"], Resource = aws_kms_key.files.arn },
     ]
@@ -79,6 +81,8 @@ resource "aws_lambda_function" "api" {
       PEOPLE_TABLE        = element(split("/", nonsensitive(data.aws_ssm_parameter.people_table_arn.value)), 1)
       BUCKET              = aws_s3_bucket.files.id
       USER_POOL_ID        = local.pool_id
+      UPLOADER_ROLE       = aws_iam_role.uploader.arn
+      FILES_KEY           = aws_kms_key.files.arn
     }
   }
 }
@@ -144,7 +148,7 @@ resource "aws_lambda_permission" "api" {
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }
 
-# Where Claude Code (platform/mcp) finds this tool, and later Dot
+# Where Dot and Claude Code (platform/mcp) find this tool
 resource "aws_ssm_parameter" "delegation" {
   name        = "/family/delegation/${local.name}"
   description = "Archive API and delegated client, for Claude Code"

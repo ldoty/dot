@@ -10,13 +10,16 @@
 //   GET    /files/{id}/download      -> { url, expires }   a link to the file itself, for 5 minutes
 //   POST   /uploads                  { drawer, folder?, files: [{ name, size, sha256, type }] }
 //                                     -> per file { status: 'upload', id, url, headers } or { status: 'duplicate', id, … }
+//   POST   /batches                  { drawer, folder? } -> { id, credentials, command, … }   a whole folder at once: an
+//                                     hour's credentials that may only write into incoming/<sub>/<batch>/ (bulk.mjs files each)
+//   GET    /batches/{id}             -> { filed, duplicates, refused: [{ path, why }] }   how a batch went (its maker only)
 //   PATCH  /files/{id}               { rev, name?, folder?, drawer?, title?, summary?, kind?, docDate?, tags?, status? }
 //                                     rename, move, describe; status 'trash' or 'filed' (restore)
 //   PUT    /files/{id}/links/{to}    { relation }   edit on the file, read on the other
 //   DELETE /files/{id}/links/{to}
 //   DELETE /files/{id}               delete for good: a file in the trash, by its drawer's owner, from the page only
 //   GET    /share-options            -> { people: [{ sub, name }], groups: [{ id, name }] }   who a drawer can be shared with
-//   GET    /dot                      the manifest (dot.mjs): how Claude Code (platform/mcp) and later Dot use this
+//   GET    /dot                      the manifest (dot.mjs): how Dot and Claude Code (platform/mcp) use this
 //
 // Uploads go straight to S3 with a presigned PUT that carries the file's size and SHA-256 checksum, so
 // S3 refuses other bytes, and no file passes through this Lambda. The row says 'uploading' until intake
@@ -34,6 +37,8 @@
 //       H#<sha256> / <fileId>     { drawer }: files with these bytes (written by intake)
 //       L#<fileId> / <otherId>    { relation, dir: 'to' | 'from' }: a link, stored both ways
 //       LOG#<drawer> / <time>#<fileId>#<n>   { by, via, action, detail }: everything done in a drawer
+//       BATCH / <batchId>         { sub, username, drawer, folder, expires }: a bulk upload
+//       B#<batchId> / <path>      { status: 'filed' | 'duplicate' | 'refused', id?, why? }: what became of each file
 // The token is re-verified here (signature, issuer, client, expiry, group); API Gateway's
 // authorizer is not trusted on its own.
 import { randomBytes } from 'node:crypto';
@@ -53,6 +58,8 @@ const MAX_FILES = 50;
 const TEXT_CHUNK = 20_000;
 const UPLOAD_TTL_S = 15 * 60;
 const DOWNLOAD_TTL_S = 5 * 60;
+const BATCH_TTL_S = 60 * 60; // the longest a chained role session may last
+const BATCH_ID = /^b[a-z0-9]{16}$/;
 const BORROWED_WRITES = new Set(writeRoutes(MANIFEST));
 const ID = /^f[a-z0-9]{16}$/;
 const DRAWER_ID = /^[a-z0-9][a-z0-9-]{1,39}$/;
@@ -100,7 +107,8 @@ const newId = () => `f${BigInt(`0x${randomBytes(10).toString('hex')}`).toString(
 /**
  * deps: table, group, issuer, clientId, delegatedClientId?, db (document client), people (people.mjs),
  *   members() -> [{ sub, name }] (everyone in family_archive, to share with),
- *   files: { putUrl({ key, size, sha256, type }) -> url, getUrl({ key, name }) -> url, text(key) -> string | null, remove(key) },
+ *   files: { putUrl({ key, size, sha256, type }) -> url, getUrl({ key, name }) -> url, text(key) -> string | null, remove(key),
+ *     bucket, credentials({ prefix, expiresIn }) -> { accessKeyId, secretAccessKey, sessionToken, expiration } },
  *   now?, newId?
  */
 export function createApi(deps) {
@@ -337,6 +345,40 @@ export function createApi(deps) {
           return json(200, { drawer: d.row.sk, folder, files: out, expires: new Date(now().getTime() + UPLOAD_TTL_S * 1000).toISOString() });
         }
 
+        case 'POST /batches': {
+          const d = await drawer(str(body.drawer, 60) || 'mine');
+          if (d.level === 'none') return json(404, { error: 'no such drawer' });
+          if (!atLeast(d.level, 'edit')) return json(403, { error: 'you can only see this drawer' });
+          const folder = cleanFolder(body.folder);
+          const id = `b${makeId().slice(1)}`;
+          const prefix = `incoming/${sub}/${id}/`;
+          const expires = new Date(now().getTime() + BATCH_TTL_S * 1000).toISOString();
+          await put({ pk: 'BATCH', sk: id, sub, username: claims.username, drawer: d.row.sk, folder, createdAt: at(), expires, via }, { ConditionExpression: 'attribute_not_exists(pk)' });
+          const c = await files.credentials({ prefix, expiresIn: BATCH_TTL_S });
+          await log(d.row.sk, null, 'bulk upload started', { batch: id, folder });
+          const dest = `s3://${files.bucket}/${prefix}`;
+          return json(200, {
+            id, drawer: d.row.sk, folder, expires: c.expiration ?? expires,
+            credentials: { accessKeyId: c.accessKeyId, secretAccessKey: c.secretAccessKey, sessionToken: c.sessionToken },
+            // cp, not sync: these credentials may write there, and nothing else (sync would need to list)
+            command: `AWS_ACCESS_KEY_ID=${c.accessKeyId} AWS_SECRET_ACCESS_KEY=${c.secretAccessKey} AWS_SESSION_TOKEN=${c.sessionToken} aws s3 cp <folder> ${dest} --recursive --region us-east-1 --checksum-algorithm SHA256 --exclude ".*" --exclude "*/.*"`,
+            note: 'Each file lands in the drawer under the folder given, keeping its subfolders, within a minute or so. Files over 100 MB are refused. Check with the batch tool.',
+          });
+        }
+
+        case 'GET /batches/{id}': {
+          const id = event.pathParameters.id;
+          if (!BATCH_ID.test(id || '')) return json(400, { error: 'bad id' });
+          const b = await get('BATCH', id);
+          if (!b || b.sub !== sub) return json(404, { error: 'no such batch' });
+          const rows = await query(`B#${id}`);
+          const count = (st) => rows.filter((r) => r.status === st).length;
+          return json(200, {
+            id, drawer: b.drawer, folder: b.folder, expires: b.expires, filed: count('filed'), duplicates: count('duplicate'),
+            refused: rows.filter((r) => r.status === 'refused').map((r) => ({ path: r.sk, why: r.why })),
+          });
+        }
+
         case 'PATCH /files/{id}': {
           const id = event.pathParameters.id;
           const { row, drawer: d } = await file(id, 'edit');
@@ -458,6 +500,22 @@ function liveFiles(bucket) {
       Bucket: bucket, Key: key, ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
     }), { expiresIn }),
     remove: (key) => s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })),
+    bucket,
+    // An hour as the uploader role, narrowed by a session policy to this one batch's prefix
+    credentials: async ({ prefix, expiresIn }) => {
+      const { STSClient, AssumeRoleCommand } = await import('@aws-sdk/client-sts');
+      const r = await new STSClient({}).send(new AssumeRoleCommand({
+        RoleArn: process.env.UPLOADER_ROLE, RoleSessionName: `batch-${prefix.split('/')[2]}`, DurationSeconds: expiresIn,
+        Policy: JSON.stringify({
+          Version: '2012-10-17',
+          Statement: [
+            { Effect: 'Allow', Action: 's3:PutObject', Resource: `arn:aws:s3:::${bucket}/${prefix}*` },
+            { Effect: 'Allow', Action: 'kms:GenerateDataKey', Resource: process.env.FILES_KEY },
+          ],
+        }),
+      }));
+      return { accessKeyId: r.Credentials.AccessKeyId, secretAccessKey: r.Credentials.SecretAccessKey, sessionToken: r.Credentials.SessionToken, expiration: r.Credentials.Expiration?.toISOString() };
+    },
     text: async (key) => {
       try {
         return await (await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))).Body.transformToString();
