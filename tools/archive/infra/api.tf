@@ -1,21 +1,27 @@
 locals {
-  # The page's routes (none yet; they come with the catalog)
-  routes = []
+  routes = [
+    "GET /dot", "GET /drawers", "PUT /drawers/{id}", "GET /files", "GET /files/{id}", "GET /files/{id}/text", "GET /files/{id}/download",
+    "POST /uploads", "PATCH /files/{id}", "PUT /files/{id}/links/{to}", "DELETE /files/{id}/links/{to}",
+  ]
 }
 
-# The tool's handler plus the platform's shared token check
+# The handler with the platform's token check, sharing rules, family groups and manifest, bundled with
+# the S3 presigner by `npm run build`
 data "archive_file" "api" {
   type        = "zip"
   output_path = "${path.module}/.build/api.zip"
   source {
-    content  = file("${path.module}/../api/api.mjs")
+    content  = file("${path.module}/../api/dist/api.mjs")
     filename = "api.mjs"
   }
-  source {
-    content  = file("${path.module}/../../../platform/api/verify-token.mjs")
-    filename = "verify-token.mjs"
-  }
 }
+
+# The family's groups (platform/family): read only, for sharing a drawer with a group
+data "aws_ssm_parameter" "people_table_arn" {
+  name = "/family/people/table-arn"
+}
+
+data "aws_caller_identity" "current" {}
 
 resource "aws_iam_role" "api" {
   name = "family-archive-api"
@@ -34,15 +40,19 @@ resource "aws_iam_role_policy_attachment" "api_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+# Its table and the family's groups; the files only to sign uploads into f/ and downloads from it,
+# and to read what intake wrote. It never deletes an object.
 resource "aws_iam_role_policy" "api_table" {
   role = aws_iam_role.api.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Query"]
-      Resource = aws_dynamodb_table.main.arn
-    }]
+    Statement = [
+      { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Query"], Resource = aws_dynamodb_table.main.arn },
+      { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:Query"], Resource = nonsensitive(data.aws_ssm_parameter.people_table_arn.value) },
+      { Effect = "Allow", Action = ["s3:PutObject", "s3:GetObject"], Resource = "${aws_s3_bucket.files.arn}/f/*" },
+      { Effect = "Allow", Action = "s3:GetObject", Resource = "${aws_s3_bucket.files.arn}/text/*" },
+      { Effect = "Allow", Action = ["kms:Decrypt", "kms:GenerateDataKey"], Resource = aws_kms_key.files.arn },
+    ]
   })
 }
 
@@ -53,15 +63,18 @@ resource "aws_lambda_function" "api" {
   handler          = "api.handler"
   filename         = data.archive_file.api.output_path
   source_code_hash = data.archive_file.api.output_base64sha256
-  timeout          = 10
-  memory_size      = 256
+  timeout          = 29 # search reads every drawer it may; API Gateway waits 29s
+  memory_size      = 512
 
   environment {
     variables = {
-      TABLE     = aws_dynamodb_table.main.name
-      GROUP     = module.app.member_group
-      ISSUER    = local.issuer
-      CLIENT_ID = module.app.client_id
+      TABLE               = aws_dynamodb_table.main.name
+      GROUP               = module.app.member_group
+      ISSUER              = local.issuer
+      CLIENT_ID           = module.app.client_id
+      DELEGATED_CLIENT_ID = module.app.delegated_client_id
+      PEOPLE_TABLE        = element(split("/", nonsensitive(data.aws_ssm_parameter.people_table_arn.value)), 1)
+      BUCKET              = aws_s3_bucket.files.id
     }
   }
 }
@@ -76,7 +89,7 @@ resource "aws_apigatewayv2_api" "api" {
   protocol_type = "HTTP"
   cors_configuration {
     allow_origins = [trimsuffix(local.app_url, "/"), trimsuffix(local.dev_url, "/")]
-    allow_methods = ["GET", "PUT", "DELETE"]
+    allow_methods = ["GET", "PUT", "POST", "PATCH", "DELETE"]
     allow_headers = ["authorization", "content-type"]
     max_age       = 600
   }
@@ -89,7 +102,7 @@ resource "aws_apigatewayv2_authorizer" "cognito" {
   identity_sources = ["$request.header.Authorization"]
   jwt_configuration {
     issuer   = local.issuer
-    audience = [module.app.client_id]
+    audience = [module.app.client_id, module.app.delegated_client_id]
   }
 }
 
@@ -125,4 +138,15 @@ resource "aws_lambda_permission" "api" {
   function_name = aws_lambda_function.api.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+# Where Claude Code (platform/mcp) finds this tool, and later Dot
+resource "aws_ssm_parameter" "delegation" {
+  name        = "/family/delegation/${local.name}"
+  description = "Archive API and delegated client, for Claude Code"
+  type        = "String"
+  value = jsonencode({
+    api_url   = aws_apigatewayv2_api.api.api_endpoint
+    client_id = module.app.delegated_client_id
+  })
 }

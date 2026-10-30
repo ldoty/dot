@@ -38,6 +38,8 @@ module "app" {
   name          = local.name
   user_pool_id  = local.pool_id
   callback_urls = [local.app_url, local.dev_url]
+  delegated     = true    # used as the person through its GET /dot manifest:
+  delegates     = ["mcp"] # Claude Code (platform/mcp) for now; Dot when it's ready for it
   tile = {
     title       = "Archive"
     description = "The family’s documents, filed by Molly."
