@@ -37,7 +37,8 @@ module "app" {
   name          = local.name
   user_pool_id  = local.pool_id
   callback_urls = [local.app_url, local.dev_url]
-  delegated     = true # Dot reads lists for the person asking (GET /dot), and changes ones they can edit
+  delegated     = true           # Dot reads lists for the person asking (GET /dot), and changes ones they can edit
+  delegates     = ["dot", "mcp"] # and Claude Code (platform/mcp), as the person
   tile = {
     title       = "Lists"
     description = "To-dos, checklists and reminders, shared or just yours."

@@ -9,6 +9,8 @@ module "finances" {
   tile_description = "Luke’s accounts, filed under his budget: how each line is tracking this month."
   person           = "Luke"
   partition        = "LUKE"
+  # Dot, Shared Finances (the shared accounts), and Claude Code (platform/mcp)
+  delegates = ["dot", "shared_finances", "mcp"]
   owner = {
     sub      = "44f8c468-4011-70b8-76aa-ec2b68b0b004"
     username = "44f8c468-4011-70b8-76aa-ec2b68b0b004"

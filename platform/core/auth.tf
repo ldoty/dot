@@ -290,6 +290,7 @@ variable "delegation_signers" {
     luke_finances   = { users = ["44f8c468-4011-70b8-76aa-ec2b68b0b004"] }                                         # Luke
     amber_finances  = { users = ["74c8b418-e0b1-7075-7ae5-ca791980dd07"] }                                         # Amber
     shared_finances = { users = ["44f8c468-4011-70b8-76aa-ec2b68b0b004", "74c8b418-e0b1-7075-7ae5-ca791980dd07"] } # reads each personal tool as its owner
+    mcp             = { users = ["44f8c468-4011-70b8-76aa-ec2b68b0b004"] }                                         # platform/mcp: Claude Code, as Luke for now
   }
 }
 

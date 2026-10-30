@@ -33,6 +33,8 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/sms` | (API only) | | Dot-y texting program: opt-in consent records, and Twilio’s webhook that hands members’ texts to Dot |
 | `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail; dot@dot-y.co: the gate that hands members’ mail to Dot |
 | `platform/billing` | | | Account-wide $75/mo budget + cost anomaly alerts |
+| `tools/archive` | archive.dot-y.co | `family_archive` | The family's documents, kept by Molly (molly@dot-y.co, coming): drawers, a catalog, files in S3. In progress |
+| `platform/mcp` | (API only) | `family_mcp` | The family's tools in Claude Code: one remote MCP server that finds tools the way Dot does and borrows the person's token on each (signer `mcp`). Notes in `platform/mcp/README.md` |
 | `platform/family` | dot-y.co/family | `family_admin` | The family's groups and display names, shared by every tool (table `family-people`); tools read them with `platform/api/people.mjs` |
 
 AWS account `921782276410`, region `us-east-1`, CLI profile **`ldoty`**. State bucket
@@ -68,7 +70,8 @@ person* from the other tool's **delegated client** (`platform/api/delegation.mjs
   `POST /commands` (Dot's `house_control`), editing lists the person can edit (Dot's `lists_change`), never sharing, and events on calendars they may change (Dot's calendar tools). Reads are audited by the reader.
 
 Current links: Dot → any tool with a manifest (today the three finances tools, House, Lists and Health); finances tools → Budget (as their person);
-Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`).
+Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`); Claude Code (`platform/mcp`, signer `mcp`, Luke only for now) → the tools
+whose `delegates` list `"mcp"` (Luke’s and Shared Finances, House, Lists, Health). It never confirms a write that needs the person's OK.
 
 ### Dot (the assistant) and tool discovery
 
@@ -172,7 +175,7 @@ npm run test:live
 | `/family/core/delegation-key-arn`, `/family/core/signers/<name>` | Dot's and the other signers' KMS keys |
 | `/family/apps/<clientId>` | Each app client's access rule: `{app, group, portal, returns}` (returns = hand-off URLs); a delegated client's is `{app, group, delegated, delegates}` |
 | `/family/catalog/<group>` | Home page tile |
-| `/family/delegation/<group>` | `{api_url, client_id}` of a tool that can be read as a person |
+| `/family/delegation/<group>` | `{api_url, client_id}` of a tool that can be read as a person (by Dot, and by Claude Code through `platform/mcp`) |
 | `/family/<tool>/simplefin` | SecureString: a finances tool's SimpleFIN setup token or access URL |
 | `/family/calendar/google-key` | SecureString: the Google service-account key calendars are shared with; read only by `tools/calendars` |
 | `/family/chamber/device-key` | SecureString, set by hand: the chamber board's key for `POST /ingest` (also in its gitignored `arduino_secrets.h`) |

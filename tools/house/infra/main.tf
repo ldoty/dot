@@ -37,7 +37,8 @@ module "app" {
   name          = local.name
   user_pool_id  = local.pool_id
   callback_urls = [local.app_url, local.dev_url]
-  delegated     = true # Dot reads it for the person asking, via its GET /dot manifest
+  delegated     = true           # Dot reads it for the person asking, via its GET /dot manifest
+  delegates     = ["dot", "mcp"] # and Claude Code (platform/mcp), as the person
   tile = {
     title       = "House"
     description = "Lights and switches by room, from Home Assistant."

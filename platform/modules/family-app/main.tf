@@ -6,8 +6,6 @@
 #  - optionally a tile on the dot-y.co home page, shown only to members (/family/catalog/<name>)
 #  - optionally a delegated client: how Dot gets this app's tokens for the person asking it
 #    (read-only, same group rule; see platform/api/delegation.mjs)
-#  - optionally an MCP client: how Claude Code signs in to the app's remote MCP server (POST /mcp)
-#    as the person, through the same sign-in page and the same group rule
 
 terraform {
   required_providers {
@@ -57,16 +55,6 @@ variable "delegates" {
   description = "Signers whose assertions this app's delegated client accepts (core's delegation_signers, plus dot)."
 }
 
-variable "mcp_callback_urls" {
-  type        = list(string)
-  default     = []
-  description = "Non-empty = an MCP client for Claude Code (public, code + PKCE) returning to these localhost URLs."
-  validation {
-    condition     = alltrue([for u in var.mcp_callback_urls : can(regex("^http://localhost:[0-9]+/callback$", u))])
-    error_message = "MCP callbacks are http://localhost:<port>/callback: Claude Code listens there during sign-in."
-  }
-}
-
 variable "tile" {
   type = object({
     title       = string
@@ -91,9 +79,9 @@ resource "aws_cognito_user_group" "admin" {
 }
 
 resource "aws_cognito_user_pool_client" "this" {
-  name                                 = var.name
-  user_pool_id                         = var.user_pool_id
-  generate_secret                      = false
+  name            = var.name
+  user_pool_id    = var.user_pool_id
+  generate_secret = false
   # Tools also allow CUSTOM_AUTH: single sign-on from dot-y.co (see core/lambda/sso-auth.mjs).
   explicit_auth_flows                  = concat(["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"], var.portal ? [] : ["ALLOW_CUSTOM_AUTH"])
   allowed_oauth_flows_user_pool_client = true
@@ -175,55 +163,7 @@ resource "aws_ssm_parameter" "delegated_rule" {
   })
 }
 
-# Claude Code's client for the app's MCP server: sign-in page (code + PKCE, no secret: it runs on a
-# laptop), back to Claude Code on localhost. No CUSTOM_AUTH, so /handoff can't mint its tokens. Same
-# group rule as the app; tokens are for this client only, so the app's web routes refuse them.
-resource "aws_cognito_user_pool_client" "mcp" {
-  count                                = length(var.mcp_callback_urls) > 0 ? 1 : 0
-  name                                 = "${var.name}-mcp"
-  user_pool_id                         = var.user_pool_id
-  generate_secret                      = false
-  explicit_auth_flows                  = ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
-  allowed_oauth_flows_user_pool_client = true
-  allowed_oauth_flows                  = ["code"]
-  allowed_oauth_scopes                 = ["openid", "email", "profile"]
-  supported_identity_providers         = ["COGNITO"]
-  callback_urls                        = var.mcp_callback_urls
-  logout_urls                          = var.mcp_callback_urls
-  prevent_user_existence_errors        = "ENABLED"
-
-  access_token_validity  = 1
-  id_token_validity      = 1
-  refresh_token_validity = 30
-  token_validity_units {
-    access_token  = "hours"
-    id_token      = "hours"
-    refresh_token = "days"
-  }
-}
-
-resource "aws_cognito_managed_login_branding" "mcp" {
-  count                       = length(var.mcp_callback_urls) > 0 ? 1 : 0
-  user_pool_id                = var.user_pool_id
-  client_id                   = aws_cognito_user_pool_client.mcp[0].id
-  use_cognito_provided_values = true
-}
-
-resource "aws_ssm_parameter" "mcp_rule" {
-  count       = length(var.mcp_callback_urls) > 0 ? 1 : 0
-  name        = "/family/apps/${aws_cognito_user_pool_client.mcp[0].id}"
-  description = "Sign-in rule for Claude Code in family app ${var.name}"
-  type        = "String"
-  value = jsonencode({
-    app     = var.name
-    group   = var.open_to_all_family ? "*" : var.name
-    portal  = false
-    returns = [] # never a /handoff destination
-  })
-}
-
 output "client_id" { value = aws_cognito_user_pool_client.this.id }
 output "delegated_client_id" { value = var.delegated ? aws_cognito_user_pool_client.delegated[0].id : null }
-output "mcp_client_id" { value = length(var.mcp_callback_urls) > 0 ? aws_cognito_user_pool_client.mcp[0].id : null }
 output "member_group" { value = aws_cognito_user_group.member.name }
 output "admin_group" { value = aws_cognito_user_group.admin.name }

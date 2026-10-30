@@ -1,17 +1,9 @@
 locals {
-  # The page's routes: its own client's tokens (none yet; the page comes with the catalog)
+  # The page's routes (none yet; they come with the catalog)
   routes = []
-  # Claude Code's: the MCP client's tokens
-  mcp_routes = ["POST /mcp", "GET /mcp"]
-  # Where Claude Code finds out how to sign in (RFC 9728): no token, nothing but public metadata
-  # and its sign-in, passed through to the pool's own for the MCP client only (platform/api/mcp-auth.mjs)
-  open_routes = [
-    "GET /.well-known/oauth-protected-resource", "GET /.well-known/oauth-protected-resource/mcp",
-    "GET /.well-known/oauth-authorization-server", "GET /oauth/authorize", "POST /oauth/token",
-  ]
 }
 
-# The tool's handler plus the platform's shared token check and MCP server
+# The tool's handler plus the platform's shared token check
 data "archive_file" "api" {
   type        = "zip"
   output_path = "${path.module}/.build/api.zip"
@@ -20,20 +12,8 @@ data "archive_file" "api" {
     filename = "api.mjs"
   }
   source {
-    content  = file("${path.module}/../api/tools.mjs")
-    filename = "tools.mjs"
-  }
-  source {
     content  = file("${path.module}/../../../platform/api/verify-token.mjs")
     filename = "verify-token.mjs"
-  }
-  source {
-    content  = file("${path.module}/../../../platform/api/mcp.mjs")
-    filename = "mcp.mjs"
-  }
-  source {
-    content  = file("${path.module}/../../../platform/api/mcp-auth.mjs")
-    filename = "mcp-auth.mjs"
   }
 }
 
@@ -78,13 +58,10 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      TABLE         = aws_dynamodb_table.main.name
-      GROUP         = module.app.member_group
-      ISSUER        = local.issuer
-      CLIENT_ID     = module.app.client_id
-      MCP_CLIENT_ID = module.app.mcp_client_id
-      PUBLIC_URL    = aws_apigatewayv2_api.api.api_endpoint
-      AUTH_DOMAIN   = data.aws_ssm_parameter.auth_domain.value
+      TABLE     = aws_dynamodb_table.main.name
+      GROUP     = module.app.member_group
+      ISSUER    = local.issuer
+      CLIENT_ID = module.app.client_id
     }
   }
 }
@@ -116,20 +93,6 @@ resource "aws_apigatewayv2_authorizer" "cognito" {
   }
 }
 
-# Claude Code's tokens get their own authorizer, so they reach /mcp and nothing else. Claude Code asks
-# for a token bound to the MCP URL (RFC 8707 `resource`), and Cognito puts that URL in `aud`; the
-# authorizer checks `aud` when there is one and client_id only when there isn't, so it takes both.
-resource "aws_apigatewayv2_authorizer" "mcp" {
-  api_id           = aws_apigatewayv2_api.api.id
-  name             = "cognito-mcp"
-  authorizer_type  = "JWT"
-  identity_sources = ["$request.header.Authorization"]
-  jwt_configuration {
-    issuer   = local.issuer
-    audience = [module.app.mcp_client_id, "${aws_apigatewayv2_api.api.api_endpoint}/mcp"]
-  }
-}
-
 resource "aws_apigatewayv2_integration" "api" {
   api_id                 = aws_apigatewayv2_api.api.id
   integration_type       = "AWS_PROXY"
@@ -144,22 +107,6 @@ resource "aws_apigatewayv2_route" "api" {
   target             = "integrations/${aws_apigatewayv2_integration.api.id}"
   authorization_type = "JWT"
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
-}
-
-resource "aws_apigatewayv2_route" "mcp" {
-  for_each           = toset(local.mcp_routes)
-  api_id             = aws_apigatewayv2_api.api.id
-  route_key          = each.key
-  target             = "integrations/${aws_apigatewayv2_integration.api.id}"
-  authorization_type = "JWT"
-  authorizer_id      = aws_apigatewayv2_authorizer.mcp.id
-}
-
-resource "aws_apigatewayv2_route" "open" {
-  for_each  = toset(local.open_routes)
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = each.key
-  target    = "integrations/${aws_apigatewayv2_integration.api.id}"
 }
 
 resource "aws_apigatewayv2_stage" "default" {

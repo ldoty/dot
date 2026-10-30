@@ -37,7 +37,8 @@ module "app" {
   name          = local.name
   user_pool_id  = local.pool_id
   callback_urls = [local.app_url, local.dev_url]
-  delegated     = true # Dot reads the asker's own log (GET /dot) and adds sessions and weights they tell it about
+  delegated     = true           # Dot reads the asker's own log (GET /dot) and adds sessions and weights they tell it about
+  delegates     = ["dot", "mcp"] # and Claude Code (platform/mcp), as the person
   tile = {
     title       = "Health"
     description = "Your workouts and how you feel: log every set, and a few words a day."

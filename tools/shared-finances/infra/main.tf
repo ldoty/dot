@@ -11,7 +11,7 @@ module "finances" {
   tile_description = "The household’s joint accounts, filed under the Shared budget: how each line is tracking this month."
   mode             = "shared"
   partition        = "SHARED"
-  delegates        = ["dot"]
+  delegates        = ["dot", "mcp"]      # Dot, and Claude Code (platform/mcp)
   schedule         = "cron(0 7 * * ? *)" # after both personal tools (6:30)
   # Whose access reads the Shared budget on the nightly sync
   owner = {
