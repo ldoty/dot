@@ -3,6 +3,7 @@
 //   const call = caller(handler, ['GET /items', 'PUT /items/{id}']);
 //   const { status, body } = await call('PUT', '/items/x1', { name: 'Milk' }, token);
 //   await call('GET', '/search?q=milk', undefined, token);   // -> queryStringParameters
+//   -> { status, headers, body }
 //
 // Unknown routes get API Gateway's 404 without reaching the handler.
 export function caller(handler, routeKeys) {
@@ -23,6 +24,9 @@ export function caller(handler, routeKeys) {
       headers: token ? { authorization: `Bearer ${token}` } : {},
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    return { status: res.statusCode, body: JSON.parse(res.body) };
+    // An empty body (202, 405) comes back as undefined. headers isn't enumerable, so tests that
+    // deepEqual a whole response still compare only status and body.
+    const out = { status: res.statusCode, body: res.body ? JSON.parse(res.body) : undefined };
+    return Object.defineProperty(out, 'headers', { value: res.headers ?? {} });
   };
 }
