@@ -12,6 +12,7 @@
 //   (tools may instead be async (ctx) -> [...]: each person's own, as platform/mcp discovers them)
 //   const { status, body } = await mcp(parsedBody, ctx);   // body null: answer 202 with nothing
 //
+// structuredContent must be an object, so an array (a list of reminders) goes back as text only.
 // A run() that throws toolError(msg) answers isError with msg, for the model to read; anything else is
 // logged and answers a plain "failed", so internals never reach the conversation.
 
@@ -61,7 +62,7 @@ export function mcpServer({ name, title, version = '1', instructions, tools, log
         try {
           const out = await tool.run(args, ctx);
           const text = typeof out === 'string' ? out : JSON.stringify(out, null, 1);
-          return rpcResult(id, { content: [{ type: 'text', text }], ...(out && typeof out === 'object' ? { structuredContent: out } : {}) });
+          return rpcResult(id, { content: [{ type: 'text', text }], ...(out && typeof out === 'object' && !Array.isArray(out) ? { structuredContent: out } : {}) });
         } catch (e) {
           if (!e.toolError) log.error('tool failed', tool.name, e);
           return rpcResult(id, { content: [{ type: 'text', text: e.toolError ? e.message : `${tool.name} failed` }], isError: true });

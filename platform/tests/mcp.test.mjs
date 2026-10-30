@@ -6,6 +6,7 @@ const quiet = { error() {} };
 const mcp = mcpServer({
   name: 't', title: 'T', log: quiet, tools: [
     { name: 'ok', description: 'd', inputSchema: { type: 'object' }, run: async (a) => ({ got: a.x }) },
+    { name: 'many', description: 'd', inputSchema: { type: 'object' }, run: async () => [{ id: 1 }, { id: 2 }] },
     { name: 'said', description: 'd', inputSchema: { type: 'object' }, run: async () => { throw toolError('no such file'); } },
     { name: 'broke', description: 'd', inputSchema: { type: 'object' }, run: async () => { throw new Error('table secret-arn missing'); } },
   ],
@@ -16,6 +17,10 @@ test('tools answer text and structured content; listed without run()', async () 
   const r = await call('ok', { x: 3 });
   assert.deepEqual(r.body.result.structuredContent, { got: 3 });
   assert.match(r.body.result.content[0].text, /"got": 3/);
+  // An array isn't an object: text only, or Claude Code refuses the whole answer
+  const many = (await call('many', {})).body.result;
+  assert.equal(many.structuredContent, undefined);
+  assert.deepEqual(JSON.parse(many.content[0].text), [{ id: 1 }, { id: 2 }]);
   const list = await mcp({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
   assert.equal(list.body.result.tools[0].run, undefined);
 });
