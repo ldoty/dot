@@ -13,6 +13,9 @@
 //   POST   /batches                  { drawer, folder? } -> { id, credentials, command, … }   a whole folder at once: an
 //                                     hour's credentials that may only write into incoming/<sub>/<batch>/ (bulk.mjs files each)
 //   GET    /batches/{id}             -> { filed, duplicates, refused: [{ path, why }] }   how a batch went (its maker only)
+//   POST   /sort                     { drawer, folder?, batch? } -> { id, status: 'queued' }   Molly files them (molly.mjs):
+//                                     a folder and what's under it, or a bulk upload; she emails a summary when done
+//   GET    /sort/{id}                -> { status, files, … }   (its asker only)
 //   PATCH  /files/{id}               { rev, name?, folder?, drawer?, title?, summary?, kind?, docDate?, tags?, status? }
 //                                     rename, move, describe; status 'trash' or 'filed' (restore)
 //   PUT    /files/{id}/links/{to}    { relation }   edit on the file, read on the other
@@ -39,6 +42,8 @@
 //       LOG#<drawer> / <time>#<fileId>#<n>   { by, via, action, detail }: everything done in a drawer
 //       BATCH / <batchId>         { sub, username, drawer, folder, expires }: a bulk upload
 //       B#<batchId> / <path>      { status: 'filed' | 'duplicate' | 'refused', id?, why? }: what became of each file
+//       SORT / <sortId>           { sub, username, drawer, folder, batch, status: queued | running | done | failed, files }
+//       SORTS#<sub> / <date>      { n, rev }: sorts they asked for that day (SORTS_PER_DAY)
 // The token is re-verified here (signature, issuer, client, expiry, group); API Gateway's
 // authorizer is not trusted on its own.
 import { randomBytes } from 'node:crypto';
@@ -60,6 +65,8 @@ const UPLOAD_TTL_S = 15 * 60;
 const DOWNLOAD_TTL_S = 5 * 60;
 const BATCH_TTL_S = 60 * 60; // the longest a chained role session may last
 const BATCH_ID = /^b[a-z0-9]{16}$/;
+const SORT_ID = /^s[a-z0-9]{16}$/;
+export const SORTS_PER_DAY = 10; // each reads up to 200 documents with Claude: a ceiling on the bill
 const BORROWED_WRITES = new Set(writeRoutes(MANIFEST));
 const ID = /^f[a-z0-9]{16}$/;
 const DRAWER_ID = /^[a-z0-9][a-z0-9-]{1,39}$/;
@@ -102,6 +109,17 @@ const fileOut = (r) => ({
   createdAt: r.createdAt, updatedAt: r.updatedAt, by: r.by,
 });
 const drawerOut = (r, level) => ({ id: r.sk, name: r.name, notes: r.notes ?? '', owner: r.owner, level, share: r.share ?? [], rev: r.rev ?? 0 });
+/**
+ * What one batch's credentials may do: put objects under its own prefix, with the archive's key. Decrypt
+ * too: a big file goes up in parts (aws s3 cp switches at 8 MB), and S3 needs it to join parts under KMS.
+ */
+export const batchPolicy = ({ bucket, prefix, key }) => ({
+  Version: '2012-10-17',
+  Statement: [
+    { Effect: 'Allow', Action: 's3:PutObject', Resource: `arn:aws:s3:::${bucket}/${prefix}*` },
+    { Effect: 'Allow', Action: ['kms:GenerateDataKey', 'kms:Decrypt'], Resource: key },
+  ],
+});
 const newId = () => `f${BigInt(`0x${randomBytes(10).toString('hex')}`).toString(36).padStart(16, '0').slice(-16)}`;
 
 /**
@@ -109,6 +127,7 @@ const newId = () => `f${BigInt(`0x${randomBytes(10).toString('hex')}`).toString(
  *   members() -> [{ sub, name }] (everyone in family_archive, to share with),
  *   files: { putUrl({ key, size, sha256, type }) -> url, getUrl({ key, name }) -> url, text(key) -> string | null, remove(key),
  *     bucket, credentials({ prefix, expiresIn }) -> { accessKeyId, secretAccessKey, sessionToken, expiration } },
+ *   startSort({ id }) (starts Molly on it, without waiting),
  *   now?, newId?
  */
 export function createApi(deps) {
@@ -150,7 +169,8 @@ export function createApi(deps) {
   };
   // Molly (molly.mjs) acts as the person whose verified email the mail gate matched, in this same code,
   // and is held to a borrowed token's rules: reads, and the manifest's writes only
-  handler.as = (person, event) => route({ sub: person.sub, username: person.username, via: 'molly' }, true, event);
+  // Bulk uploads (bulk.mjs) come in the same way, as the batch's maker: `via` says which, for the file's source and the log
+  handler.as = (person, event, via = 'molly') => route({ sub: person.sub, username: person.username, via }, true, event);
   return handler;
 
   async function route(claims, borrowed, event) {
@@ -167,7 +187,7 @@ export function createApi(deps) {
     const q = event.queryStringParameters ?? {};
     const sub = claims.sub;
     const person = { sub, groupIds: new Set((await deps.people.groups()).filter((g) => g.members.includes(sub)).map((g) => g.id)) };
-    const via = claims.via === 'molly' ? 'molly' : borrowed ? 'borrowed' : 'page';
+    const via = ['molly', 'bulk'].includes(claims.via) ? claims.via : borrowed ? 'borrowed' : 'page';
     const at = () => now().toISOString();
     let logN = 0;
     const log = (drawer, fileId, action, detail) => put({ pk: `LOG#${drawer}`, sk: `${at()}#${fileId || '-'}#${logN++}`, by: claims.username, via, action, ...(detail ? { detail } : {}) });
@@ -319,7 +339,7 @@ export function createApi(deps) {
           const out = [];
           for (const f of wanted) {
             // Already here, where they can see it? Then it's that file; elsewhere doesn't count (and isn't said)
-            const dup = (await query(`H#${f.sha256}`)).find((h) => seeable.has(h.drawer));
+            const dup = (await query(`H#${f.sha256}`)).find((h) => !h.sk.startsWith('claim#') && seeable.has(h.drawer));
             if (dup) {
               const r = await get(`D#${dup.drawer}`, `F#${dup.sk}`);
               if (r && STATUSES.includes(r.status)) {
@@ -329,10 +349,24 @@ export function createApi(deps) {
             }
             const id = makeId();
             const stamp = at();
+            // The same bytes into the same drawer, still on their way (two copies of one file in one bulk upload, arriving
+            // together): the first claims them, the rest are its duplicates. A claim older than an upload's life is stale.
+            const claim = { pk: `H#${f.sha256}`, sk: `claim#${d.row.sk}`, id, name: f.name, folder, at: stamp };
+            try {
+              await put(claim, { ConditionExpression: 'attribute_not_exists(pk)' });
+            } catch (e) {
+              if (e.name !== 'ConditionalCheckFailedException') throw e;
+              const held = await get(claim.pk, claim.sk);
+              if (held && now() - new Date(held.at) < UPLOAD_TTL_S * 1000 && await get('FILE', held.id)) {
+                out.push({ name: f.name, status: 'duplicate', id: held.id, drawer: d.row.sk, folder: held.folder ?? '', existingName: held.name, arriving: true });
+                continue;
+              }
+              await put(claim);
+            }
             await put({ pk: 'FILE', sk: id, drawer: d.row.sk });
             await put({
               pk: `D#${d.row.sk}`, sk: `F#${id}`, name: f.name, folder, size: f.size, type: f.type, sha256: f.sha256,
-              status: 'uploading', source: claims.via === 'molly' ? 'email' : borrowed ? 'claude' : 'page', rev: 1, createdAt: stamp, updatedAt: stamp, by: claims.username,
+              status: 'uploading', source: { molly: 'email', bulk: 'bulk', borrowed: 'claude', page: 'page' }[via], rev: 1, createdAt: stamp, updatedAt: stamp, by: claims.username,
             }, { ConditionExpression: 'attribute_not_exists(pk)' });
             const url = await files.putUrl({ key: `f/${id}`, size: f.size, sha256: f.sha256, type: f.type, expiresIn: UPLOAD_TTL_S });
             out.push({
@@ -349,7 +383,8 @@ export function createApi(deps) {
           const d = await drawer(str(body.drawer, 60) || 'mine');
           if (d.level === 'none') return json(404, { error: 'no such drawer' });
           if (!atLeast(d.level, 'edit')) return json(403, { error: 'you can only see this drawer' });
-          const folder = cleanFolder(body.folder);
+          // Inbox/ unless they say otherwise: Molly sorts it from there (POST /sort)
+          const folder = cleanFolder(body.folder) || 'Inbox';
           const id = `b${makeId().slice(1)}`;
           const prefix = `incoming/${sub}/${id}/`;
           const expires = new Date(now().getTime() + BATCH_TTL_S * 1000).toISOString();
@@ -377,6 +412,40 @@ export function createApi(deps) {
             id, drawer: b.drawer, folder: b.folder, expires: b.expires, filed: count('filed'), duplicates: count('duplicate'),
             refused: rows.filter((r) => r.status === 'refused').map((r) => ({ path: r.sk, why: r.why })),
           });
+        }
+
+        case 'POST /sort': {
+          const d = await drawer(str(body.drawer, 60) || 'mine');
+          if (d.level === 'none') return json(404, { error: 'no such drawer' });
+          if (!atLeast(d.level, 'edit')) return json(403, { error: 'you can only see this drawer' });
+          let batch = null;
+          if (body.batch !== undefined) {
+            batch = BATCH_ID.test(body.batch || '') ? await get('BATCH', body.batch) : null;
+            if (!batch || batch.sub !== sub) return json(404, { error: 'no such batch' });
+          }
+          const folder = batch ? batch.folder : cleanFolder(body.folder);
+          const day = { pk: `SORTS#${sub}`, sk: at().slice(0, 10) };
+          const count = await get(day.pk, day.sk);
+          if ((count?.n ?? 0) >= SORTS_PER_DAY) return json(429, { error: `that’s today’s ${SORTS_PER_DAY} sorts; ask again tomorrow` });
+          try {
+            await put({ ...day, n: (count?.n ?? 0) + 1, rev: (count?.rev ?? 0) + 1 }, revCond(count));
+          } catch (e) {
+            if (e.name !== 'ConditionalCheckFailedException') throw e;
+            return json(409, { error: 'try again' });
+          }
+          const id = `s${makeId().slice(1)}`;
+          await put({ pk: 'SORT', sk: id, sub, username: claims.username, drawer: d.row.sk, folder, batch: batch ? batch.sk : null, status: 'queued', createdAt: at(), via });
+          await deps.startSort({ id });
+          await log(d.row.sk, null, 'sort asked', { sort: id, folder, ...(batch ? { batch: batch.sk } : {}) });
+          return json(200, { id, status: 'queued', drawer: d.row.sk, folder, note: 'Molly is on it: she reads and files each one, then emails a summary, with questions for anything she can’t place.' });
+        }
+
+        case 'GET /sort/{id}': {
+          const id = event.pathParameters.id;
+          if (!SORT_ID.test(id || '')) return json(400, { error: 'bad id' });
+          const r = await get('SORT', id);
+          if (!r || r.sub !== sub) return json(404, { error: 'no such sort' });
+          return json(200, { id, drawer: r.drawer, folder: r.folder, batch: r.batch, status: r.status, files: r.files ?? null, createdAt: r.createdAt, doneAt: r.doneAt ?? null });
         }
 
         case 'PATCH /files/{id}': {
@@ -466,6 +535,8 @@ export function createApi(deps) {
             await del(`L#${id}`, l.sk);
           }
           await del(`H#${row.sha256}`, id);
+          const claim = await get(`H#${row.sha256}`, `claim#${d.row.sk}`);
+          if (claim?.id === id) await del(`H#${row.sha256}`, `claim#${d.row.sk}`);
           await del(row.pk, row.sk);
           await del('FILE', id);
           await log(d.row.sk, id, 'deleted', { name: row.name });
@@ -506,13 +577,7 @@ function liveFiles(bucket) {
       const { STSClient, AssumeRoleCommand } = await import('@aws-sdk/client-sts');
       const r = await new STSClient({}).send(new AssumeRoleCommand({
         RoleArn: process.env.UPLOADER_ROLE, RoleSessionName: `batch-${prefix.split('/')[2]}`, DurationSeconds: expiresIn,
-        Policy: JSON.stringify({
-          Version: '2012-10-17',
-          Statement: [
-            { Effect: 'Allow', Action: 's3:PutObject', Resource: `arn:aws:s3:::${bucket}/${prefix}*` },
-            { Effect: 'Allow', Action: 'kms:GenerateDataKey', Resource: process.env.FILES_KEY },
-          ],
-        }),
+        Policy: JSON.stringify(batchPolicy({ bucket, prefix, key: process.env.FILES_KEY })),
       }));
       return { accessKeyId: r.Credentials.AccessKeyId, secretAccessKey: r.Credentials.SecretAccessKey, sessionToken: r.Credentials.SessionToken, expiration: r.Credentials.Expiration?.toISOString() };
     },
@@ -558,6 +623,11 @@ export function liveApi() {
     people: makePeople({ db, table: process.env.PEOPLE_TABLE }),
     members,
     files: liveFiles(process.env.BUCKET),
+    // Molly's worker, without waiting for her (only this API may start a sort; the mail gate starts the rest)
+    startSort: async ({ id }) => {
+      const { LambdaClient, InvokeCommand } = await import('@aws-sdk/client-lambda');
+      await new LambdaClient({}).send(new InvokeCommand({ FunctionName: process.env.MOLLY_WORKER, InvocationType: 'Event', Payload: Buffer.from(JSON.stringify({ sort: id })) }));
+    },
   });
   return live;
 }

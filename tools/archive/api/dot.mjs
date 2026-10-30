@@ -8,7 +8,7 @@ const closed = (properties, required = []) => ({ type: 'object', properties, req
 export const MANIFEST = {
   name: 'archive',
   title: 'Archive',
-  description: 'The family’s documents, kept by Molly: files in drawers (each person’s own, and shared ones), with folders, descriptions, tags and links between files.',
+  description: 'The family’s documents, kept by Molly, the archivist: files in drawers (each person’s own, and shared ones), with folders, descriptions, tags and links between files. Molly decides where things go: upload into Inbox/ and ask her to sort it, rather than organizing files yourself.',
   operations: [
     {
       name: 'drawers',
@@ -52,7 +52,7 @@ export const MANIFEST = {
     {
       name: 'upload',
       method: 'POST',
-      description: 'From a computer (Claude Code), not from chat: start uploading up to 50 files into a drawer you can file into. Give each file’s name, size in bytes and SHA-256 (shasum -a 256). For each new file you get a URL and headers: send the bytes with curl -X PUT -T <path> -H for each header "<url>" within 15 minutes. Files already in a drawer you can see come back as duplicates instead. Uploaded files are read and filed within a minute.',
+      description: 'From a computer (Claude Code), not from chat: start uploading up to 50 files into a drawer you can file into. Give each file’s name, size in bytes and SHA-256 (shasum -a 256). For each new file you get a URL and headers: send the bytes with curl -X PUT -T <path> -H for each header "<url>" within 15 minutes. Files already in a drawer you can see come back as duplicates instead. Uploaded files are saved and read within a minute. Leave folder empty (Inbox/), then ask Molly to sort them (sort).',
       path: '/uploads',
       input: closed({
         drawer: { type: 'string', description: 'A drawer id, or “mine”' },
@@ -69,7 +69,7 @@ export const MANIFEST = {
     {
       name: 'bulk_upload',
       method: 'POST',
-      description: 'From a computer (Claude Code): upload a whole folder at once. Returns credentials good for an hour that may only write into this batch, and the exact aws s3 cp command to run (put the folder’s path in place of <folder>). Files land in the drawer under the folder given, keeping their subfolders; files already in a drawer you can see are skipped as duplicates; files over 100 MB are refused. The credentials are secret: use them in the command, don’t repeat them.',
+      description: 'From a computer (Claude Code): upload a whole folder at once. Returns credentials good for an hour that may only write into this batch, and the exact aws s3 cp command to run (put the folder’s path in place of <folder>). Files land in the drawer under Inbox/ (leave folder empty), keeping their subfolders as a hint for Molly; when the copy is done, ask her to sort the batch (sort with its id); files already in a drawer you can see are skipped as duplicates; files over 100 MB are refused. The credentials are secret: use them in the command, don’t repeat them.',
       path: '/batches',
       input: closed({ drawer: { type: 'string', description: 'A drawer id, or “mine”' }, folder: { type: 'string', description: 'e.g. Imported/Documents' } }, ['drawer']),
     },
@@ -80,9 +80,26 @@ export const MANIFEST = {
       input: closed({ id: { type: 'string', pattern: '^b[a-z0-9]{16}$' } }, ['id']),
     },
     {
+      name: 'sort',
+      method: 'POST',
+      description: 'Ask Molly to file a bulk upload (batch) or a folder and everything under it (at most 200 files at a time): she reads each, names, describes, tags and links them, and files them by the drawer’s notes, then emails the person a summary with questions for anything she can’t place. Runs on its own for a few minutes; this is how filing gets done.',
+      path: '/sort',
+      input: closed({
+        drawer: { type: 'string', description: 'A drawer id, or “mine”' },
+        folder: { type: 'string', description: 'e.g. Inbox or Imported/Financial (and everything under it)' },
+        batch: { type: 'string', pattern: '^b[a-z0-9]{16}$', description: 'A bulk upload’s id, instead of a folder' },
+      }, ['drawer']),
+    },
+    {
+      name: 'sort_status',
+      description: 'Whether Molly has finished a sort, and how many files it covered.',
+      path: '/sort/{id}',
+      input: closed({ id: { type: 'string', pattern: '^s[a-z0-9]{16}$' } }, ['id']),
+    },
+    {
       name: 'update',
       method: 'PATCH',
-      description: 'Rename, move (folder, or another drawer you can file into), describe (title, summary, kind, the document’s date, tags) or trash a file (status trash; filed restores it). Send its current rev; a 409 means it changed: read it again.',
+      description: 'Only for a specific change the person asks for (filing is Molly’s: use sort). Rename, move (folder, or another drawer you can file into), describe (title, summary, kind, the document’s date, tags) or trash a file (status trash; filed restores it). Send its current rev; a 409 means it changed: read it again.',
       path: '/files/{id}',
       input: closed({
         id: FILE_ID, rev: { type: 'integer' },

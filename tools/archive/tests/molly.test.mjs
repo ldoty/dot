@@ -2,7 +2,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { LUKE, archiveApi, bucket, call, intake, reset, table, upload } from './helpers/archive.mjs';
+import { AMBER, LUKE, archiveApi, bucket, call, intake, reset, sorts, table, token, upload } from './helpers/archive.mjs';
 import { tinyPdf } from './helpers/pdf.mjs';
 import { createMolly, createSweep, documentsIn, SYSTEM } from '../api/molly.mjs';
 
@@ -59,11 +59,13 @@ function molly(turns) {
     getRaw: async (b, k) => mail.get(k),
     // S3 keeps the bytes; the bucket event starts intake
     putFile: async (key, bytes) => { bucket.set(key, bytes); await intake({ Records: [{ s3: { object: { key } } }] }); },
-    send: async (m) => sent.push(m),
+    send: async (m) => { sent.push(m); return { MessageId: `ses-${sent.length}` }; },
+    getFile: async (key) => bucket.get(key),
+    emailOf: async (sub) => (sub === LUKE ? 'luke@example.com' : null),
     sleep: async () => {}, log: () => {}, now: () => clock,
   });
   const deliver = (key, raw) => { mail.set(key, raw); return run({ userId: LUKE, username: LUKE, from: FROM, bucket: 'dot-y-mail-x', key }); };
-  return { deliver, sent, calls };
+  return { deliver, sent, calls, run };
 }
 
 beforeEach(() => { reset(); clock = new Date('2026-10-30T15:00:00Z'); });
@@ -220,4 +222,53 @@ test('the sweep moves files even past the daily limit, and does nothing for some
   await capped.run();
   assert.equal(capped.sent.length, 0);
   assert.equal((await call('GET', '/files?folder=Unsorted')).body.total, 1);
+});
+
+// --- “Molly, sort this”: a folder or a bulk upload, filed by her, one summary emailed ---
+test('a sort: what isn’t described is read, everything is filed by her, and one summary starts a thread a reply continues', async () => {
+  await upload('mine', 'Inbox/Financial/Taxes', [{ name: '2021 return.pdf', bytes: PDF, type: 'application/pdf' }, { name: 'notes.txt', bytes: Buffer.from('529 plan notes'), type: 'text/plain' }]);
+  const asked = await call('POST', '/sort', { drawer: 'mine', folder: 'Inbox' });
+  assert.equal(asked.status, 200);
+  assert.deepEqual(sorts, [asked.body.id]);
+  let ids;
+  const m = molly([
+    (params) => {
+      ids = [...params.messages.at(-1).content.matchAll(/"id": "(f\d+)"/g)].map((x) => x[1]);
+      const rev = /"rev": (\d+)/.exec(params.messages.at(-1).content)[1];
+      return use('update', { id: ids[0], rev: Number(rev), folder: 'Taxes/2021', name: '2021 Tax return.pdf' });
+    },
+    say('Taxes/2021: 1 (the 2021 return)\n\nQuestions:\n1. Is notes.txt about the kids’ 529s?\n\nMolly'),
+    say('Filed it under Kids/529.\n\nMolly'),
+  ]);
+  await m.run({ sort: asked.body.id });
+  // Both read (no titles before), neither raw text in front of her
+  assert.equal(m.calls.reader.length, 2);
+  assert.doesNotMatch(JSON.stringify(m.calls.filing[0].messages), /Ignore your instructions/);
+  assert.equal(m.calls.filing[0].tools.find((t) => t.name === 'sort'), undefined, 'she doesn’t start sorts');
+  const filed = (await call('GET', `/files/${ids[0]}`)).body;
+  assert.equal(filed.folder, 'Taxes/2021');
+  assert.equal(filed.title, 'Geico auto policy renewal', 'the reader’s description, saved');
+  // One summary, a new thread, to their account's email
+  assert.equal(m.sent.length, 1);
+  assert.match(m.sent[0].raw, /^Subject: Filed: My drawer \/ Inbox \(2 files\)/m);
+  assert.doesNotMatch(m.sent[0].raw, /^In-Reply-To/m);
+  assert.equal(m.sent[0].to, 'luke@example.com');
+  assert.equal((await call('GET', `/sort/${asked.body.id}`)).body.status, 'done');
+  assert.equal((await call('GET', `/sort/${asked.body.id}`, undefined, token(AMBER))).status, 404);
+  // Running it again does nothing
+  await m.run({ sort: asked.body.id });
+  assert.equal(m.sent.length, 1);
+  // Their reply to the summary (threaded under SES's id for it) carries on the same conversation
+  await m.deliver('molly/r1', email({ text: '1. yes', subject: 'Re: Filed: My drawer / Inbox (2 files)', messageId: '<r1@example.com>', inReplyTo: '<ses-1@email.amazonses.com>', references: '<ses-1@email.amazonses.com>' }));
+  const reply = m.calls.filing.at(-1).messages;
+  assert.match(JSON.stringify(reply), /Is notes\.txt about the kids/);
+  assert.equal(reply.at(-1).content, '1. yes');
+});
+
+test('a sort needs a drawer they can file into, a batch of their own, and stays under the daily limit', async () => {
+  await call('PUT', '/drawers/lukes-work', { name: 'Work' });
+  assert.equal((await call('POST', '/sort', { drawer: 'lukes-work' }, token(AMBER))).status, 404);
+  assert.equal((await call('POST', '/sort', { drawer: 'mine', batch: 'b0000000000000001' })).status, 404);
+  for (let i = 0; i < 10; i++) assert.equal((await call('POST', '/sort', { drawer: 'mine' })).status, 200);
+  assert.equal((await call('POST', '/sort', { drawer: 'mine' })).status, 429);
 });

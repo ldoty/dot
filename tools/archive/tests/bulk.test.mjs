@@ -6,6 +6,8 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { AMBER, LUKE, archiveApi, borrowed, bucket, call, intake, reset, token, upload } from './helpers/archive.mjs';
 import { tinyPdf } from './helpers/pdf.mjs';
 import { createBulk, placeOf } from '../api/bulk.mjs';
+import { batchPolicy } from '../api/api.mjs';
+import { readFileSync } from 'node:fs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }));
 const sha = (b) => createHash('sha256').update(b).digest('base64');
@@ -56,6 +58,7 @@ test('a folder copied in is filed under the batch’s folder, subfolders kept; d
   assert.equal(pdf.folder, 'Imported/Taxes/2025');
   assert.equal(pdf.name, '1099 Marcus.pdf');
   assert.equal(pdf.hasText, true);
+  assert.equal(pdf.source, 'bulk', 'not email');
   assert.equal((await call('GET', '/files?folder=Imported')).body.total, 3);
   assert.ok(hashed.has(`${prefix}nochecksum.txt`), 'hashed itself when S3 had no checksum');
   const status = (await call('GET', `/batches/${b.id}`)).body;
@@ -73,8 +76,10 @@ test('a file in someone else’s prefix, or an unknown batch, is ignored; a batc
   assert.equal((await call('GET', `/batches/${b.id}`, undefined, token(AMBER))).status, 404);
 });
 
-test('Claude Code (a borrowed token) may start a batch: it’s in the manifest', async () => {
-  assert.equal((await call('POST', '/batches', { drawer: 'mine' }, borrowed())).status, 200);
+test('Claude Code (a borrowed token) may start a batch: it’s in the manifest; it lands in Inbox/ for Molly', async () => {
+  const r = await call('POST', '/batches', { drawer: 'mine' }, borrowed());
+  assert.equal(r.status, 200);
+  assert.equal(r.body.folder, 'Inbox');
 });
 
 test('paths become folders: cleaned, and deeper than 8 levels kept flat at the eighth', () => {
@@ -82,4 +87,15 @@ test('paths become folders: cleaned, and deeper than 8 levels kept flat at the e
   assert.deepEqual(placeOf('', 'c.pdf'), { folder: '', name: 'c.pdf' });
   assert.equal(placeOf('A', '1/2/3/4/5/6/7/8/9/x.txt').folder, 'A/1/2/3/4/5/6/7 - 8 - 9');
   assert.throws(() => placeOf('', 'a/../b.txt'));
+});
+
+test('a batch’s credentials: its own prefix only, and what a multipart upload under KMS needs', () => {
+  const p = batchPolicy({ bucket: 'b', prefix: 'incoming/u/b1/', key: 'arn:aws:kms:k' });
+  assert.deepEqual(p.Statement[0], { Effect: 'Allow', Action: 's3:PutObject', Resource: 'arn:aws:s3:::b/incoming/u/b1/*' });
+  // Files over 8 MB go up in parts; joining parts under SSE-KMS needs Decrypt as well as GenerateDataKey
+  assert.deepEqual(p.Statement[1].Action.sort(), ['kms:Decrypt', 'kms:GenerateDataKey']);
+  // The role itself must allow it too (a session policy only narrows)
+  const tf = readFileSync(new URL('../infra/bulk.tf', import.meta.url), 'utf8');
+  const uploader = tf.slice(tf.indexOf('resource "aws_iam_role_policy" "uploader"'), tf.indexOf('data "archive_file" "bulk"'));
+  assert.match(uploader, /"kms:GenerateDataKey", "kms:Decrypt"/);
 });

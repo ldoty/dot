@@ -49,7 +49,7 @@ export function createBulk(deps) {
     const r = await archive.as(person, {
       routeKey: 'POST /uploads',
       body: JSON.stringify({ drawer: batch.drawer, folder: place.folder, files: [{ name: place.name, size: head.size, sha256, type: head.type }] }),
-    });
+    }, 'bulk');
     const out = JSON.parse(r.body);
     if (r.statusCode !== 200) return record(batchId, path, { status: 'refused', why: out.error });
     const f = out.files[0];

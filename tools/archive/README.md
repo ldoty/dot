@@ -51,6 +51,12 @@ that person (`handler.as`: the archive's own code, held to a borrowed token's wr
    drawers' notes and the sender's words, and answers in the thread from molly@, asking numbered questions
    when she can't tell. What she can't place stays in `Inbox/`.
 
+**Molly decides where things go.** Uploads (the page, Claude Code, a bulk upload) land in `Inbox/`; `POST /sort`
+(`archive_sort`, a folder and what's under it, or a batch) has her file them: her worker reads what isn't
+described yet (6 at a time), files them in turns of 40 with the same tools and rules as email, and emails the
+person one summary (grouped by destination, numbered questions) on a new thread their reply continues (keyed
+on SES's own Message-ID). At most 200 files a sort and 10 sorts a person a day: each reads documents with Claude.
+
 Nothing waits in `Inbox/` for good: a week after an email's attachments arrive, a daily sweep
 (`molly.sweep`, 15:00 UTC) moves what's still there to `Unsorted/` and says so once in the thread, counted
 toward the daily limit on what Dot-y sends unasked (`MOLLYWAIT` / `<due>#<sub>#<thread>` rows).

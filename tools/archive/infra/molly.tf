@@ -63,6 +63,8 @@ resource "aws_iam_role_policy" "molly" {
       },
       # The sweep: the daily limit on what Dot-y sends unasked (tools/sms), and whether they're still a member
       { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:PutItem"], Resource = nonsensitive(data.aws_ssm_parameter.sends_table_arn.value) },
+      # A sort's summary goes to their account's verified email (ListUsers by sub)
+      { Effect = "Allow", Action = "cognito-idp:ListUsers", Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}" },
       { Effect = "Allow", Action = "cognito-idp:AdminListGroupsForUser", Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}" },
       {
         # us.* inference profiles route to any US region, so allow the models there too
@@ -84,7 +86,7 @@ resource "aws_lambda_function" "molly" {
   handler          = "molly.handler"
   filename         = data.archive_file.molly.output_path
   source_code_hash = data.archive_file.molly.output_base64sha256
-  timeout          = 600 # a dozen attachments, each read, then filing
+  timeout          = 900 # a sort: up to 200 documents read, then filed in turns of 40
   memory_size      = 1024
 
   environment {
@@ -98,6 +100,7 @@ resource "aws_lambda_function" "molly" {
       BUCKET              = aws_s3_bucket.files.id
       MODEL               = var.model
       MOLLY_ADDRESS       = local.molly_address
+      USER_POOL_ID        = local.pool_id
     }
   }
 }
@@ -114,8 +117,7 @@ resource "aws_lambda_function" "molly_sweep" {
   memory_size      = 512
   environment {
     variables = merge(aws_lambda_function.molly.environment[0].variables, {
-      SENDS_TABLE  = element(split("/", nonsensitive(data.aws_ssm_parameter.sends_table_arn.value)), 1)
-      USER_POOL_ID = local.pool_id
+      SENDS_TABLE = element(split("/", nonsensitive(data.aws_ssm_parameter.sends_table_arn.value)), 1)
     })
   }
 }

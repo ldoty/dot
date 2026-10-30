@@ -180,7 +180,7 @@ test('download links name the file', async () => {
 test('the manifest is valid, and every route it names is one the handler and API Gateway serve', () => {
   validateManifest(MANIFEST);
   for (const op of MANIFEST.operations) assert.ok(ROUTES.includes(`${op.method ?? 'GET'} ${op.path}`), op.name);
-  assert.deepEqual(writeRoutes(MANIFEST).sort(), ['DELETE /files/{id}/links/{to}', 'PATCH /files/{id}', 'POST /batches', 'POST /uploads', 'PUT /files/{id}/links/{to}']);
+  assert.deepEqual(writeRoutes(MANIFEST).sort(), ['DELETE /files/{id}/links/{to}', 'PATCH /files/{id}', 'POST /batches', 'POST /sort', 'POST /uploads', 'PUT /files/{id}/links/{to}']);
 });
 
 test('infra/api.tf routes are exactly the handler’s', () => {
@@ -210,4 +210,15 @@ test('delete for good: from the trash only, by the drawer’s owner, from the pa
 test('share options: everyone else in the archive, and the family’s groups', async () => {
   await familyGroup('gparents0001', 'Parents', [LUKE, AMBER]);
   assert.deepEqual((await call('GET', '/share-options')).body, { people: [{ sub: AMBER, name: 'amber@x.test' }], groups: [{ id: 'gparents0001', name: 'Parents' }] });
+});
+
+test('the same bytes twice before either is filed: the second is a duplicate of the first, on its way', async () => {
+  const f = { name: 'a.pdf', size: 10, sha256: 'c'.repeat(64) };
+  const both = await call('POST', '/uploads', { drawer: 'mine', files: [f, { ...f, name: 'copy of a.pdf' }] });
+  assert.deepEqual(both.body.files.map((x) => x.status), ['upload', 'duplicate']);
+  assert.equal(both.body.files[1].id, both.body.files[0].id);
+  assert.equal(both.body.files[1].arriving, true);
+  // A separate request a moment later (another bulk Lambda, at the same time): the same
+  const again = await call('POST', '/uploads', { drawer: 'mine', files: [{ ...f, name: 'third.pdf' }] });
+  assert.equal(again.body.files[0].status, 'duplicate');
 });

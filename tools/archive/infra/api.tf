@@ -2,7 +2,7 @@ locals {
   routes = [
     "GET /dot", "GET /drawers", "PUT /drawers/{id}", "GET /files", "GET /files/{id}", "GET /files/{id}/text", "GET /files/{id}/download",
     "POST /uploads", "PATCH /files/{id}", "PUT /files/{id}/links/{to}", "DELETE /files/{id}/links/{to}",
-    "DELETE /files/{id}", "GET /share-options", "POST /batches", "GET /batches/{id}",
+    "DELETE /files/{id}", "GET /share-options", "POST /batches", "GET /batches/{id}", "POST /sort", "GET /sort/{id}",
   ]
 }
 
@@ -53,6 +53,8 @@ resource "aws_iam_role_policy" "api_table" {
       { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:Query"], Resource = nonsensitive(data.aws_ssm_parameter.people_table_arn.value) },
       { Effect = "Allow", Action = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"], Resource = "${aws_s3_bucket.files.arn}/f/*" },
       { Effect = "Allow", Action = ["s3:GetObject", "s3:DeleteObject"], Resource = "${aws_s3_bucket.files.arn}/text/*" },
+      # A sort: start Molly on it (molly.tf); nothing else may invoke her but the mail gate
+      { Effect = "Allow", Action = "lambda:InvokeFunction", Resource = aws_lambda_function.molly.arn },
       # Bulk uploads: become the uploader role, narrowed to one batch's prefix (bulk.tf)
       { Effect = "Allow", Action = "sts:AssumeRole", Resource = aws_iam_role.uploader.arn },
       { Effect = "Allow", Action = "cognito-idp:ListUsersInGroup", Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}" },
@@ -83,6 +85,7 @@ resource "aws_lambda_function" "api" {
       USER_POOL_ID        = local.pool_id
       UPLOADER_ROLE       = aws_iam_role.uploader.arn
       FILES_KEY           = aws_kms_key.files.arn
+      MOLLY_WORKER        = aws_lambda_function.molly.arn
     }
   }
 }

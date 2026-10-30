@@ -52,3 +52,24 @@ export function replyMessage({ name = 'Dot', from, to, subject, inReplyTo, refer
     '',
   ].join('\r\n');
 }
+
+/** A new message, not a reply (it starts a thread: Molly's summary of a sort), marked as automatic */
+export function newMessage({ name, from, to, subject, body, date = new Date() }) {
+  return [
+    `From: ${name} <${from}>`,
+    `To: ${to}`,
+    `Subject: ${encodeHeader(oneLine(subject).slice(0, 150))}`,
+    `Date: ${date.toUTCString().replace('GMT', '+0000')}`,
+    'Auto-Submitted: auto-generated',
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=utf-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    Buffer.from(body).toString('base64').replace(/.{1,76}/g, '$&\r\n').trimEnd(),
+    '',
+  ].join('\r\n');
+}
+
+/** The Message-ID header SES gave a message it sent (it replaces any we set), so replies to it can be threaded */
+export const sesMessageId = (id, region = 'us-east-1') => `<${id}@${region === 'us-east-1' ? 'email' : `${region}.email`}.amazonses.com>`;
+

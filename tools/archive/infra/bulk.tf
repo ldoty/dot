@@ -18,7 +18,8 @@ resource "aws_iam_role_policy" "uploader" {
     Version = "2012-10-17"
     Statement = [
       { Effect = "Allow", Action = "s3:PutObject", Resource = "${aws_s3_bucket.files.arn}/incoming/*" },
-      { Effect = "Allow", Action = "kms:GenerateDataKey", Resource = aws_kms_key.files.arn },
+      # Decrypt too: big files go up in parts, and S3 needs it to join them under the archive's key
+      { Effect = "Allow", Action = ["kms:GenerateDataKey", "kms:Decrypt"], Resource = aws_kms_key.files.arn },
     ]
   })
 }

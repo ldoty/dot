@@ -16,6 +16,8 @@ export const AMBER = '74c8b418-e0b1-7075-7ae5-ca791980dd07';
 export const table = fakeTable({ pageSize: 2 }); // everything must follow pages
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }));
 
+/** Sorts the API asked Molly for (molly.test runs her on them) */
+export const sorts = [];
 /** The bucket: what was uploaded (as S3 would hold it after a checked PUT) and what intake wrote */
 export const bucket = new Map();
 let n = 0;
@@ -23,6 +25,7 @@ export const archiveApi = createApi({
   db, table: 'family-archive', group: 'family_archive', issuer: ISSUER, clientId: CLIENT_ID, delegatedClientId: DELEGATED,
   people: makePeople({ db, table: 'family-people', ttlMs: 0 }),
   members: async () => [{ sub: LUKE, name: 'Luke' }, { sub: AMBER, name: 'amber@x.test' }],
+  startSort: async ({ id }) => sorts.push(id),
   newId: () => `f${String(++n).padStart(16, '0')}`,
   files: {
     putUrl: async ({ key, size, sha256 }) => `https://s3.test/${key}?size=${size}&sha=${sha256}`,
@@ -44,7 +47,7 @@ export const intake = createIntake({
 export const ROUTES = [
   'GET /dot', 'GET /drawers', 'PUT /drawers/{id}', 'GET /files', 'GET /files/{id}', 'GET /files/{id}/text', 'GET /files/{id}/download',
   'POST /uploads', 'PATCH /files/{id}', 'PUT /files/{id}/links/{to}', 'DELETE /files/{id}/links/{to}', 'DELETE /files/{id}', 'GET /share-options',
-  'POST /batches', 'GET /batches/{id}',
+  'POST /batches', 'GET /batches/{id}', 'POST /sort', 'GET /sort/{id}',
 ];
 export const token = (sub = LUKE) => accessToken({ clientId: CLIENT_ID, group: 'family_archive', sub, username: sub });
 /** A token Claude Code (or Dot) borrowed for this person */
@@ -70,4 +73,5 @@ export async function upload(drawer, folder, docs, t = token()) {
 export function reset() {
   table.clear();
   bucket.clear();
+  sorts.length = 0;
 }
