@@ -3,7 +3,9 @@
 # group by id. Who may use a tool at all stays with that tool's Cognito group: nothing here can
 # change it (the API may only list users).
 #
-# Also keeps each person's arrangement of the dot-y.co home page (GET/PUT /home, their own only).
+# Also keeps each person's arrangement of the dot-y.co home page (GET/PUT /home, their own only), and
+# the other email addresses each person confirmed for mail to Dot and Molly (/me/emails, their own only;
+# the mail gates in platform/email read the EMAIL claims).
 #
 # Publishes /family/people/table-arn (tools grant themselves read on it) and /family/people/api-url
 # (core's dot-y.co/family page). Apply this before core.
@@ -44,7 +46,12 @@ locals {
   pool_id = data.aws_ssm_parameter.user_pool_id.value
   issuer  = "https://cognito-idp.${data.aws_region.current.region}.amazonaws.com/${local.pool_id}"
   origins = ["https://dot-y.co", "http://localhost:5173"]
-  routes  = ["GET /people", "PUT /people/{sub}", "PUT /groups/{id}", "DELETE /groups/{id}", "GET /home", "PUT /home"]
+  routes = [
+    "GET /people", "PUT /people/{sub}", "PUT /groups/{id}", "DELETE /groups/{id}", "GET /home", "PUT /home",
+    "GET /me/emails", "POST /me/emails", "POST /me/emails/verify", "DELETE /me/emails/{address}",
+  ]
+  # Codes for confirming an added email address come from here (nothing answers it)
+  verify_address = "verify@dot-y.co"
 }
 
 # Rows: GROUP / <id> { name, members, rev }, PERSON / <sub> { name } (platform/api/people.mjs),
@@ -87,6 +94,10 @@ data "archive_file" "api" {
     content  = file("${path.module}/../api/people.mjs")
     filename = "people.mjs"
   }
+  source {
+    content  = file("${path.module}/api/emails.mjs")
+    filename = "emails.mjs"
+  }
 }
 
 resource "aws_iam_role" "api" {
@@ -114,6 +125,13 @@ resource "aws_iam_role_policy" "api" {
         Action   = "cognito-idp:ListUsers"
         Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}"
       },
+      {
+        # The code that confirms an added email address, to that address, from verify@ only
+        Effect    = "Allow"
+        Action    = ["ses:SendEmail", "ses:SendRawEmail"]
+        Resource  = "arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:identity/dot-y.co"
+        Condition = { StringEquals = { "ses:FromAddress" = local.verify_address } }
+      },
     ]
   })
 }
@@ -129,10 +147,11 @@ resource "aws_lambda_function" "api" {
   memory_size      = 256
   environment {
     variables = {
-      TABLE        = aws_dynamodb_table.people.name
-      ISSUER       = local.issuer
-      CLIENT_ID    = data.aws_ssm_parameter.home_client_id.value
-      USER_POOL_ID = local.pool_id
+      TABLE          = aws_dynamodb_table.people.name
+      ISSUER         = local.issuer
+      CLIENT_ID      = data.aws_ssm_parameter.home_client_id.value
+      USER_POOL_ID   = local.pool_id
+      VERIFY_ADDRESS = local.verify_address
     }
   }
 }
@@ -147,7 +166,7 @@ resource "aws_apigatewayv2_api" "api" {
   protocol_type = "HTTP"
   cors_configuration {
     allow_origins = local.origins
-    allow_methods = ["GET", "PUT", "DELETE"]
+    allow_methods = ["GET", "PUT", "POST", "DELETE"]
     allow_headers = ["authorization", "content-type"]
     max_age       = 600
   }

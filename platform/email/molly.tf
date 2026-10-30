@@ -41,6 +41,13 @@ resource "aws_iam_role_policy" "molly" {
         Resource = "arn:aws:cognito-idp:us-east-1:${data.aws_caller_identity.current.account_id}:userpool/${data.aws_ssm_parameter.user_pool_id.value}"
       },
       { Effect = "Allow", Action = "lambda:InvokeFunction", Resource = data.aws_ssm_parameter.molly_worker.value },
+      {
+        # Addresses members confirmed at dot-y.co/me (platform/family): the EMAIL claims, nothing else there
+        Effect    = "Allow"
+        Action    = "dynamodb:GetItem"
+        Resource  = nonsensitive(data.aws_ssm_parameter.people_table_arn.value)
+        Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = ["EMAIL"] } }
+      },
     ]
   })
 }
@@ -60,6 +67,7 @@ resource "aws_lambda_function" "molly" {
       BUCKET       = aws_s3_bucket.mail.id
       PREFIX       = "molly/"
       USER_POOL_ID = data.aws_ssm_parameter.user_pool_id.value
+      PEOPLE_TABLE = element(split("/", nonsensitive(data.aws_ssm_parameter.people_table_arn.value)), 1)
       GROUP        = "family_archive"
       WORKER       = data.aws_ssm_parameter.molly_worker.value
     }

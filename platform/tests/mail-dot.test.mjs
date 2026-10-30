@@ -98,8 +98,8 @@ function fakeCognito(users, groups = { 'luke-sub': ['family_assistant'] }) {
     send: async (cmd) => {
       calls.push({ name: cmd.constructor.name, input: cmd.input });
       if (cmd.constructor.name === 'ListUsersCommand') {
-        const email = /^email = "(.+)"$/.exec(cmd.input.Filter)[1];
-        return { Users: users.filter((u) => u.Attributes.some((a) => a.Name === 'email' && a.Value === email)) };
+        const [, attr, value] = /^(email|sub) = "(.+)"$/.exec(cmd.input.Filter);
+        return { Users: users.filter((u) => u.Attributes.some((a) => a.Name === attr && a.Value === value)) };
       }
       return { Groups: (groups[cmd.input.Username] ?? []).map((GroupName) => ({ GroupName })) };
     },
@@ -125,6 +125,30 @@ test('unverified, disabled, unconfirmed, shared or non-member emails are nobody'
   assert.equal(await find([user('luke-sub', EMAIL), user('amber-sub', EMAIL)], { 'luke-sub': ['family_assistant'], 'amber-sub': ['family_assistant'] }), null);
   assert.equal(await find([user('luke-sub', EMAIL)], { 'luke-sub': ['family_budget'] }), null);
   assert.equal(await find([]), null);
+});
+
+// --- addresses a member added and confirmed at dot-y.co/me (the EMAIL claim in family-people) ---
+const LUKE_SUB = '44f8c468-4011-70b8-76aa-ec2b68b0b004', AMBER_SUB = '74c8b418-e0b1-7075-7ae5-ca791980dd07';
+const WORK = 'luke@work.example';
+
+test('an address a member confirmed is that member, if they’re in the group', async () => {
+  const cognito = fakeCognito([user(LUKE_SUB, EMAIL)], { [LUKE_SUB]: ['family_assistant'] });
+  const find = makeFindMember({ cognito, poolId: 'pool', group: 'family_assistant', added: async (e) => (e === WORK ? LUKE_SUB : null) });
+  assert.deepEqual(await find(WORK), { sub: LUKE_SUB, username: LUKE_SUB });
+  assert.equal(await find('stranger@work.example'), null);
+  const notMember = makeFindMember({ cognito: fakeCognito([user(LUKE_SUB, EMAIL)], { [LUKE_SUB]: ['family_budget'] }), poolId: 'pool', group: 'family_assistant', added: async () => LUKE_SUB });
+  assert.equal(await notMember(WORK), null);
+});
+
+test('an address that leads to two people leads to nobody; a disabled account to nobody', async () => {
+  // Amber's account email is the address Luke confirmed (she changed it after): can't say who's asking
+  const both = makeFindMember({ cognito: fakeCognito([user(LUKE_SUB, EMAIL), user(AMBER_SUB, WORK)], { [LUKE_SUB]: ['family_assistant'], [AMBER_SUB]: ['family_assistant'] }), poolId: 'pool', group: 'family_assistant', added: async () => LUKE_SUB });
+  assert.equal(await both(WORK), null);
+  // The same person both ways is still them
+  const same = makeFindMember({ cognito: fakeCognito([user(LUKE_SUB, WORK)], { [LUKE_SUB]: ['family_assistant'] }), poolId: 'pool', group: 'family_assistant', added: async () => LUKE_SUB });
+  assert.deepEqual(await same(WORK), { sub: LUKE_SUB, username: LUKE_SUB });
+  const disabled = makeFindMember({ cognito: fakeCognito([user(LUKE_SUB, EMAIL, { enabled: false })], { [LUKE_SUB]: ['family_assistant'] }), poolId: 'pool', group: 'family_assistant', added: async () => LUKE_SUB });
+  assert.equal(await disabled(WORK), null);
 });
 
 test('only a plain address reaches the Cognito filter', async () => {

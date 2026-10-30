@@ -6,11 +6,15 @@
 //   2. it isn't automatic mail (Auto-Submitted, Precedence bulk/junk/list), so Dot never answers
 //      a vacation reply or a mailing list, and two auto-responders can't loop through it;
 //   3. its one From address is the verified email of exactly one enabled, confirmed Cognito user in
-//      family_assistant (the same gate as the web page and texting).
+//      family_assistant (the same gate as the web page and texting), or one of the other addresses a
+//      member added and confirmed with a code at dot-y.co/me (platform/family/api/emails.mjs). An address
+//      that leads to two people (an account's email and someone else's added one) leads to nobody.
 // Anything else is dropped without an answer (no backscatter to forged senders). Dot's turn can take
 // minutes, so it runs in Dot's own email worker (tools/assistant/api/email.mjs), invoked asynchronously.
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { CognitoIdentityProviderClient, ListUsersCommand, AdminListGroupsForUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 
 // Plain addresses only: this also keeps the Cognito filter below well-formed
 const EMAIL = /^[^\s@<>"',;()[\]\\]+@[a-z0-9.-]+\.[a-z]{2,}$/;
@@ -39,19 +43,36 @@ export function refusal(record, dotAddress) {
   return null;
 }
 
-/** The family member with this verified email, if they may use Dot (Cognito users are named by sub) */
-export function makeFindMember({ cognito, poolId, group }) {
+/**
+ * The family member this address belongs to, if they may use the gate's tool (Cognito users are named by
+ * sub): an account's verified email, or an address they confirmed (added(email) -> their sub, or null)
+ */
+export function makeFindMember({ cognito, poolId, group, added = async () => null }) {
+  const attr = (u, name) => u.Attributes?.find((a) => a.Name === name)?.Value;
+  const usable = (u) => u.Enabled && u.UserStatus === 'CONFIRMED';
   return async (email) => {
     if (!EMAIL.test(email || '')) return null;
     const r = await cognito.send(new ListUsersCommand({ UserPoolId: poolId, Filter: `email = "${email}"` }));
-    const attr = (u, name) => u.Attributes?.find((a) => a.Name === name)?.Value;
-    const users = (r.Users ?? []).filter((u) => u.Enabled && u.UserStatus === 'CONFIRMED'
-      && String(attr(u, 'email')).toLowerCase() === email && attr(u, 'email_verified') === 'true');
-    if (users.length !== 1) return null; // an address shared by two people can't say who's asking
-    const groups = await cognito.send(new AdminListGroupsForUserCommand({ UserPoolId: poolId, Username: users[0].Username }));
+    const people = new Map();
+    for (const u of r.Users ?? []) {
+      if (usable(u) && String(attr(u, 'email')).toLowerCase() === email && attr(u, 'email_verified') === 'true') people.set(attr(u, 'sub') || u.Username, u);
+    }
+    const sub = await added(email);
+    if (sub && /^[0-9a-f-]{36}$/.test(sub) && !people.has(sub)) {
+      const byId = await cognito.send(new ListUsersCommand({ UserPoolId: poolId, Filter: `sub = "${sub}"` }));
+      for (const u of byId.Users ?? []) if (usable(u)) people.set(attr(u, 'sub') || u.Username, u);
+    }
+    if (people.size !== 1) return null; // nobody, or an address shared by two people: can't say who's asking
+    const [[found, user]] = people;
+    const groups = await cognito.send(new AdminListGroupsForUserCommand({ UserPoolId: poolId, Username: user.Username }));
     if (!(groups.Groups ?? []).some((g) => g.GroupName === group)) return null;
-    return { sub: attr(users[0], 'sub') || users[0].Username, username: users[0].Username };
+    return { sub: found, username: user.Username };
   };
+}
+
+/** An address someone confirmed at dot-y.co/me -> their sub (the claim row in family-people), or null */
+export function makeAdded({ db, table }) {
+  return async (email) => (table ? (await db.send(new GetCommand({ TableName: table, Key: { pk: 'EMAIL', sk: email } }))).Item?.sub ?? null : null);
 }
 
 /** deps: dotAddress, bucket, prefix, findMember(email), startTurn({ userId, username, from, bucket, key }) */
@@ -77,7 +98,10 @@ export const handler = async (event) => (live ??= (() => {
     dotAddress: process.env.DOT_ADDRESS,
     bucket: process.env.BUCKET,
     prefix: process.env.PREFIX,
-    findMember: makeFindMember({ cognito: new CognitoIdentityProviderClient({}), poolId: process.env.USER_POOL_ID, group: process.env.GROUP }),
+    findMember: makeFindMember({
+      cognito: new CognitoIdentityProviderClient({}), poolId: process.env.USER_POOL_ID, group: process.env.GROUP,
+      added: makeAdded({ db: DynamoDBDocumentClient.from(new DynamoDBClient({})), table: process.env.PEOPLE_TABLE }),
+    }),
     startTurn: (payload) => lambda.send(new InvokeCommand({
       FunctionName: process.env.WORKER, InvocationType: 'Event', Payload: Buffer.from(JSON.stringify(payload)),
     })),

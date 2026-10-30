@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your email · dot-y.co</title>
+<link rel="icon" type="image/svg+xml" href="/style/favicon.svg">
+<link rel="stylesheet" href="/style/family.css">
+<style>
+/* Layout: one narrow column. Your account's email, then the other addresses mail to Dot and Molly may
+   come from, each confirmed with a code sent to it. Everyone's own; the API keeps it that way. */
+.wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 24px }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px }
+.top a { color: var(--muted); text-decoration: none; font-size: 14px }
+h1 { font-size: clamp(32px, 6vw, 44px) }
+.lede { color: var(--muted); margin: 0 }
+.card h2 { font-size: 20px; margin: 0 0 4px }
+.card > p { color: var(--muted); font-size: 14.5px; margin: 0 0 12px }
+.rows { list-style: none; margin: 0; padding: 0 }
+.rows li { padding: 10px 0; border-top: 1px solid var(--line); display: grid; gap: 8px }
+.rows li:first-child { border-top: 0 }
+.head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+.addr { font-weight: 600; overflow-wrap: anywhere }
+.state { color: var(--muted); font-size: 13px }
+.state.ok { color: var(--leaf) }
+.x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 13px; font-weight: 600; padding: 2px 6px }
+.x:hover { color: var(--ember) }
+form.row { display: flex; gap: 8px; flex-wrap: wrap }
+form.row input { flex: 1; min-width: 0; background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 8px 10px; color: var(--ink); font: inherit }
+form.row input:focus { border-color: var(--pool); outline: none }
+form.row input[name="code"] { flex: 0 1 10ch; letter-spacing: .2em; font-family: var(--mono) }
+.status { color: var(--muted); font-size: 14px; min-height: 1.4em; margin: 0 }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a href="/">← dot-y.co</a></div>
+  <h1>Your email</h1>
+  <p class="lede">Mail to Dot (dot@dot-y.co) and Molly (molly@dot-y.co) counts as yours when it comes from your account’s email, or from another address you’ve confirmed here.</p>
+  <p class="status" id="status" role="status"></p>
+  <div id="main"><p class="status">Loading…</p></div>
+</div>
+<script src="/family-auth.js"></script>
+<script>
+(function () {
+  var apiUrl, data = null;
+  var main = document.getElementById("main");
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function status(msg) { document.getElementById("status").textContent = msg || ""; }
+
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(apiUrl + path, { method: method, headers: { authorization: "Bearer " + tok, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+    }).then(function (res) {
+      return res.json().then(function (j) { if (!res.ok) throw new Error(j.error || ("error " + res.status)); return j; });
+    });
+  }
+  function load() { return api("GET", "/me/emails").then(function (d) { data = d; render(); }); }
+
+  function render() {
+    main.innerHTML = '<section class="card"><h2>Your account’s email</h2><p>' + (data.primary ? '<span class="addr">' + esc(data.primary) + "</span>" : "None set.") + "</p></section>" +
+      '<section class="card"><h2>Other addresses</h2><p>Add one and we’ll send it a code. It counts once you enter the code here, so only someone who reads that address can add it.</p>' +
+      (data.emails.length ? '<ul class="rows">' + data.emails.map(function (e) {
+        return '<li><div class="head"><span class="addr">' + esc(e.address) + '</span><span><span class="state' + (e.state === "verified" ? ' ok">Confirmed' : '">Waiting for the code') + '</span>' +
+          '<button class="x" data-remove="' + esc(e.address) + '">Remove</button></span></div>' +
+          (e.state === "pending" ? '<form class="row" data-verify="' + esc(e.address) + '"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123456" aria-label="Code for ' + esc(e.address) + '">' +
+            '<button class="btn primary">Confirm</button><button type="button" class="btn ghost" data-resend="' + esc(e.address) + '">Send a new code</button></form>' : "") + "</li>";
+      }).join("") + "</ul>" : "") +
+      '<form class="row" data-add style="margin-top:12px"><input name="address" type="email" placeholder="you@example.com" aria-label="Another email address" required><button class="btn">Send a code</button></form></section>';
+  }
+
+  main.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var f = e.target;
+    if (f.hasAttribute("data-add")) {
+      var address = f.elements.address.value.trim(); if (!address) return;
+      api("POST", "/me/emails", { address: address }).then(function () { status("Sent a code to " + address + ". It’s good for 30 minutes."); return load(); })
+        .catch(function (err) { status("Couldn’t add it: " + err.message); });
+    } else if (f.dataset.verify) {
+      api("POST", "/me/emails/verify", { address: f.dataset.verify, code: f.elements.code.value }).then(function () { status(f.dataset.verify + " is confirmed."); return load(); })
+        .catch(function (err) { status("Couldn’t confirm it: " + err.message); });
+    }
+  });
+  main.addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.remove) {
+      api("DELETE", "/me/emails/" + encodeURIComponent(b.dataset.remove)).then(function () { status("Removed " + b.dataset.remove + "."); return load(); })
+        .catch(function (err) { status("Couldn’t remove it: " + err.message); });
+    } else if (b.dataset.resend) {
+      api("POST", "/me/emails", { address: b.dataset.resend }).then(function () { status("Sent a new code to " + b.dataset.resend + "."); return load(); })
+        .catch(function (err) { status("Couldn’t send it: " + err.message); });
+    }
+  });
+
+  function gate(msg) {
+    main.innerHTML = '<p class="status">' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button>';
+    document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
+  }
+
+  Promise.all([fetch("/config.json").then(function (r) { return r.json(); }), fetch("/family-config.json").then(function (r) { return r.json(); })]).then(function (r) {
+    apiUrl = r[1].apiUrl;
+    return FamilyAuth.init(r[0]);
+  }).then(function (user) {
+    if (!user) return gate("Sign in to see your email addresses.");
+    return load();
+  }).catch(function (e) { gate(e.message); });
+})();
+</script>
+</body>
+</html>

@@ -10,12 +10,15 @@
 //   PUT    /groups/{id}     { name, members, rev? } -> the group  no rev: new; rev: replace that version
 //                                                                (409 + current if it changed); names are unique
 //   DELETE /groups/{id}                                          tools' grants for it stop applying, for good
+//   GET|POST /me/emails, POST /me/emails/verify, DELETE /me/emails/{address}
+//                              the caller's own other email addresses, for mail to Dot and Molly (emails.mjs)
 // This Lambda can't change anyone's access: it has no permission to touch Cognito groups, only to
 // list users. Who may use a tool stays with each tool's Cognito group.
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { verifyAccessToken } from './verify-token.mjs';
 import { GROUP_ID } from './people.mjs';
+import { emailRoutes } from './emails.mjs';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const SUB = /^[0-9a-f-]{36}$/;
@@ -47,9 +50,10 @@ function badSections(sections) {
   return null;
 }
 
-/** deps: table, issuer, clientId (dot-y.co's), users() -> [{ sub, name, email }], now() */
+/** deps: table, issuer, clientId (dot-y.co's), users() -> [{ sub, name, email }], now(), sendCode({ to, code, name }), code?() */
 export function createApi(deps) {
   const { table } = deps;
+  const emails = emailRoutes({ ...deps, db });
   const get = async (pk, sk) => (await db.send(new GetCommand({ TableName: table, Key: { pk, sk } }))).Item;
   async function all(pk) {
     const items = [];
@@ -63,9 +67,9 @@ export function createApi(deps) {
   }
 
   return async (event) => {
-    // Anyone signed in at dot-y.co may arrange their own home page (keyed by their own sub);
-    // everything else is for family admins.
-    const own = event.routeKey === 'GET /home' || event.routeKey === 'PUT /home';
+    // Anyone signed in at dot-y.co may arrange their own home page and keep their own email addresses
+    // (keyed by their own sub); everything else is for family admins.
+    const own = event.routeKey === 'GET /home' || event.routeKey === 'PUT /home' || event.routeKey.split(' ')[1].startsWith('/me/');
     let claims;
     try {
       claims = await verifyAccessToken(event.headers, { issuer: deps.issuer, clientId: deps.clientId, group: own ? null : 'family_admin' });
@@ -85,6 +89,8 @@ export function createApi(deps) {
     const p = event.pathParameters ?? {};
     const by = claims.username;
     const at = deps.now().toISOString();
+    const mail = await emails(event.routeKey, claims, body, p);
+    if (mail) return json(mail.status, mail.body);
 
     switch (event.routeKey) {
       case 'GET /home':
@@ -179,5 +185,18 @@ async function users() {
   return out;
 }
 
+// A code for an address someone wants to add, from verify@ (nothing answers there), marked as automatic
+async function sendCode({ to, code, name }) {
+  const { SESv2Client, SendEmailCommand } = await import('@aws-sdk/client-sesv2');
+  const from = process.env.VERIFY_ADDRESS;
+  const text = `${name} asked dot-y.co to add this address, so mail from it to Dot and Molly counts as theirs.\n\nThe code is ${code}. It's good for 30 minutes.\n\nIf that wasn't you, ignore this: nothing changes unless the code is entered.\n`;
+  const raw = [
+    `From: dot-y.co <${from}>`, `To: ${to}`, `Subject: Your dot-y.co code: ${code}`, 'Auto-Submitted: auto-generated',
+    'MIME-Version: 1.0', 'Content-Type: text/plain; charset=utf-8', 'Content-Transfer-Encoding: base64', '',
+    Buffer.from(text).toString('base64').replace(/.{1,76}/g, '$&\r\n').trimEnd(), '',
+  ].join('\r\n');
+  await new SESv2Client({}).send(new SendEmailCommand({ FromEmailAddress: from, Destination: { ToAddresses: [to] }, Content: { Raw: { Data: Buffer.from(raw) } } }));
+}
+
 const env = process.env;
-export const handler = createApi({ table: env.TABLE, issuer: env.ISSUER, clientId: env.CLIENT_ID, users, now: () => new Date() });
+export const handler = createApi({ table: env.TABLE, issuer: env.ISSUER, clientId: env.CLIENT_ID, users, sendCode, now: () => new Date() });

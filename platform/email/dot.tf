@@ -1,6 +1,6 @@
 # dot@dot-y.co: email Dot. SES stores the message under dot/ in the mail bucket, then the gate
 # (lambda/dot.mjs) checks the verdicts, skips automatic mail, and finds the family_assistant member
-# whose verified email sent it; only then does it start Dot's email worker (tools/assistant, which
+# whose verified email (or an address they confirmed at dot-y.co/me) sent it; only then does it start Dot's email worker (tools/assistant, which
 # reads the message, runs the turn as that person, and replies from dot@dot-y.co).
 #
 # The gate's role can look people up in the user pool and invoke the worker, nothing else. The
@@ -12,6 +12,11 @@ locals {
 
 data "aws_ssm_parameter" "user_pool_id" {
   name = "/family/core/user-pool-id"
+}
+
+# The family's table (platform/family): the gates read the addresses members confirmed there
+data "aws_ssm_parameter" "people_table_arn" {
+  name = "/family/people/table-arn"
 }
 
 # Published by tools/assistant (apply that root first)
@@ -53,6 +58,13 @@ resource "aws_iam_role_policy" "dot" {
         Resource = "arn:aws:cognito-idp:us-east-1:${data.aws_caller_identity.current.account_id}:userpool/${data.aws_ssm_parameter.user_pool_id.value}"
       },
       { Effect = "Allow", Action = "lambda:InvokeFunction", Resource = data.aws_ssm_parameter.dot_email_worker.value },
+      {
+        # Addresses members confirmed at dot-y.co/me (platform/family): the EMAIL claims, nothing else there
+        Effect    = "Allow"
+        Action    = "dynamodb:GetItem"
+        Resource  = nonsensitive(data.aws_ssm_parameter.people_table_arn.value)
+        Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = ["EMAIL"] } }
+      },
     ]
   })
 }
@@ -72,6 +84,7 @@ resource "aws_lambda_function" "dot" {
       BUCKET       = aws_s3_bucket.mail.id
       PREFIX       = "dot/"
       USER_POOL_ID = data.aws_ssm_parameter.user_pool_id.value
+      PEOPLE_TABLE = element(split("/", nonsensitive(data.aws_ssm_parameter.people_table_arn.value)), 1)
       GROUP        = "family_assistant"
       WORKER       = data.aws_ssm_parameter.dot_email_worker.value
     }

@@ -13,13 +13,19 @@ const table = fakeTable({ pageSize: 2 });
 const { createApi } = await import('../family/api/api.mjs');
 const LUKE = '44f8c468-4011-70b8-76aa-ec2b68b0b004', AMBER = '74c8b418-e0b1-7075-7ae5-ca791980dd07', KID = '11111111-1111-1111-1111-111111111111';
 const users = [{ sub: LUKE, name: 'Luke Doty', email: 'l@x.test' }, { sub: AMBER, name: 'amber@x.test', email: 'amber@x.test' }, { sub: KID, name: 'Kid', email: null }];
-const handler = createApi({ table: 'family-people', issuer: ISSUER, clientId: 'home-client', users: async () => users, now: () => new Date('2026-10-19T14:00:00Z') });
-const ROUTES = ['GET /people', 'PUT /people/{sub}', 'PUT /groups/{id}', 'DELETE /groups/{id}', 'GET /home', 'PUT /home'];
+let clock = new Date('2026-10-19T14:00:00Z');
+const codes = [];
+const handler = createApi({
+  table: 'family-people', issuer: ISSUER, clientId: 'home-client', users: async () => users, now: () => clock,
+  sendCode: async (m) => codes.push(m), code: () => '424242',
+});
+const ROUTES = ['GET /people', 'PUT /people/{sub}', 'PUT /groups/{id}', 'DELETE /groups/{id}', 'GET /home', 'PUT /home',
+  'GET /me/emails', 'POST /me/emails', 'POST /me/emails/verify', 'DELETE /me/emails/{address}'];
 const call = caller(handler, ROUTES);
 // dot-y.co's tokens carry all of a person's groups
 const admin = () => accessToken({ clientId: 'home-client', sub: LUKE, 'cognito:groups': ['family_admin', 'family_house'] });
 const member = () => accessToken({ clientId: 'home-client', sub: AMBER, 'cognito:groups': ['family_house', 'family_house:admin'] });
-beforeEach(() => table.clear());
+beforeEach(() => { table.clear(); codes.length = 0; clock = new Date('2026-10-19T14:00:00Z'); });
 
 test('only family admins, with dot-y.co’s token', async () => {
   for (const [m, p, b] of [['GET', '/people'], ['PUT', `/people/${KID}`, { name: 'x' }], ['PUT', '/groups/gkids00001', { name: 'Kids', members: [] }], ['DELETE', '/groups/gkids00001']]) {
@@ -268,4 +274,92 @@ test('home: without the family API the tiles still show, with nothing to arrange
   const p = await home({ api: false });
   assert.deepEqual(p.layout(), [['Your tools', ['family_lists', 'family_assistant', 'family_house']]]);
   assert.equal(p.el('#arrange').hidden, true);
+});
+
+// --- each person's other email addresses (dot-y.co/me) ---
+const as = (sub) => accessToken({ clientId: 'home-client', sub, 'cognito:groups': [] });
+const WORK = 'luke@work.example';
+
+test('emails: add one, the code goes to it, and it counts once the code comes back', async () => {
+  const add = await call('POST', '/me/emails', { address: ' Luke@Work.Example ' }, as(LUKE));
+  assert.equal(add.status, 200);
+  assert.equal(add.body.state, 'pending');
+  assert.deepEqual(codes, [{ to: WORK, code: '424242', name: 'Luke Doty' }]);
+  assert.equal(table.get('EMAIL', WORK), undefined, 'not his until the code comes back');
+  assert.equal((await call('POST', '/me/emails/verify', { address: WORK, code: '000000' }, as(LUKE))).status, 400);
+  assert.equal((await call('POST', '/me/emails/verify', { address: WORK, code: '424 242' }, as(LUKE))).body.state, 'verified');
+  assert.equal(table.get('EMAIL', WORK).sub, LUKE);
+  assert.deepEqual((await call('GET', '/me/emails', undefined, as(LUKE))).body, { primary: 'l@x.test', emails: [{ address: WORK, state: 'verified' }] });
+  // Nobody stores the code itself
+  assert.ok(!JSON.stringify(table.dump()).includes('424242'));
+});
+
+test('emails: not an account’s email, not someone else’s, one code a minute, five tries, thirty minutes', async () => {
+  assert.equal((await call('POST', '/me/emails', { address: 'l@x.test' }, as(LUKE))).status, 409, 'his own account email');
+  assert.equal((await call('POST', '/me/emails', { address: 'amber@x.test' }, as(LUKE))).status, 409, 'Amber’s account email');
+  assert.equal((await call('POST', '/me/emails', { address: 'not an email' }, as(LUKE))).status, 400);
+  await call('POST', '/me/emails', { address: WORK }, as(LUKE));
+  await call('POST', '/me/emails/verify', { address: WORK, code: '424242' }, as(LUKE));
+  assert.equal((await call('POST', '/me/emails', { address: WORK }, as(AMBER))).status, 409, 'his now');
+  // A second address: resends wait a minute; wrong codes run out; codes expire
+  await call('POST', '/me/emails', { address: 'luke@home.example' }, as(LUKE));
+  assert.equal((await call('POST', '/me/emails', { address: 'luke@home.example' }, as(LUKE))).status, 429);
+  for (let i = 0; i < 5; i++) await call('POST', '/me/emails/verify', { address: 'luke@home.example', code: '111111' }, as(LUKE));
+  assert.equal((await call('POST', '/me/emails/verify', { address: 'luke@home.example', code: '424242' }, as(LUKE))).status, 429);
+  clock = new Date(clock.getTime() + 61_000);
+  assert.equal((await call('POST', '/me/emails', { address: 'luke@home.example' }, as(LUKE))).status, 200, 'a new code, new tries');
+  clock = new Date(clock.getTime() + 31 * 60_000);
+  assert.equal((await call('POST', '/me/emails/verify', { address: 'luke@home.example', code: '424242' }, as(LUKE))).status, 410);
+});
+
+test('emails: each person sees and removes only their own; removing frees the address', async () => {
+  await call('POST', '/me/emails', { address: WORK }, as(LUKE));
+  await call('POST', '/me/emails/verify', { address: WORK, code: '424242' }, as(LUKE));
+  assert.deepEqual((await call('GET', '/me/emails', undefined, as(AMBER))).body.emails, []);
+  await call('DELETE', `/me/emails/${encodeURIComponent(WORK)}`, undefined, as(AMBER));
+  assert.equal(table.get('EMAIL', WORK).sub, LUKE, 'Amber can’t remove his');
+  await call('DELETE', `/me/emails/${encodeURIComponent(WORK)}`, undefined, as(LUKE));
+  assert.equal(table.get('EMAIL', WORK), undefined);
+  assert.equal((await call('POST', '/me/emails', { address: WORK }, as(AMBER))).status, 200);
+});
+
+// ---- dot-y.co/me ----
+
+const ME = readFileSync(new URL('../core/portal/me.html', import.meta.url), 'utf8').replace('<script src="/family-auth.js"></script>', '');
+async function mePage(token) {
+  const dom = new JSDOM(ME, {
+    runScripts: 'dangerously', url: 'https://dot-y.co/me', pretendToBeVisual: true,
+    beforeParse(w) {
+      w.FamilyAuth = { init: async () => ({ email: 't' }), accessToken: async () => token, login() {} };
+      w.fetch = async (url, o = {}) => {
+        const json = (status, body) => ({ ok: status < 300, status, json: async () => body });
+        if (url === '/config.json') return json(200, {});
+        if (url === '/family-config.json') return json(200, { apiUrl: 'https://family.test' });
+        const r = await call(o.method || 'GET', url.slice('https://family.test'.length), o.body ? JSON.parse(o.body) : undefined, token);
+        return json(r.status, r.body);
+      };
+    },
+  });
+  opened.push(dom.window);
+  await wait(150);
+  const w = dom.window, d = w.document;
+  const submit = async (sel) => { d.querySelector(sel).dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true })); await wait(); };
+  return { d, w, submit, text: (sel) => [...d.querySelectorAll(sel)].map((e) => e.textContent.trim()) };
+}
+
+test('dot-y.co/me: anyone adds an address, enters the code, and it’s confirmed; then removes it', async () => {
+  const p = await mePage(as(AMBER));
+  assert.deepEqual(p.text('.addr'), ['amber@x.test']);
+  p.d.querySelector('[data-add] [name="address"]').value = 'amber@work.example';
+  await p.submit('[data-add]');
+  assert.deepEqual(codes.map((c) => c.to), ['amber@work.example']);
+  assert.match(p.d.querySelector('.rows').textContent, /Waiting for the code/);
+  p.d.querySelector('[data-verify] [name="code"]').value = '424242';
+  await p.submit('[data-verify]');
+  assert.match(p.d.querySelector('.rows').textContent, /Confirmed/);
+  assert.equal(table.get('EMAIL', 'amber@work.example').sub, AMBER);
+  p.d.querySelector('[data-remove]').click();
+  await wait();
+  assert.equal(p.d.querySelector('.rows'), null);
+  assert.equal(table.get('EMAIL', 'amber@work.example'), undefined);
 });

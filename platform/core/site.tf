@@ -48,10 +48,11 @@ resource "aws_s3_object" "config" {
 
 # Pages served at extensionless paths: dot-y.co/handoff (single sign-on for tools),
 # /sms, /privacy, /terms: the SMS program's opt-in page and its policies, which carrier
-# reviewers visit (the form posts to tools/sms), and /family: groups and names every tool
-# shares, for family admins (platform/family; apply it before core).
+# reviewers visit (the form posts to tools/sms), /family: groups and names every tool
+# shares, for family admins (platform/family; apply it before core), and /me: each person's own
+# other email addresses for mail to Dot and Molly (also platform/family's API).
 resource "aws_s3_object" "page" {
-  for_each      = toset(["handoff", "sms", "privacy", "terms", "family"])
+  for_each      = toset(["handoff", "sms", "privacy", "terms", "family", "me"])
   bucket        = module.site.bucket
   key           = each.key
   source        = "${path.module}/portal/${each.key}.html"
