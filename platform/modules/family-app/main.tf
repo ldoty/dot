@@ -102,8 +102,11 @@ resource "aws_cognito_user_pool_client" "this" {
   }
 }
 
-# Managed login v2 needs a branding style per client.
+# Managed login v2 needs a branding style per client that shows the sign-in page. Only the home
+# page does: tools get their tokens through dot-y.co/handoff (custom auth), never the page, and
+# the pool allows just 20 brandings.
 resource "aws_cognito_managed_login_branding" "this" {
+  count                       = var.portal ? 1 : 0
   user_pool_id                = var.user_pool_id
   client_id                   = aws_cognito_user_pool_client.this.id
   use_cognito_provided_values = true
@@ -167,3 +170,8 @@ output "client_id" { value = aws_cognito_user_pool_client.this.id }
 output "delegated_client_id" { value = var.delegated ? aws_cognito_user_pool_client.delegated[0].id : null }
 output "member_group" { value = aws_cognito_user_group.member.name }
 output "admin_group" { value = aws_cognito_user_group.admin.name }
+
+moved {
+  from = aws_cognito_managed_login_branding.this
+  to   = aws_cognito_managed_login_branding.this[0]
+}
