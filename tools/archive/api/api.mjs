@@ -14,12 +14,15 @@
 //                                     rename, move, describe; status 'trash' or 'filed' (restore)
 //   PUT    /files/{id}/links/{to}    { relation }   edit on the file, read on the other
 //   DELETE /files/{id}/links/{to}
+//   DELETE /files/{id}               delete for good: a file in the trash, by its drawer's owner, from the page only
+//   GET    /share-options            -> { people: [{ sub, name }], groups: [{ id, name }] }   who a drawer can be shared with
 //   GET    /dot                      the manifest (dot.mjs): how Claude Code (platform/mcp) and later Dot use this
 //
 // Uploads go straight to S3 with a presigned PUT that carries the file's size and SHA-256 checksum, so
 // S3 refuses other bytes, and no file passes through this Lambda. The row says 'uploading' until intake
-// (intake.mjs) sees the object, checks it, reads its text and files it. Nothing here deletes a file:
-// trash is a status, and emptying it comes later, on the page, owner only.
+// (intake.mjs) sees the object, checks it, reads its text and files it. Trash is a status; only the
+// drawer's owner deletes a file for good, from the page, once it's in the trash (and the bucket keeps the
+// old version 30 more days).
 //
 // A borrowed token (via a signer: Dot, Claude Code) reads, and writes only what the manifest declares
 // (writeRoutes): never a drawer, never sharing. Duplicates are found only in drawers the person can see,
@@ -36,7 +39,8 @@
 import { randomBytes } from 'node:crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { CognitoIdentityProviderClient, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { verifyAccessToken } from './verify-token.mjs';
 import { atLeast, levelOf, parseShare } from './sharing.mjs';
@@ -95,7 +99,8 @@ const newId = () => `f${BigInt(`0x${randomBytes(10).toString('hex')}`).toString(
 
 /**
  * deps: table, group, issuer, clientId, delegatedClientId?, db (document client), people (people.mjs),
- *   files: { putUrl({ key, size, sha256, type }) -> url, getUrl({ key, name }) -> url, text(key) -> string | null },
+ *   members() -> [{ sub, name }] (everyone in family_archive, to share with),
+ *   files: { putUrl({ key, size, sha256, type }) -> url, getUrl({ key, name }) -> url, text(key) -> string | null, remove(key) },
  *   now?, newId?
  */
 export function createApi(deps) {
@@ -231,7 +236,7 @@ export function createApi(deps) {
           const folder = q.folder !== undefined ? cleanFolder(q.folder) : null;
           const words = str(q.q, 200).toLowerCase().split(/\s+/).filter(Boolean);
           const tag = str(q.tag, 40).toLowerCase(), kind = str(q.kind, 40).toLowerCase(), year = /^\d{4}$/.test(q.year || '') ? q.year : '';
-          const limit = Math.min(200, Math.max(1, Number(q.limit) || 50));
+          const limit = Math.min(1000, Math.max(1, Number(q.limit) || 50));
           const hits = [];
           for (const d of ds.filter((x) => !only || x.row.sk === only)) {
             for (const r of await query(`D#${d.row.sk}`, 'F#')) {
@@ -398,6 +403,33 @@ export function createApi(deps) {
           return json(200, { id, to });
         }
 
+        case 'DELETE /files/{id}': {
+          const id = event.pathParameters.id;
+          const { row, drawer: d } = await file(id);
+          if (d.level !== 'owner') return json(403, { error: 'only the drawer’s owner deletes for good' });
+          if (row.status !== 'trash') return json(409, { error: 'put it in the trash first' });
+          // The bytes first: a row without its file is worse than a file without its row (which nobody sees)
+          await files.remove(`f/${id}`);
+          if (row.hasText) await files.remove(`text/${id}.txt`);
+          for (const l of await query(`L#${id}`)) {
+            await del(`L#${l.sk}`, id);
+            await del(`L#${id}`, l.sk);
+          }
+          await del(`H#${row.sha256}`, id);
+          await del(row.pk, row.sk);
+          await del('FILE', id);
+          await log(d.row.sk, id, 'deleted', { name: row.name });
+          return json(200, { id });
+        }
+
+        case 'GET /share-options': {
+          const [list, names, groups] = await Promise.all([deps.members(), deps.people.names(), deps.people.groups()]);
+          return json(200, {
+            people: list.filter((m) => m.sub !== sub).map((m) => ({ sub: m.sub, name: names.get(m.sub) ?? m.name })).sort((a, b) => a.name.localeCompare(b.name)),
+            groups: groups.map((g) => ({ id: g.id, name: g.name })),
+          });
+        }
+
         default:
           return json(404, { error: 'no route' });
       }
@@ -417,6 +449,7 @@ function liveFiles(bucket) {
     getUrl: ({ key, name, expiresIn }) => getSignedUrl(s3, new GetObjectCommand({
       Bucket: bucket, Key: key, ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
     }), { expiresIn }),
+    remove: (key) => s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })),
     text: async (key) => {
       try {
         return await (await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))).Body.transformToString();
@@ -426,6 +459,22 @@ function liveFiles(bucket) {
       }
     },
   };
+}
+
+const idp = new CognitoIdentityProviderClient({});
+/** Everyone in family_archive, to share a drawer with */
+async function members() {
+  const out = [];
+  let NextToken;
+  do {
+    const r = await idp.send(new ListUsersInGroupCommand({ UserPoolId: process.env.USER_POOL_ID, GroupName: process.env.GROUP, NextToken }));
+    for (const u of r.Users) {
+      const attr = (n) => u.Attributes?.find((a) => a.Name === n)?.Value;
+      out.push({ sub: attr('sub') ?? u.Username, name: attr('name') || attr('given_name') || attr('email') || u.Username });
+    }
+    NextToken = r.NextToken;
+  } while (NextToken);
+  return out;
 }
 
 let live;
@@ -439,6 +488,7 @@ export const handler = async (event) => (live ??= (() => {
     clientId: process.env.CLIENT_ID,
     delegatedClientId: process.env.DELEGATED_CLIENT_ID,
     people: makePeople({ db, table: process.env.PEOPLE_TABLE }),
+    members,
     files: liveFiles(process.env.BUCKET),
   });
 })())(event);

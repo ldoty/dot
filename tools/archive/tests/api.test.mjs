@@ -188,3 +188,26 @@ test('infra/api.tf routes are exactly the handler’s', () => {
   const routes = [.../^\s*routes\s*=\s*\[([\s\S]*?)\]/m.exec(tf)[1].matchAll(/"([A-Z]+ [^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(routes.sort(), [...ROUTES].sort());
 });
+
+test('delete for good: from the trash only, by the drawer’s owner, from the page only; bytes, text and links go', async () => {
+  await familyGroup('gparents0001', 'Parents', [LUKE, AMBER]);
+  await call('PUT', '/drawers/household', { name: 'Household', share: [{ who: 'group:gparents0001', level: 'edit' }] });
+  const [a, b] = (await upload('household', '', [policy, receipt])).body.files.map((f) => f.id);
+  await call('PUT', `/files/${a}/links/${b}`, { relation: 'receipt for' });
+  assert.equal((await call('DELETE', `/files/${a}`)).status, 409);
+  await call('PATCH', `/files/${a}`, { rev: 2, status: 'trash' });
+  assert.equal((await call('DELETE', `/files/${a}`, undefined, token(AMBER))).status, 403); // can edit, doesn't own
+  assert.equal((await call('DELETE', `/files/${a}`, undefined, borrowed())).status, 403);
+  assert.equal((await call('DELETE', `/files/${a}`)).status, 200);
+  assert.equal(bucket.has(`f/${a}`), false);
+  assert.equal(bucket.has(`text/${a}.txt`), false);
+  assert.equal((await call('GET', `/files/${a}`)).status, 404);
+  assert.deepEqual((await call('GET', `/files/${b}`)).body.links, []);
+  // Its bytes are no longer a duplicate
+  assert.equal((await upload('household', '', [policy])).body.files[0].status, 'upload');
+});
+
+test('share options: everyone else in the archive, and the family’s groups', async () => {
+  await familyGroup('gparents0001', 'Parents', [LUKE, AMBER]);
+  assert.deepEqual((await call('GET', '/share-options')).body, { people: [{ sub: AMBER, name: 'amber@x.test' }], groups: [{ id: 'gparents0001', name: 'Parents' }] });
+});

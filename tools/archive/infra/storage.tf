@@ -2,7 +2,7 @@
 # by mistake. Keys are ids, never names (f/<fileId> the file as uploaded, never rewritten; text/<fileId>.txt
 # what intake read from it): folders and names live in the catalog, so a move or rename is a row update.
 #
-# Nothing here deletes a file. Trash is a status in the catalog; emptying it (page, owner only, later)
+# Trash is a status in the catalog; deleting for good (page, the drawer's owner, from the trash only)
 # deletes the object, and versioning keeps it 30 more days as a last chance, then it's gone.
 
 resource "aws_kms_key" "files" {
@@ -86,6 +86,17 @@ resource "aws_s3_bucket_policy" "files" {
     }]
   })
   depends_on = [aws_s3_bucket_public_access_block.files]
+}
+
+# The page uploads straight to S3 from the browser (the same presigned PUT Claude Code uses)
+resource "aws_s3_bucket_cors_configuration" "files" {
+  bucket = aws_s3_bucket.files.id
+  cors_rule {
+    allowed_origins = [trimsuffix(local.app_url, "/"), trimsuffix(local.dev_url, "/")]
+    allowed_methods = ["PUT"]
+    allowed_headers = ["content-type", "x-amz-checksum-sha256"]
+    max_age_seconds = 600
+  }
 }
 
 # Every new file goes to intake

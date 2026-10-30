@@ -2,6 +2,7 @@ locals {
   routes = [
     "GET /dot", "GET /drawers", "PUT /drawers/{id}", "GET /files", "GET /files/{id}", "GET /files/{id}/text", "GET /files/{id}/download",
     "POST /uploads", "PATCH /files/{id}", "PUT /files/{id}/links/{to}", "DELETE /files/{id}/links/{to}",
+    "DELETE /files/{id}", "GET /share-options",
   ]
 }
 
@@ -40,8 +41,9 @@ resource "aws_iam_role_policy_attachment" "api_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# Its table and the family's groups; the files only to sign uploads into f/ and downloads from it,
-# and to read what intake wrote. It never deletes an object.
+# Its table and the family's groups; who is in family_archive (to share with); the files to sign uploads
+# into f/ and downloads from it, to read what intake wrote, and to delete a file for good (page, owner,
+# from the trash only; versioning keeps it 30 more days).
 resource "aws_iam_role_policy" "api_table" {
   role = aws_iam_role.api.id
   policy = jsonencode({
@@ -49,8 +51,9 @@ resource "aws_iam_role_policy" "api_table" {
     Statement = [
       { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Query"], Resource = aws_dynamodb_table.main.arn },
       { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:Query"], Resource = nonsensitive(data.aws_ssm_parameter.people_table_arn.value) },
-      { Effect = "Allow", Action = ["s3:PutObject", "s3:GetObject"], Resource = "${aws_s3_bucket.files.arn}/f/*" },
-      { Effect = "Allow", Action = "s3:GetObject", Resource = "${aws_s3_bucket.files.arn}/text/*" },
+      { Effect = "Allow", Action = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"], Resource = "${aws_s3_bucket.files.arn}/f/*" },
+      { Effect = "Allow", Action = ["s3:GetObject", "s3:DeleteObject"], Resource = "${aws_s3_bucket.files.arn}/text/*" },
+      { Effect = "Allow", Action = "cognito-idp:ListUsersInGroup", Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}" },
       { Effect = "Allow", Action = ["kms:Decrypt", "kms:GenerateDataKey"], Resource = aws_kms_key.files.arn },
     ]
   })
@@ -75,6 +78,7 @@ resource "aws_lambda_function" "api" {
       DELEGATED_CLIENT_ID = module.app.delegated_client_id
       PEOPLE_TABLE        = element(split("/", nonsensitive(data.aws_ssm_parameter.people_table_arn.value)), 1)
       BUCKET              = aws_s3_bucket.files.id
+      USER_POOL_ID        = local.pool_id
     }
   }
 }

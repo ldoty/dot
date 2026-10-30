@@ -12,7 +12,7 @@ it with people or family groups, to see (read) or to file into (edit), as Lists 
 | `api/intake.mjs` | Runs on every new file: checks it, reads its text (PDFs, text files), files it. No Claude |
 | `api/dot.mjs` | The manifest: how Claude Code (`platform/mcp`), and later Dot, use the archive as the person |
 | `infra/` | OpenTofu root: table, bucket + key (`storage.tf`), intake (`intake.tf`), API (`api.tf`) |
-| `web/` | The page (to come: browse, search, drawers and sharing, trash) |
+| `web/` | The page: drawers and their folders, search, upload (hashed in the browser, straight to S3), a file's card (describe, move, trash, restore), drawers and sharing, delete for good |
 
 ## How files move
 
@@ -25,9 +25,10 @@ it with people or family groups, to see (read) or to file into (edit), as Lists 
 3. **Filing**: rename, move (folder or drawer), describe (title, summary, kind, the document's own date,
    tags), link (`renews`, `receipt for`, …), trash and restore: all `rev`-checked, all logged.
 
-Keys are ids, never names (`f/<id>`, written once), so moves and renames never touch S3. Nothing here
-deletes a file: trash is a status, and emptying it (page, owner only, to come) deletes the object, which
-versioning keeps 30 more days.
+Keys are ids, never names (`f/<id>`, written once), so moves and renames never touch S3. Trash is a
+status. Deleting for good is the drawer owner's, on the page, for a file already in the trash
+(`DELETE /files/{id}`, never from a borrowed token): it deletes the object and its text, which versioning
+keeps 30 more days.
 
 ## Access
 

@@ -8,7 +8,7 @@ const SITE = 'https://archive.dot-y.co';
 const config = await (await fetch(`${SITE}/config.json`)).json();
 
 test('every API route refuses requests without a token', async () => {
-  for (const [method, path] of [['GET', '/dot'], ['GET', '/drawers'], ['GET', '/files'], ['POST', '/uploads'], ['PATCH', '/files/f0000000000000001']]) {
+  for (const [method, path] of [['GET', '/dot'], ['GET', '/drawers'], ['GET', '/files'], ['POST', '/uploads'], ['PATCH', '/files/f0000000000000001'], ['DELETE', '/files/f0000000000000001'], ['GET', '/share-options']]) {
     assert.equal((await fetch(config.apiUrl + path, { method })).status, 401, `${method} ${path}`);
   }
 });

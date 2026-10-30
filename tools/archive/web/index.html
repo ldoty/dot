@@ -7,37 +7,385 @@
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="family.css">
 <style>
-/* Layout: one narrow column. Header with a link home, then the tool. */
-.wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 24px }
+/* Layout: header with a link home, a search box, a row of drawers, then the open drawer: its folders and files
+   (or the trash), and the chosen file's card. What you may do with a drawer decides which buttons show. */
+.wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 18px }
 .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
 .top a { color: var(--muted); text-decoration: none; font-size: 14px }
 h1 { font-size: clamp(32px, 6vw, 48px) }
-.status { color: var(--muted); font-size: 14px; min-height: 1.4em }
+h2 { font-size: 22px; min-width: 0; overflow-wrap: anywhere }
+.status { color: var(--muted); font-size: 14px; min-height: 1.4em; margin: 0 }
+.search { display: flex; gap: 8px }
+input, select, textarea { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px; color: var(--ink); min-width: 0; font: inherit }
+input:focus, select:focus, textarea:focus { border-color: var(--pool); outline: none }
+.search input { flex: 1 }
+.drawers { display: flex; gap: 6px; flex-wrap: wrap }
+.drawers button { border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); border-radius: var(--r-pill); padding: 6px 14px; font-weight: 600; cursor: pointer }
+.drawers button[aria-pressed="true"] { background: var(--pool); border-color: var(--pool); color: var(--on-accent) }
+.drawers .new { border-style: dashed; color: var(--muted) }
+.head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; border-bottom: 2px solid var(--wood); padding-bottom: 6px }
+.tools { display: flex; gap: 4px; flex-wrap: wrap }
+.tools button, .tools label { border: 1px solid transparent; background: none; color: var(--muted); border-radius: var(--r-pill); padding: 4px 10px; font-size: 13px; font-weight: 600; cursor: pointer }
+.tools button:hover, .tools label:hover { color: var(--ink); border-color: var(--line) }
+.tools .arm { color: var(--ember); border-color: var(--ember) }
+.tools .on { color: var(--ink); border-color: var(--line) }
+#main { display: grid; gap: 14px }
+/* Plain lines of detail (family.css has a boxed .note; these aren't callouts) */
+.info { color: var(--muted); font-size: 14px; margin: 0; white-space: pre-wrap }
+.crumbs { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; font-size: 14px }
+.crumbs button { border: 0; background: none; color: var(--pool); padding: 0; cursor: pointer; font: inherit }
+.crumbs span { color: var(--muted) }
+ul { list-style: none; margin: 0; padding: 0 }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line) }
+.row > button { border: 0; background: none; padding: 0; text-align: left; color: var(--ink); font-weight: 600; cursor: pointer; overflow-wrap: anywhere; font-size: 15px }
+.row > button:hover { color: var(--pool) }
+.row small { grid-column: 1; color: var(--muted); font-size: 13px; overflow-wrap: anywhere }
+.row .meta { grid-column: 2; grid-row: 1 / span 2; color: var(--muted); font: 12px var(--mono); text-align: right }
+.row.folder > button::before { content: "▸ "; color: var(--wood) }
+.row.sel { background: var(--raised) }
+.empty { color: var(--muted); font-size: 14px; margin: 8px 0 }
+form.edit { display: grid; gap: 8px; padding: 12px; border-radius: var(--r-sm); background: var(--raised) }
+form.edit label { display: grid; gap: 3px; font-size: 13px; color: var(--muted) }
+form.edit .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px }
+form.edit .acts { display: flex; gap: 6px; flex-wrap: wrap }
+form.edit .btn { padding: 6px 14px; font-size: 13px }
+.card.file { display: grid; gap: 10px }
+.links li { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; padding: 3px 0 }
+.links button { border: 0; background: none; color: var(--pool); padding: 0; cursor: pointer; font: inherit; text-align: left }
+.links .rel { color: var(--muted) }
+.shares li { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px }
+.uploads li { font-size: 14px; color: var(--muted) }
+.hidden-file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none }
 </style>
 </head>
 <body>
-<div class="wrap" id="app">
+<div class="wrap">
   <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
   <h1>Archive</h1>
+  <p class="status" id="status" role="status"></p>
   <div id="main"><p class="status">Loading…</p></div>
 </div>
 <script src="family-auth.js"></script>
 <script>
-// The page comes with the catalog; for now the archive is reached from Claude Code (README)
 (function () {
+  var cfg, drawers = [], files = [], options = null;
+  // Where you are: the open drawer and folder, the trash or not, a search, the chosen file
+  var at = { drawer: null, folder: "", trash: false, q: "", results: null, file: null };
+  // What's open: { kind: "drawer" | "new-drawer" | "share" | "file" }; armed: a button waiting for a second click
+  var editing = null, armed = null, uploads = [];
   var main = document.getElementById("main");
-  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function status(msg) {
+    var s = document.getElementById("status"); s.textContent = msg || "";
+    clearTimeout(status.t); if (msg) status.t = setTimeout(function () { s.textContent = ""; }, 5000);
+  }
+  function size(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B"; }
+  function drawerOf(id) { for (var i = 0; i < drawers.length; i++) if (drawers[i].id === id) return drawers[i]; return null; }
+  function canEdit(d) { return !!d && (d.level === "edit" || d.level === "owner"); }
+
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method,
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    }).then(function (res) {
+      return res.json().then(function (j) {
+        if (!res.ok) { var e = new Error(j.error || ("error " + res.status)); e.status = res.status; e.current = j.current; throw e; }
+        return j;
+      });
+    });
+  }
+
+  function loadDrawers() {
+    return api("GET", "/drawers").then(function (list) {
+      drawers = list;
+      if (!drawerOf(at.drawer)) at.drawer = (list.filter(function (d) { return d.id.indexOf("p-") === 0 && d.level === "owner"; })[0] || list[0] || {}).id || null;
+    });
+  }
+  function loadFiles() {
+    if (!at.drawer) { files = []; return Promise.resolve(); }
+    return api("GET", "/files?drawer=" + encodeURIComponent(at.drawer) + "&limit=1000" + (at.trash ? "&status=trash" : "")).then(function (r) { files = r.files; });
+  }
+  function openFile(id) {
+    return api("GET", "/files/" + id).then(function (f) { at.file = f; editing = null; render(); })
+      .catch(function (e) { status("Couldn’t open that file: " + e.message); });
+  }
+
+  // The folders directly under the open one, and the files in it, from the drawer's files
+  function here() {
+    var pre = at.folder ? at.folder + "/" : "", subs = {}, inHere = [];
+    files.forEach(function (f) {
+      if (at.trash) { inHere.push(f); return; }
+      if (f.folder === at.folder) inHere.push(f);
+      else if (!at.folder || f.folder.indexOf(pre) === 0) {
+        var rest = at.folder ? f.folder.slice(pre.length) : f.folder;
+        if (rest) { var top = rest.split("/")[0]; subs[top] = (subs[top] || 0) + 1; }
+      }
+    });
+    return { subs: Object.keys(subs).sort().map(function (k) { return { name: k, count: subs[k] }; }), files: inHere };
+  }
+
+  function fileRow(f, withDrawer) {
+    var d = withDrawer ? drawerOf(f.drawer) : null;
+    var sub = [f.title && f.title !== f.name ? f.title : "", d ? d.name + (f.folder ? " / " + f.folder : "") : "", f.summary].filter(Boolean).join(" · ");
+    return '<li class="row' + (at.file && at.file.id === f.id ? " sel" : "") + '"><button data-file="' + esc(f.id) + '">' + esc(f.name) + "</button>" +
+      '<span class="meta">' + esc(f.docDate || "") + "<br>" + size(f.size) + "</span>" + (sub ? "<small>" + esc(sub.slice(0, 240)) + "</small>" : "") + "</li>";
+  }
+
+  function shareForm(d) {
+    var who = function (w) {
+      if (!options) return w;
+      var p = options.people.filter(function (x) { return "sub:" + x.sub === w; })[0], g = options.groups.filter(function (x) { return "group:" + x.id === w; })[0];
+      return p ? p.name : g ? "Group “" + g.name + "”" : w;
+    };
+    var any = options && (options.people.length || options.groups.length);
+    return '<form class="edit" data-form="share"><strong>Shared with</strong><ul class="shares">' +
+      (d.share.length ? d.share.map(function (x, n) {
+        return "<li><span>" + esc(who(x.who)) + " · " + (x.level === "edit" ? "can file" : "can see") + '</span><span class="tools"><button type="button" data-unshare="' + n + '">Remove</button></span></li>';
+      }).join("") : '<li class="empty">Just you.</li>') + "</ul>" +
+      (any ? '<div class="two"><select name="who" aria-label="Share with">' +
+        options.people.map(function (p) { return '<option value="sub:' + esc(p.sub) + '">' + esc(p.name) + "</option>"; }).join("") +
+        options.groups.map(function (g) { return '<option value="group:' + esc(g.id) + '">Group “' + esc(g.name) + "”</option>"; }).join("") +
+        '</select><select name="level" aria-label="Level"><option value="edit">can file</option><option value="read">can see</option></select></div>' : "") +
+      '<div class="acts">' + (any ? '<button class="btn primary">Share</button>' : "") + '<button type="button" class="btn ghost" data-cancel>Done</button></div></form>';
+  }
+
+  function drawerForm(d) {
+    return '<form class="edit" data-form="' + (d ? "drawer" : "new-drawer") + '">' +
+      '<label>Name<input name="name" maxlength="80" required value="' + esc(d ? d.name : "") + '"></label>' +
+      '<label>What goes here, and how it’s filed (Molly follows these)<textarea name="notes" rows="3" maxlength="4000">' + esc(d ? d.notes : "") + "</textarea></label>" +
+      '<div class="acts"><button class="btn primary">' + (d ? "Save" : "Make drawer") + '</button><button type="button" class="btn ghost" data-cancel>Cancel</button></div></form>';
+  }
+
+  function fileCard(f) {
+    var d = drawerOf(f.drawer), edit = canEdit(d), own = d && d.level === "owner";
+    var targets = drawers.filter(canEdit);
+    var body;
+    if (editing && editing.kind === "file" && edit) {
+      body = '<form class="edit" data-form="file">' +
+        '<div class="two"><label>Name<input name="name" maxlength="200" value="' + esc(f.name) + '"></label>' +
+        '<label>Folder<input name="folder" maxlength="300" placeholder="e.g. Taxes/2026" value="' + esc(f.folder) + '"></label></div>' +
+        '<div class="two"><label>Drawer<select name="drawer">' + targets.map(function (t) { return '<option value="' + esc(t.id) + '"' + (t.id === f.drawer ? " selected" : "") + ">" + esc(t.name) + "</option>"; }).join("") + "</select></label>" +
+        '<label>Kind<input name="kind" maxlength="40" placeholder="receipt, statement, policy…" value="' + esc(f.kind) + '"></label></div>' +
+        '<label>Title<input name="title" maxlength="200" value="' + esc(f.title) + '"></label>' +
+        '<label>Summary<textarea name="summary" rows="3" maxlength="2000">' + esc(f.summary) + "</textarea></label>" +
+        '<div class="two"><label>Document’s date<input name="docDate" placeholder="YYYY-MM-DD" value="' + esc(f.docDate) + '"></label>' +
+        '<label>Tags<input name="tags" placeholder="comma, separated" value="' + esc(f.tags.join(", ")) + '"></label></div>' +
+        '<div class="acts"><button class="btn primary">Save</button><button type="button" class="btn ghost" data-cancel>Cancel</button></div></form>';
+    } else {
+      body = (f.summary ? '<p class="info">' + esc(f.summary) + "</p>" : "") +
+        '<p class="info">' + esc([d ? d.name : "", f.folder, f.kind, f.docDate, size(f.size), f.pages ? f.pages + (f.pages === 1 ? " page" : " pages") : ""].filter(Boolean).join(" · ")) + "</p>" +
+        (f.tags.length ? '<p class="info">Tags: ' + esc(f.tags.join(", ")) + "</p>" : "");
+    }
+    return '<section class="card file"><div class="head"><h2>' + esc(f.title || f.name) + '</h2><div class="tools">' +
+      '<button data-download="' + esc(f.id) + '">Download</button>' +
+      (edit && f.status === "filed" && !(editing && editing.kind === "file") ? '<button data-editfile>Edit</button>' : "") +
+      (edit && f.status === "filed" ? '<button data-trash="' + esc(f.id) + '"' + (armed === "trash" ? ' class="arm"' : "") + ">" + (armed === "trash" ? "Trash it?" : "Trash") + "</button>" : "") +
+      (edit && f.status === "trash" ? '<button data-restore="' + esc(f.id) + '">Restore</button>' : "") +
+      (own && f.status === "trash" ? '<button data-forget="' + esc(f.id) + '"' + (armed === "forget" ? ' class="arm"' : "") + ">" + (armed === "forget" ? "Delete for good?" : "Delete for good") + "</button>" : "") +
+      '<button data-close aria-label="Close">&times;</button></div></div>' + body +
+      (f.links && f.links.length ? '<strong>Linked</strong><ul class="links">' + f.links.map(function (l) {
+        return '<li><button data-file="' + esc(l.id) + '">' + esc(l.title || l.name) + '</button><span class="rel">' + esc(l.dir === "to" ? l.relation : l.relation + " (this)") + "</span></li>";
+      }).join("") + "</ul>" : "") + "</section>";
+  }
+
+  function render() {
+    var d = drawerOf(at.drawer);
+    var html = '<form class="search" data-form="search"><input name="q" type="search" placeholder="Search every drawer" aria-label="Search" value="' + esc(at.q) + '"><button class="btn">Search</button></form>';
+    html += '<div class="drawers">' + drawers.map(function (x) {
+      return '<button data-drawer="' + esc(x.id) + '" aria-pressed="' + (!at.results && x.id === at.drawer) + '">' + esc(x.name) + "</button>";
+    }).join("") + '<button class="new" data-newdrawer>New drawer</button></div>';
+    if (editing && editing.kind === "new-drawer") html += drawerForm(null);
+
+    if (at.results) {
+      html += '<div class="head"><h2>Results for “' + esc(at.q) + "”</h2>" + '<div class="tools"><button data-clear>Back to the drawer</button></div></div>' +
+        (at.results.length ? "<ul>" + at.results.map(function (f) { return fileRow(f, true); }).join("") + "</ul>" : '<p class="empty">Nothing matched.</p>');
+    } else if (d) {
+      var h = here(), own = d.level === "owner", edit = canEdit(d);
+      html += '<div class="head"><h2>' + esc(d.name) + (at.trash ? " · trash" : "") + '</h2><div class="tools">' +
+        (edit && !at.trash ? '<label>Upload<input type="file" multiple class="hidden-file" data-upload></label>' : "") +
+        (own ? '<button data-share' + (editing && editing.kind === "share" ? ' class="on"' : "") + ">Share</button>" : "") +
+        (edit ? '<button data-editdrawer>Edit</button>' : "") +
+        '<button data-trashview' + (at.trash ? ' class="on"' : "") + ">" + (at.trash ? "Back to files" : "Trash") + "</button></div></div>";
+      if (d.share.length) html += '<p class="info">Shared with ' + d.share.length + (d.share.length === 1 ? " person or group" : " people or groups") + (own ? "" : " by its owner") + ".</p>";
+      if (editing && editing.kind === "drawer") html += drawerForm(d);
+      else if (d.notes) html += '<p class="info">' + esc(d.notes) + "</p>";
+      if (editing && editing.kind === "share") html += shareForm(d);
+      if (uploads.length) html += '<ul class="uploads">' + uploads.map(function (u) { return "<li>" + esc(u.name) + " · " + esc(u.state) + "</li>"; }).join("") + "</ul>";
+      if (!at.trash && at.folder) {
+        var parts = at.folder ? at.folder.split("/") : [];
+        html += '<div class="crumbs"><button data-folder="">' + esc(d.name) + "</button>" + parts.map(function (p, i) {
+          return "<span>/</span><button data-folder=\"" + esc(parts.slice(0, i + 1).join("/")) + '">' + esc(p) + "</button>";
+        }).join("") + "</div>";
+      }
+      html += "<ul>" + h.subs.map(function (s) {
+        return '<li class="row folder"><button data-folder="' + esc((at.folder ? at.folder + "/" : "") + s.name) + '">' + esc(s.name) + '</button><span class="meta">' + s.count + "</span></li>";
+      }).join("") + h.files.map(function (f) { return fileRow(f, false); }).join("") + "</ul>";
+      if (!h.subs.length && !h.files.length) html += '<p class="empty">' + (at.trash ? "The trash is empty." : edit ? "Nothing here yet. Upload files, or send them to Molly." : "Nothing here yet.") + "</p>";
+    } else {
+      html += '<p class="empty">No drawers yet.</p>';
+    }
+    if (at.file) html += fileCard(at.file);
+    main.innerHTML = html;
+  }
+
+  function refresh() { return loadDrawers().then(loadFiles).then(render); }
+
+  // SHA-256 of a chosen file, in hex: the upload is signed for exactly these bytes
+  function digest(file) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(r.result); };
+      r.onerror = function () { reject(r.error); };
+      r.readAsArrayBuffer(file);
+    }).then(function (buf) {
+      return crypto.subtle.digest("SHA-256", buf).then(function (h) {
+        return { bytes: buf, sha256: Array.prototype.map.call(new Uint8Array(h), function (b) { return ("0" + b.toString(16)).slice(-2); }).join("") };
+      });
+    });
+  }
+
+  function upload(list) {
+    var chosen = Array.prototype.slice.call(list, 0, 50);
+    if (!chosen.length) return;
+    if (list.length > 50) status("Uploading the first 50; choose the rest after.");
+    uploads = chosen.map(function (f) { return { name: f.name, state: "reading" }; }); render();
+    var drawer = at.drawer, folder = at.folder, read = [];
+    return Promise.all(chosen.map(digest)).then(function (r) {
+      read = r;
+      return api("POST", "/uploads", { drawer: drawer, folder: folder, files: chosen.map(function (f, i) { return { name: f.name, size: f.size, sha256: read[i].sha256, type: f.type || "application/octet-stream" }; }) });
+    }).then(function (res) {
+      var waiting = [];
+      return Promise.all(res.files.map(function (u, i) {
+        if (u.status === "duplicate") { uploads[i].state = "already here" + (u.folder ? ", in " + u.folder : ""); return null; }
+        uploads[i].state = "sending"; render();
+        return fetch(u.url, { method: "PUT", headers: u.headers, body: read[i].bytes }).then(function (put) {
+          if (!put.ok) throw new Error("upload refused (" + put.status + ")");
+          uploads[i].state = "filing"; waiting.push({ i: i, id: u.id });
+        }).catch(function (e) { uploads[i].state = "failed: " + e.message; });
+      })).then(function () { render(); return waitFiled(waiting, 0); });
+    }).catch(function (e) { status("Couldn’t upload: " + e.message); uploads = []; render(); });
+  }
+  // Intake files each upload within seconds; check until they're all in (or a minute passes)
+  function waitFiled(waiting, tries) {
+    return loadFiles().then(function () {
+      var ids = files.map(function (f) { return f.id; });
+      waiting.forEach(function (w) { if (ids.indexOf(w.id) >= 0) uploads[w.i].state = "filed"; });
+      var left = waiting.filter(function (w) { return ids.indexOf(w.id) < 0; });
+      render();
+      if (left.length && tries < 30) return new Promise(function (r) { setTimeout(r, 2000); }).then(function () { return waitFiled(left, tries + 1); });
+      setTimeout(function () { uploads = []; render(); }, 4000);
+    });
+  }
+
+  function saveDrawer(d, change) {
+    var body = { name: d.name, notes: d.notes, share: d.share, rev: d.rev };
+    for (var k in change) body[k] = change[k];
+    return api("PUT", "/drawers/" + d.id, body).then(function (row) {
+      drawers = drawers.map(function (x) { return x.id === row.id ? row : x; }); render();
+    }).catch(function (e) {
+      if (e.status === 409) { status("That drawer changed somewhere else; this is the newer one."); editing = null; return refresh(); }
+      status("Couldn’t save: " + e.message);
+    });
+  }
+  function saveFile(change, done) {
+    var f = at.file; change.rev = f.rev;
+    return api("PATCH", "/files/" + f.id, change).then(function () {
+      return loadFiles().then(function () { return f.status === "trash" && change.status === "filed" ? null : openFile(f.id); }).then(function () { if (done) done(); render(); });
+    }).catch(function (e) {
+      if (e.status === 409) { status("That file changed somewhere else; this is the newer one."); return openFile(f.id); }
+      status("Couldn’t save: " + e.message);
+    });
+  }
+
+  main.addEventListener("change", function (e) {
+    if (e.target.matches("[data-upload]")) upload(e.target.files);
+  });
+  main.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var form = e.target, kind = form.dataset.form, v = function (n) { return form.elements[n] ? form.elements[n].value.trim() : ""; };
+    var d = drawerOf(at.drawer);
+    if (kind === "search") {
+      at.q = v("q"); at.file = null;
+      if (!at.q) { at.results = null; render(); return; }
+      api("GET", "/files?limit=200&q=" + encodeURIComponent(at.q)).then(function (r) { at.results = r.files; render(); })
+        .catch(function (err) { status("Couldn’t search: " + err.message); });
+    } else if (kind === "new-drawer") {
+      if (!v("name")) return;
+      // A readable id that won't collide: the name, then a few random letters
+      var id = (v("name").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/^p-/, "").slice(0, 30) || "drawer") + "-" + Math.random().toString(36).slice(2, 6);
+      api("PUT", "/drawers/" + id, { name: v("name"), notes: v("notes") }).then(function (row) {
+        editing = null; at.drawer = row.id; at.folder = ""; at.trash = false; at.file = null; return refresh();
+      }).catch(function (err) { status("Couldn’t make it: " + err.message); });
+    } else if (kind === "drawer") {
+      saveDrawer(d, { name: v("name"), notes: v("notes") }).then(function () { editing = null; render(); });
+    } else if (kind === "share") {
+      if (!form.elements.who) return;
+      var who = v("who"), share = d.share.filter(function (x) { return x.who !== who; }).concat([{ who: who, level: v("level") }]);
+      saveDrawer(d, { share: share });
+    } else if (kind === "file") {
+      saveFile({
+        name: v("name"), folder: v("folder"), drawer: v("drawer"), kind: v("kind"), title: v("title"), summary: v("summary"), docDate: v("docDate"),
+        tags: v("tags") ? v("tags").split(",").map(function (t) { return t.trim(); }).filter(Boolean) : [],
+      }, function () { editing = null; });
+    }
+  });
+  main.addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    var ds = b.dataset, d = drawerOf(at.drawer);
+    if (ds.drawer !== undefined) { at.drawer = ds.drawer; at.folder = ""; at.trash = false; at.results = null; at.file = null; editing = null; loadFiles().then(render); }
+    else if (ds.folder !== undefined) { at.folder = ds.folder; at.file = null; render(); }
+    else if (ds.file) openFile(ds.file);
+    else if (ds.close !== undefined) { at.file = null; armed = null; render(); }
+    else if (ds.clear !== undefined) { at.results = null; at.q = ""; at.file = null; render(); }
+    else if (ds.newdrawer !== undefined) { editing = { kind: "new-drawer" }; render(); }
+    else if (ds.editdrawer !== undefined) { editing = { kind: "drawer" }; render(); }
+    else if (ds.editfile !== undefined) { editing = { kind: "file" }; render(); }
+    else if (ds.cancel !== undefined) { editing = null; render(); }
+    else if (ds.trashview !== undefined) { at.trash = !at.trash; at.folder = ""; at.file = null; loadFiles().then(render); }
+    else if (ds.share !== undefined) {
+      editing = editing && editing.kind === "share" ? null : { kind: "share" };
+      (options ? Promise.resolve() : api("GET", "/share-options").then(function (o) { options = o; })).then(render)
+        .catch(function (err) { status("Couldn’t load who to share with: " + err.message); });
+    }
+    else if (ds.unshare !== undefined) { saveDrawer(d, { share: d.share.filter(function (x, n) { return n !== Number(ds.unshare); }) }); }
+    else if (ds.download) {
+      api("GET", "/files/" + ds.download + "/download").then(function (r) { window.location.href = r.url; })
+        .catch(function (err) { status("Couldn’t download: " + err.message); });
+    }
+    else if (ds.trash) {
+      if (armed !== "trash") { armed = "trash"; render(); return; }
+      armed = null; saveFile({ status: "trash" }, function () { at.file = null; status("Moved to the trash."); });
+    }
+    else if (ds.restore) { saveFile({ status: "filed" }, function () { at.file = null; status("Restored."); }); }
+    else if (ds.forget) {
+      if (armed !== "forget") { armed = "forget"; render(); return; }
+      armed = null;
+      api("DELETE", "/files/" + ds.forget).then(function () { at.file = null; status("Deleted for good."); return loadFiles(); }).then(render)
+        .catch(function (err) { status("Couldn’t delete: " + err.message); });
+    }
+  });
+
   function gate(msg) {
     main.innerHTML = '<p class="status">' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button>';
     document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
   }
+
   fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
     return FamilyAuth.init(c);
   }).then(function (user) {
     if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
     document.getElementById("signout").hidden = false;
     document.getElementById("signout").onclick = function () { FamilyAuth.logout(); };
-    main.innerHTML = '<p>Molly is setting up the drawers. For now, reach the archive from Claude Code.</p>';
+    return refresh().catch(function (e) {
+      if (e.status === 403) return gate("Your account doesn’t have access to the archive yet.");
+      throw new Error("Couldn’t load (" + e.message + "). Reload to try again.");
+    });
   }).catch(function (e) { gate(e.message); });
 })();
 </script>

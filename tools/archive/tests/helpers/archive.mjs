@@ -22,11 +22,13 @@ let n = 0;
 const handler = createApi({
   db, table: 'family-archive', group: 'family_archive', issuer: ISSUER, clientId: CLIENT_ID, delegatedClientId: DELEGATED,
   people: makePeople({ db, table: 'family-people', ttlMs: 0 }),
+  members: async () => [{ sub: LUKE, name: 'Luke' }, { sub: AMBER, name: 'amber@x.test' }],
   newId: () => `f${String(++n).padStart(16, '0')}`,
   files: {
     putUrl: async ({ key, size, sha256 }) => `https://s3.test/${key}?size=${size}&sha=${sha256}`,
     getUrl: async ({ key, name }) => `https://s3.test/${key}?download=${encodeURIComponent(name)}`,
     text: async (key) => bucket.get(key)?.toString() ?? null,
+    remove: async (key) => { bucket.delete(key); },
   },
 });
 export const intake = createIntake({
@@ -39,7 +41,7 @@ export const intake = createIntake({
 });
 export const ROUTES = [
   'GET /dot', 'GET /drawers', 'PUT /drawers/{id}', 'GET /files', 'GET /files/{id}', 'GET /files/{id}/text', 'GET /files/{id}/download',
-  'POST /uploads', 'PATCH /files/{id}', 'PUT /files/{id}/links/{to}', 'DELETE /files/{id}/links/{to}',
+  'POST /uploads', 'PATCH /files/{id}', 'PUT /files/{id}/links/{to}', 'DELETE /files/{id}/links/{to}', 'DELETE /files/{id}', 'GET /share-options',
 ];
 export const token = (sub = LUKE) => accessToken({ clientId: CLIENT_ID, group: 'family_archive', sub, username: sub });
 /** A token Claude Code (or Dot) borrowed for this person */
