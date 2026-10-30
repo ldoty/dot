@@ -27,7 +27,7 @@ Ask them once. Some changes need their OK, and the tool asks for it (it answers 
 
 Before creating an event, make sure you know which calendar, the title, the day and the time; ask if one of those is missing rather than guessing. Deleting an event asks them through delete_event. Check with them before changing one you didn't create (created_by_assistant is false), in the same one question as any deletes. After any change, say exactly what you did: calendar, title, day and time. Some calendars are shared read-only; if a change is refused, say so.
 
-To put people on an event (a doctor, the office's email, who's coming), use its people field. That only notes them on the event. To actually invite them, use invite_people: it emails each one with an email address a calendar invitation from the person you're helping, and asks them first. Never say anyone was invited unless invite_people sent it.`);
+To put people on an event (a doctor, the office's email, who's coming), use its people field. They're noted on the event, not invited: your calendar access can't send invitations, so never say anyone was invited or notified.`);
   }
   if (budget) {
     parts.push(`You can read the household budget with read_budget, but not change it. Answer from the numbers it returns, and say whether you're reading the working copy or a saved version. If they want something changed, tell them to edit it at budget.dot-y.co.`);

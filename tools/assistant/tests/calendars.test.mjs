@@ -1,7 +1,7 @@
 // Dot's calendar tools against the Calendars tool's real API (tools/calendars), with its fake Google.
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { AMBER, LUKE, call, dotToken, google, seed, sent } from '../../calendars/tests/helpers/calendars.mjs';
+import { AMBER, LUKE, call, dotToken, google, seed } from '../../calendars/tests/helpers/calendars.mjs';
 import { makeCalendars } from '../api/calendars.mjs';
 import { makeTools } from '../api/tools.mjs';
 import { runTurn } from '../api/agent.mjs';
@@ -71,42 +71,6 @@ test('deleting an event: Dot asks, can’t approve itself, and deletes after the
   assert.equal(google.events['kids@group.calendar.google.com'].length, 1);
   await say('yes');
   assert.equal(google.events['kids@group.calendar.google.com'].length, 0);
-});
-
-test('inviting people: Dot asks, can’t approve itself, and the invitations go only after the person’s yes', async () => {
-  const { calendar } = dotFor(LUKE);
-  const made = await calendar.createEvent({ calendar: 'kids', title: 'Dentist', start: '2026-10-22T09:00', end: '2026-10-22T10:00', people: [{ name: 'Dr. Smith', email: 'office@smith.example' }] });
-  const claude = fakeClaude([
-    toolUse('invite_people', { calendar: 'kids', event_id: made.id }, 't1'),
-    toolUse('invite_people', { calendar: 'kids', event_id: made.id, confirm: true }, 't2'),
-    text('Email Dr. Smith an invitation to the dentist on Thursday?'),
-    toolUse('invite_people', { calendar: 'kids', event_id: made.id, confirm: true }, 't3'),
-    text('Sent.'),
-  ]);
-  const convs = new Map();
-  const store = {
-    async getConversation(u, id) { return convs.get(id)?.conv ?? null; },
-    async createConversation(u, { id, title, channel }) { const conv = { id, title, channel }; convs.set(id, { conv, msgs: [] }); return conv; },
-    async loadMessages(u, id) { return structuredClone(convs.get(id).msgs); },
-    async appendMessage(u, id, i, m) { convs.get(id).msgs.push(structuredClone(m)); },
-  };
-  const { tools } = await toolsFor(LUKE);
-  assert.ok(tools.definitions.some((d) => d.name === 'invite_people'));
-  let id;
-  const say = async (words) => { id = (await runTurn({ client: claude.client, store, model: 'm', timeZone: 'America/New_York', tools, userId: LUKE, conversationId: id, text: words, channel: 'sms' })).conversationId; };
-  const results = () => claude.calls.flatMap((c) => c.params.messages.at(-1).content).filter((b) => b.type === 'tool_result');
-  await say('invite the dentist’s office to Mia’s appointment');
-  assert.match(results()[0].content, /needs_confirmation[\s\S]*Dr\. Smith/);
-  assert.equal(results()[1].content, 'Wait for the person’s reply before confirming.');
-  assert.equal(sent.length, 0);
-  await say('yes');
-  assert.deepEqual(sent.map((m) => m.to), ['office@smith.example']);
-});
-
-test('a scheduled ask can’t send invitations', async () => {
-  const { calendar } = dotFor(LUKE);
-  const tools = makeTools({ calendar, calendarNames: ['kids'], readOnly: true });
-  assert.equal(tools.definitions.find((d) => d.name === 'invite_people'), undefined);
 });
 
 test('a plan with two deletes: asked about together, one yes deletes both', async () => {

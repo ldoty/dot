@@ -3,8 +3,7 @@
 // Calendars in `readOnly` can be read but never changed, whatever Google would allow: Dot's
 // service account can write to a calendar for its owner, and someone it's shared with must not.
 // Events the assistant creates carry a private tag so it can tell them from hand-made ones.
-// People (names, emails) are noted on the event, not added as Google attendees (invitations go out from
-// tools/calendars/api/invite.mjs instead, on the person's say-so): Google refuses attendees from a
+// People (names, emails) are noted on the event, not invited: Google refuses attendees from a
 // service account without Workspace domain-wide delegation, which these Gmail calendars can't have.
 // They're kept in a private property (so they read back exactly) and shown at the end of the description.
 
@@ -172,13 +171,6 @@ export function makeCalendar({ accessToken, calendars, readOnly = [], timeZone, 
         ...(start !== undefined ? when({ start, end, all_day: allDay }) : {}),
       };
       return view(await call('PATCH', path, patch));
-    },
-
-    // One event, for an invitation (tools/calendars/api/invite.mjs): its UID and sequence tie the invitation to it.
-    // writable: only from a calendar this person may change
-    async getEvent({ calendar, event_id: eventId, writable = false }) {
-      const e = await call('GET', `/calendars/${writable ? writableIdFor(calendar) : idFor(calendar)}/events/${encodeURIComponent(eventId)}`);
-      return { ...view(e), ical_uid: e.iCalUID, sequence: e.sequence ?? 0, starts: e.start, ends: e.end, full_description: ownDescription(e), cancelled: e.status === 'cancelled' };
     },
 
     async deleteEvent({ calendar, event_id: eventId }) {

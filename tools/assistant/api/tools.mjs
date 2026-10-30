@@ -29,12 +29,12 @@ const people = {
     additionalProperties: false,
   },
   description: 'People for this appointment, by name and/or email (the doctor, the office, who’s coming). They’re noted on the event '
-    + 'for reference; Google sends them nothing. To invite them, use invite_people afterwards.',
+    + 'for reference, not invited: Google won’t send them anything.',
 };
 
 // What a scheduled ask's run may not use: with no one there to ask, it only reads
 // (discovered writes, like House's automations, are left out by discovery's `writes`)
-export const WRITE_TOOLS = ['house_control', 'lists_change', 'create_event', 'update_event', 'delete_event', 'invite_people', 'remember', 'forget', 'schedule'];
+export const WRITE_TOOLS = ['house_control', 'lists_change', 'create_event', 'update_event', 'delete_event', 'remember', 'forget', 'schedule'];
 
 export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = [], budget, house, lists, memory, schedule, automations, readOnly = false, discovered = { definitions: [], connected: [], handlers: {} } }) {
   const cal = { type: 'string', enum: calendarNames, description: 'Which calendar' };
@@ -105,20 +105,6 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
       },
     },
     {
-      name: 'invite_people',
-      description: 'Email a calendar invitation for an event to the people noted on it (its people field; only those with an email): it opens as an invite in their calendar, from the person you’re helping, and their RSVP goes back to them. Add someone to the event’s people first to invite them. It asks the person first: when it says so, ask them and stop; only when they agree, call again with confirm: true. Send it again after changing the time, so their calendar updates.',
-      input_schema: {
-        type: 'object',
-        properties: {
-          calendar: writableCal, event_id: { type: 'string' },
-          emails: { type: 'array', items: { type: 'string' }, description: 'Only these of the event’s people (default: everyone on it with an email)' },
-          confirm: { type: 'boolean', description: 'Only after the person agreed' },
-        },
-        required: ['calendar', 'event_id'],
-        additionalProperties: false,
-      },
-    },
-    {
       name: 'delete_event',
       description: 'Delete an event. It asks the person first: when it says so, ask them and stop; only when they agree, call again with confirm: true.',
       input_schema: {
@@ -150,7 +136,7 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
       additionalProperties: false,
     },
   }] : [];
-  const writeTools = ['create_event', 'update_event', 'delete_event', 'invite_people'];
+  const writeTools = ['create_event', 'update_event', 'delete_event'];
   const offered = calendarTools.filter((t) => writable.length || !writeTools.includes(t.name));
   const all = [...(calendarNames.length ? offered : []), ...budgetTools, ...(house ? [houseControl] : []), ...(lists ? [listsChange] : []), ...(memory ? memoryTools : []), ...(schedule ? [scheduleTool] : []), ...(automations ? [automationsTool] : []), ...discovered.definitions];
   // Discovered writes (a tool's declared POST/PUT/PATCH/DELETE) change things too
@@ -171,7 +157,6 @@ export function makeTools({ calendar, calendarNames = [], readOnlyCalendars = []
     create_event: (i) => calendar.createEvent(i),
     update_event: (i) => calendar.updateEvent(i),
     delete_event: (i, ctx) => calendar.deleteEvent(i, ctx),
-    invite_people: (i, ctx) => calendar.inviteEvent(i, ctx),
     ...discovered.handlers,
   };
 

@@ -2,8 +2,7 @@
 // no Google key: Calendars decides which calendars this person may see and change (their grants),
 // and its google-calendar.mjs talks to Google. This client keeps the shape Dot's tools always used
 // (listCalendars, listEvents, createEvent, updateEvent, deleteEvent), so the tools and Dot's
-// instructions didn't change. Deleting an event, and emailing invitations to the people on one, need the
-// person's own OK (confirm.mjs).
+// instructions didn't change. Deleting an event needs the person's own OK (confirm.mjs).
 import { asking, pendingIn } from './confirm.mjs';
 
 // Google's event colors by the names its app shows (the same list as tools/calendars/api/google-calendar.mjs)
@@ -30,32 +29,22 @@ export function makeCalendars({ tokenFor, apiUrl, clientId, user, channel = 'web
   const qs = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => [k, String(v)])).toString();
   const writer = (what) => (outcome, detail) => audit({ tool: 'family_calendars', action: what, outcome, ...(detail ? { detail } : {}) });
 
-  /** Send a write that Calendars may answer with 202 (asks first); with confirm, exactly what was asked about */
-  async function confirmable({ kind, method, path, body, calendar, id, confirm, history, what }) {
-    if (confirm) {
-      const p = pendingIn(history, kind, (x) => x.calendar === calendar && x.event_id === id);
-      if (!p) throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
-      if (!p.answered) throw new Error('Wait for the person’s reply before confirming.');
-      path += `?confirm_id=${encodeURIComponent(p.confirm_id)}`;
-      body = p.body ?? body;
-    }
-    const r = await call(method, path, body, writer(`${what}${confirm ? ' (confirmed)' : ''}`));
-    if (r.asked) return asking(kind, { ask_them: r.asked.prompt, confirm_id: r.asked.confirm_id, calendar, event_id: id, ...(body ? { body } : {}) });
-    return r;
-  }
-
   return {
     listCalendars: () => call('GET', '/calendars'),
     listEvents: ({ calendar, start, end, query, max_results: max }) => call('GET', `/events?${qs({ calendar, start, end, query, max_results: max })}`),
     createEvent: (input) => call('POST', '/events', input, writer(`create ${input.calendar}`)),
     updateEvent: ({ calendar, event_id: id, ...rest }) => call('PUT', `/events/${encodeURIComponent(calendar)}/${encodeURIComponent(id)}`, rest, writer(`update ${calendar}/${id}`)),
-    deleteEvent: ({ calendar, event_id: id, confirm }, { history = [] } = {}) => confirmable({
-      kind: 'calendar', method: 'DELETE', path: `/events/${encodeURIComponent(calendar)}/${encodeURIComponent(id)}`, calendar, id, confirm, history, what: `delete ${calendar}/${id}`,
-    }),
-    // Emails people outside the family, so always asked first; the confirmation sends exactly the people asked about
-    inviteEvent: ({ calendar, event_id: id, emails, confirm }, { history = [] } = {}) => confirmable({
-      kind: 'calendar_invite', method: 'POST', path: `/events/${encodeURIComponent(calendar)}/${encodeURIComponent(id)}/invite`,
-      body: emails ? { emails } : {}, calendar, id, confirm, history, what: `invite ${calendar}/${id}`,
-    }),
+    async deleteEvent({ calendar, event_id: id, confirm }, { history = [] } = {}) {
+      let path = `/events/${encodeURIComponent(calendar)}/${encodeURIComponent(id)}`;
+      if (confirm) {
+        const p = pendingIn(history, 'calendar', (x) => x.calendar === calendar && x.event_id === id);
+        if (!p) throw new Error('Nothing like that is waiting for confirmation. Send it without confirm first.');
+        if (!p.answered) throw new Error('Wait for the person’s reply before confirming.');
+        path += `?confirm_id=${encodeURIComponent(p.confirm_id)}`;
+      }
+      const r = await call('DELETE', path, undefined, writer(`delete ${calendar}/${id}${confirm ? ' (confirmed)' : ''}`));
+      if (r.asked) return asking('calendar', { ask_them: r.asked.prompt, confirm_id: r.asked.confirm_id, calendar, event_id: id });
+      return r;
+    },
   };
 }
