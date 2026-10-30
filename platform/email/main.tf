@@ -121,6 +121,17 @@ resource "aws_s3_bucket_lifecycle_configuration" "mail" {
       days = 90
     }
   }
+  # Mail to Molly (molly.tf): what's attached is saved in the archive, so the message itself goes in a week
+  rule {
+    id     = "molly-expire-after-8-days"
+    status = "Enabled"
+    filter {
+      prefix = "molly/"
+    }
+    expiration {
+      days = 8
+    }
+  }
   # Mail to Dot (dot.tf) can carry photos, which Dot keeps a week; the conversation keeps the words
   rule {
     id     = "dot-expire-after-8-days"
@@ -143,7 +154,7 @@ resource "aws_s3_bucket_policy" "mail" {
         Effect    = "Allow"
         Principal = { Service = "ses.amazonaws.com" }
         Action    = "s3:PutObject"
-        Resource  = ["${aws_s3_bucket.mail.arn}/inbound/*", "${aws_s3_bucket.mail.arn}/dot/*"]
+        Resource  = ["${aws_s3_bucket.mail.arn}/inbound/*", "${aws_s3_bucket.mail.arn}/dot/*", "${aws_s3_bucket.mail.arn}/molly/*"]
         Condition = { StringEquals = { "AWS:SourceAccount" = data.aws_caller_identity.current.account_id } }
       },
       {
@@ -152,6 +163,13 @@ resource "aws_s3_bucket_policy" "mail" {
         Principal = { AWS = data.aws_lambda_function.dot_email_worker.role }
         Action    = "s3:GetObject"
         Resource  = "${aws_s3_bucket.mail.arn}/dot/*"
+      },
+      {
+        # Molly's worker (tools/archive) reads the messages her gate hands it (molly.tf), and nothing else here
+        Effect    = "Allow"
+        Principal = { AWS = data.aws_lambda_function.molly_worker.role }
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.mail.arn}/molly/*"
       },
     ]
   })

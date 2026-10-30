@@ -1,6 +1,6 @@
 # Archive
 
-`https://archive.dot-y.co/` · permission group **`family_archive`** · kept by **Molly** (molly@dot-y.co, coming)
+`https://archive.dot-y.co/` · permission group **`family_archive`** · kept by **Molly** (molly@dot-y.co)
 
 The family's documents: files in **drawers**, with folders, descriptions, tags and links between files.
 Everyone has their own drawer (made the first time they look); a drawer is its maker's until they share
@@ -10,6 +10,7 @@ it with people or family groups, to see (read) or to file into (edit), as Lists 
 |---|---|
 | `api/api.mjs` | The API: drawers, search, files, uploads, links (routes at the top of the file) |
 | `api/intake.mjs` | Runs on every new file: checks it, reads its text (PDFs, text files), files it. No Claude |
+| `api/molly.mjs` | Molly, by email: saves attachments in Inbox/, a reader with no tools describes them, she files with the archive's tools and answers in the thread |
 | `api/dot.mjs` | The manifest: how Claude Code (`platform/mcp`), and later Dot, use the archive as the person |
 | `infra/` | OpenTofu root: table, bucket + key (`storage.tf`), intake (`intake.tf`), API (`api.tf`) |
 | `web/` | The page: drawers and their folders, search, upload (hashed in the browser, straight to S3), a file's card (describe, move, trash, restore), drawers and sharing, delete for good |
@@ -29,6 +30,24 @@ Keys are ids, never names (`f/<id>`, written once), so moves and renames never t
 status. Deleting for good is the drawer owner's, on the page, for a file already in the trash
 (`DELETE /files/{id}`, never from a borrowed token): it deletes the object and its text, which versioning
 keeps 30 more days.
+
+## Molly (molly@dot-y.co)
+
+The mail gate (`platform/email/molly.tf`, the same code as dot@'s) requires DMARC and a verified Cognito email
+in `family_archive`, skips automatic mail, then invokes her worker once (no retries). For each email, as
+that person (`handler.as`: the archive's own code, held to a borrowed token's writes):
+
+1. attachments (not logos or signatures; up to 20, 25 MB each) are saved in their own drawer under
+   `Inbox/`, straight to `f/<id>`, so intake checks and reads them like any upload; duplicates aren't saved again,
+2. a **reader with no tools** describes each new document from its text (or the page itself, for a scan
+   or photo) into a fixed shape (structured output), saved on the file,
+3. **Molly** files them with the archive's tools (drawers, search, file, update, link, unlink) by the
+   drawers' notes and the sender's words, and answers in the thread from molly@, asking numbered questions
+   when she can't tell. What she can't place stays in `Inbox/`.
+
+She never sees a document's raw text, only the reader's description, marked as the document's; she can't
+read text, download, upload, make or share drawers, or delete for good. Conversations are `MOLLY#<sub>` /
+`<thread id>` rows (the words of the last 20 turns). Model: `var.model` (Opus 4.6 on Bedrock).
 
 ## Access
 

@@ -127,7 +127,7 @@ export function createApi(deps) {
   }
   const revCond = (row) => (row ? { ConditionExpression: 'rev = :rev', ExpressionAttributeValues: { ':rev': row.rev } } : { ConditionExpression: 'attribute_not_exists(pk)' });
 
-  return async (event) => {
+  const handler = async (event) => {
     let claims;
     try {
       claims = await verifyAccessToken(event.headers, { issuer: deps.issuer, clientId: [deps.clientId, deps.delegatedClientId].filter(Boolean), group: deps.group });
@@ -138,6 +138,14 @@ export function createApi(deps) {
     }
     // Borrowed (Dot, Claude Code): reads, and only the writes the manifest declares
     const borrowed = claims.via === 'dot' || (!!deps.delegatedClientId && claims.client_id === deps.delegatedClientId);
+    return route(claims, borrowed, event);
+  };
+  // Molly (molly.mjs) acts as the person whose verified email the mail gate matched, in this same code,
+  // and is held to a borrowed token's rules: reads, and the manifest's writes only
+  handler.as = (person, event) => route({ sub: person.sub, username: person.username, via: 'molly' }, true, event);
+  return handler;
+
+  async function route(claims, borrowed, event) {
     if (borrowed && !event.routeKey.startsWith('GET ') && !BORROWED_WRITES.has(event.routeKey)) return json(403, { error: 'read-only' });
 
     let body = {};
@@ -151,7 +159,7 @@ export function createApi(deps) {
     const q = event.queryStringParameters ?? {};
     const sub = claims.sub;
     const person = { sub, groupIds: new Set((await deps.people.groups()).filter((g) => g.members.includes(sub)).map((g) => g.id)) };
-    const via = borrowed ? 'borrowed' : 'page';
+    const via = claims.via === 'molly' ? 'molly' : borrowed ? 'borrowed' : 'page';
     const at = () => now().toISOString();
     let logN = 0;
     const log = (drawer, fileId, action, detail) => put({ pk: `LOG#${drawer}`, sk: `${at()}#${fileId || '-'}#${logN++}`, by: claims.username, via, action, ...(detail ? { detail } : {}) });
@@ -316,7 +324,7 @@ export function createApi(deps) {
             await put({ pk: 'FILE', sk: id, drawer: d.row.sk });
             await put({
               pk: `D#${d.row.sk}`, sk: `F#${id}`, name: f.name, folder, size: f.size, type: f.type, sha256: f.sha256,
-              status: 'uploading', source: borrowed ? 'claude' : 'page', rev: 1, createdAt: stamp, updatedAt: stamp, by: claims.username,
+              status: 'uploading', source: claims.via === 'molly' ? 'email' : borrowed ? 'claude' : 'page', rev: 1, createdAt: stamp, updatedAt: stamp, by: claims.username,
             }, { ConditionExpression: 'attribute_not_exists(pk)' });
             const url = await files.putUrl({ key: `f/${id}`, size: f.size, sha256: f.sha256, type: f.type, expiresIn: UPLOAD_TTL_S });
             out.push({
@@ -437,7 +445,7 @@ export function createApi(deps) {
       if (!e.status) throw e;
       return json(e.status, { error: e.message });
     }
-  };
+  }
 }
 
 function liveFiles(bucket) {
@@ -478,9 +486,11 @@ async function members() {
 }
 
 let live;
-export const handler = async (event) => (live ??= (() => {
+/** The archive as deployed (the API's handler, and Molly's archive.as) */
+export function liveApi() {
+  if (live) return live;
   const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-  return createApi({
+  live = createApi({
     db,
     table: process.env.TABLE,
     group: process.env.GROUP,
@@ -491,4 +501,6 @@ export const handler = async (event) => (live ??= (() => {
     members,
     files: liveFiles(process.env.BUCKET),
   });
-})())(event);
+  return live;
+}
+export const handler = (event) => liveApi()(event);

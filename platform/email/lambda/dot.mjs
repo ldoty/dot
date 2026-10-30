@@ -1,4 +1,5 @@
-// dot@dot-y.co: SES has stored the message in the mail bucket (prefix dot/) and invokes this with
+// dot@dot-y.co (and molly@dot-y.co, molly.tf: the same gate with Molly's address, family_archive and her
+// worker): SES has stored the message in the mail bucket (prefix dot/) and invokes this with
 // its headers and SES's verdicts, never the body. A message reaches Dot only if:
 //   1. it is addressed to Dot, and SES found no virus, didn't call it spam, and DMARC passed
 //      (the From domain vouches for it, so the From address isn't forged);

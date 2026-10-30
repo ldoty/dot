@@ -31,9 +31,9 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/chamber` | chamber.dot-y.co | `lukes_chamber` | Mushroom chamber: Arduino firmware + build notes; the board posts telemetry to `POST /ingest` (device key), the page shows it and sets the board’s settings |
 | `tools/house` | house.dot-y.co | `family_house` | Home Assistant by room, per-person grants; a relay at home dials out (WebSocket, device key) and reports only what `relay/ceiling.json` exposes; automations (made through Dot) run on the relay. Notes in `tools/house/AGENTS.md` |
 | `tools/sms` | (API only) | | Dot-y texting program: opt-in consent records, and Twilio’s webhook that hands members’ texts to Dot |
-| `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail; dot@dot-y.co: the gate that hands members’ mail to Dot |
+| `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail; dot@dot-y.co and molly@dot-y.co: the gate that hands members’ mail to Dot, or to Molly (`tools/archive`) |
 | `platform/billing` | | | Account-wide $75/mo budget + cost anomaly alerts |
-| `tools/archive` | archive.dot-y.co | `family_archive` | The family's documents, kept by Molly (molly@dot-y.co, coming): drawers, a catalog, files in S3. In progress |
+| `tools/archive` | archive.dot-y.co | `family_archive` | The family's documents, kept by **Molly** (molly@dot-y.co): drawers (each person's own, shareable like lists), a catalog with links between files, files in a versioned KMS bucket; intake reads PDFs and text. Email Molly documents and she files them; Claude Code reaches it through `platform/mcp`. Notes in `tools/archive/README.md` |
 | `platform/mcp` | (API only) | `family_mcp` | The family's tools in Claude Code: one remote MCP server that finds tools the way Dot does and borrows the person's token on each (signer `mcp`). Notes in `platform/mcp/README.md` |
 | `platform/family` | dot-y.co/family | `family_admin` | The family's groups and display names, shared by every tool (table `family-people`); tools read them with `platform/api/people.mjs` |
 
@@ -187,6 +187,7 @@ npm run test:live
 | `/family/sms/twilio-webhook` | SecureString, set by hand: `{accountSid, authToken}`, only for the webhook's signature checks |
 | `/family/assistant/sms-worker` | Dot’s SMS worker Lambda, which only the SMS webhook may invoke |
 | `/family/assistant/email-worker` | Dot’s email worker Lambda, which only the dot@ gate in `platform/email` may invoke (apply the assistant first) |
+| `/family/archive/molly-worker` | Molly’s worker Lambda, which only the molly@ gate in `platform/email` may invoke (apply the archive first) |
 
 ## Tool notes
 

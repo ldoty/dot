@@ -19,7 +19,7 @@ const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' 
 /** The bucket: what was uploaded (as S3 would hold it after a checked PUT) and what intake wrote */
 export const bucket = new Map();
 let n = 0;
-const handler = createApi({
+export const archiveApi = createApi({
   db, table: 'family-archive', group: 'family_archive', issuer: ISSUER, clientId: CLIENT_ID, delegatedClientId: DELEGATED,
   people: makePeople({ db, table: 'family-people', ttlMs: 0 }),
   members: async () => [{ sub: LUKE, name: 'Luke' }, { sub: AMBER, name: 'amber@x.test' }],
@@ -46,7 +46,7 @@ export const ROUTES = [
 export const token = (sub = LUKE) => accessToken({ clientId: CLIENT_ID, group: 'family_archive', sub, username: sub });
 /** A token Claude Code (or Dot) borrowed for this person */
 export const borrowed = (sub = LUKE) => accessToken({ clientId: DELEGATED, group: 'family_archive', sub, username: sub, via: 'dot' });
-const callApi = caller(handler, ROUTES);
+const callApi = caller(archiveApi, ROUTES);
 export const call = (method, path, body, t = token()) => callApi(method, path, body, t);
 export const familyGroup = (id, name, members) => table.put({ pk: 'GROUP', sk: id, name, members, rev: 1 });
 export const sha = (buf) => createHash('sha256').update(buf).digest('hex');
