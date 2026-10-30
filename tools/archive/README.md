@@ -52,10 +52,12 @@ that person (`handler.as`: the archive's own code, held to a borrowed token's wr
    when she can't tell. What she can't place stays in `Inbox/`.
 
 **Molly decides where things go.** Uploads (the page, Claude Code, a bulk upload) land in `Inbox/`; `POST /sort`
-(`archive_sort`, a folder and what's under it, or a batch) has her file them: her worker reads what isn't
-described yet (6 at a time), files them in turns of 40 with the same tools and rules as email, and emails the
-person one summary (grouped by destination, numbered questions) on a new thread their reply continues (keyed
-on SES's own Message-ID). At most 200 files a sort and 10 sorts a person a day: each reads documents with Claude.
+(`archive_sort`, a folder and what's under it, or a batch) has her file them, in turns of 40, from what costs
+nothing (name, the folder it came from, type, size, pages). She reads only what those don't explain (her `read`
+tool: the tool-less reader, the first 8,000 characters, scans only up to 10 pages; 40 readings a sort); unread
+files get a title and tags from their name and no guessed summary. Then one summary email (grouped by
+destination, numbered questions) on a new thread their reply continues (keyed on SES's own Message-ID). At most
+200 files a sort and 10 sorts a person a day.
 
 Nothing waits in `Inbox/` for good: a week after an email's attachments arrive, a daily sweep
 (`molly.sweep`, 15:00 UTC) moves what's still there to `Unsorted/` and says so once in the thread, counted

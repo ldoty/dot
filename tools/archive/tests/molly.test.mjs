@@ -89,7 +89,7 @@ test('attachments are saved in Inbox/, read by a reader with no tools, described
   const filing = JSON.stringify(m.calls.filing[0].messages);
   assert.doesNotMatch(filing, /Ignore your instructions/);
   assert.match(filing, /Six-month policy/);
-  assert.deepEqual(m.calls.filing[0].tools.map((t) => t.name).sort(), ['drawers', 'file', 'link', 'search', 'unlink', 'update']);
+  assert.deepEqual(m.calls.filing[0].tools.map((t) => t.name).sort(), ['drawers', 'file', 'link', 'read', 'search', 'unlink', 'update']);
   assert.equal(m.calls.filing[0].system, SYSTEM);
 
   const f = (await call('GET', `/files/${fileId}`)).body;
@@ -225,29 +225,38 @@ test('the sweep moves files even past the daily limit, and does nothing for some
 });
 
 // --- “Molly, sort this”: a folder or a bulk upload, filed by her, one summary emailed ---
-test('a sort: what isn’t described is read, everything is filed by her, and one summary starts a thread a reply continues', async () => {
+test('a sort: she files from names, reads only what she asks to, and one summary starts a thread a reply continues', async () => {
   await upload('mine', 'Inbox/Financial/Taxes', [{ name: '2021 return.pdf', bytes: PDF, type: 'application/pdf' }, { name: 'notes.txt', bytes: Buffer.from('529 plan notes'), type: 'text/plain' }]);
   const asked = await call('POST', '/sort', { drawer: 'mine', folder: 'Inbox' });
   assert.equal(asked.status, 200);
   assert.deepEqual(sorts, [asked.body.id]);
-  let ids;
+  let ids, rev;
   const m = molly([
     (params) => {
-      ids = [...params.messages.at(-1).content.matchAll(/"id": "(f\d+)"/g)].map((x) => x[1]);
-      const rev = /"rev": (\d+)/.exec(params.messages.at(-1).content)[1];
-      return use('update', { id: ids[0], rev: Number(rev), folder: 'Taxes/2021', name: '2021 Tax return.pdf' });
+      const listed = JSON.parse(/<files>\n([\s\S]*)\n<\/files>/.exec(params.messages.at(-1).content)[1]);
+      const ret = listed.find((f) => f.name === '2021 return.pdf'), notes = listed.find((f) => f.name === 'notes.txt');
+      ids = [ret.id, notes.id];
+      rev = ret.rev;
+      // notes.txt doesn't say what it is: read that one only
+      return use('read', { id: notes.id });
     },
+    () => use('update', { id: ids[0], rev, folder: 'Taxes/2021', name: '2021 Tax return.pdf', title: '2021 tax return', tags: ['taxes'] }),
     say('Taxes/2021: 1 (the 2021 return)\n\nQuestions:\n1. Is notes.txt about the kids’ 529s?\n\nMolly'),
     say('Filed it under Kids/529.\n\nMolly'),
   ]);
   await m.run({ sort: asked.body.id });
-  // Both read (no titles before), neither raw text in front of her
-  assert.equal(m.calls.reader.length, 2);
-  assert.doesNotMatch(JSON.stringify(m.calls.filing[0].messages), /Ignore your instructions/);
+  // Only what she asked to read was read; no raw text in front of her, only names and facts
+  assert.equal(m.calls.reader.length, 1);
+  assert.match(JSON.stringify(m.calls.reader[0].messages), /529 plan notes/);
+  const first = JSON.stringify(m.calls.filing[0].messages);
+  assert.doesNotMatch(first, /Ignore your instructions/);
+  assert.match(m.calls.filing[0].messages.at(-1).content, /"name": "2021 return\.pdf",\n  "folder": "Inbox\/Financial\/Taxes"/);
+  assert.equal((await call('GET', `/files/${ids[1]}`)).body.title, 'Geico auto policy renewal', 'the reading, saved on the file');
   assert.equal(m.calls.filing[0].tools.find((t) => t.name === 'sort'), undefined, 'she doesn’t start sorts');
   const filed = (await call('GET', `/files/${ids[0]}`)).body;
   assert.equal(filed.folder, 'Taxes/2021');
-  assert.equal(filed.title, 'Geico auto policy renewal', 'the reader’s description, saved');
+  assert.equal(filed.title, '2021 tax return', 'titled from its name, unread');
+  assert.equal(filed.summary, '');
   // One summary, a new thread, to their account's email
   assert.equal(m.sent.length, 1);
   assert.match(m.sent[0].raw, /^Subject: Filed: My drawer \/ Inbox \(2 files\)/m);
@@ -271,4 +280,20 @@ test('a sort needs a drawer they can file into, a batch of their own, and stays 
   assert.equal((await call('POST', '/sort', { drawer: 'mine', batch: 'b0000000000000001' })).status, 404);
   for (let i = 0; i < 10; i++) assert.equal((await call('POST', '/sort', { drawer: 'mine' })).status, 200);
   assert.equal((await call('POST', '/sort', { drawer: 'mine' })).status, 429);
+});
+
+test('her readings: long scans aren’t read, and a sort stops reading at the limit', async () => {
+  const id = (await upload('mine', 'Inbox', [{ name: 'closing binder.pdf', bytes: PDF, type: 'application/pdf' }])).body.files[0].id;
+  // As intake leaves a scan: pages, no text
+  const row = table.get(`D#p-${LUKE}`, `F#${id}`);
+  table.put({ ...row, hasText: false, pages: 48 });
+  const asked = await call('POST', '/sort', { drawer: 'mine', folder: 'Inbox' });
+  // 41 readings asked for in one turn (Claude batches tool calls)
+  const many = { stop_reason: 'tool_use', usage: {}, content: Array.from({ length: 41 }, (_, i) => ({ type: 'tool_use', id: `r${i}`, name: 'read', input: { id } })) };
+  const m = molly([many, say('Filed by name.\n\nMolly')]);
+  await m.run({ sort: asked.body.id });
+  assert.equal(m.calls.reader.length, 0, 'a 48-page scan is never read');
+  const results = m.calls.filing[1].messages.at(-1).content.map((r) => r.content);
+  assert.match(results[0], /a scan of 48 pages/);
+  assert.match(results[40], /that's the 40 readings for this sort/);
 });
