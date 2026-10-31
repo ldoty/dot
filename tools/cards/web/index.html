@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cards</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="family.css">
+<style>
+/* One narrow column. Home: today and the decks. A deck: its cards, add and paste. Study: one card at a time. */
+.wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 24px }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+.top a, .back { color: var(--muted); text-decoration: none; font-size: 14px; background: none; border: 0; cursor: pointer; padding: 0 }
+h1 { font-size: clamp(32px, 6vw, 48px) }
+h2 { font-size: 20px; margin: 0 }
+section { display: grid; gap: 10px }
+input, textarea, select { background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 9px 12px; color: var(--ink); font: inherit; min-width: 0 }
+input:focus, textarea:focus, select:focus { border-color: var(--pool); outline: none }
+textarea { width: 100%; box-sizing: border-box; min-height: 90px; resize: vertical }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+.row > .grow { flex: 1 }
+.grid { display: grid; gap: 8px }
+.stats { display: flex; gap: 12px; flex-wrap: wrap }
+.stat { background: var(--raised); border-radius: var(--r-md); padding: 12px 16px; min-width: 96px }
+.stat b { display: block; font-family: var(--display); font-size: 28px }
+.stat span, .meta, small { color: var(--muted); font-size: 14px }
+ul { list-style: none; margin: 0; padding: 0 }
+li { padding: 12px 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 12px }
+li .what { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere }
+li button.open { all: unset; cursor: pointer; display: grid; gap: 2px }
+li button.open strong { color: var(--ink) }
+.chip { font-size: 12px; padding: 2px 8px; border-radius: var(--r-pill); background: var(--raised); white-space: nowrap }
+.chip.due { background: var(--pool); color: var(--on-accent) }
+.status { color: var(--muted); font-size: 14px; min-height: 1.4em }
+.x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 18px }
+.x:hover { color: var(--ember) }
+details > summary { cursor: pointer; color: var(--pool) }
+/* Study */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 32px 24px; min-height: 220px; display: grid; gap: 14px; align-content: center; justify-items: center; text-align: center; box-shadow: 0 10px 30px -18px rgba(30, 42, 36, .35) }
+.card .big { font-family: var(--display); font-size: clamp(26px, 6vw, 40px); overflow-wrap: anywhere }
+.card .say { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 18px }
+.card .ex { color: var(--muted); font-style: italic }
+.card .answer { border-top: 1px solid var(--line); padding-top: 14px; width: 100%; display: grid; gap: 8px }
+.card input { text-align: center; font-size: 22px; width: min(100%, 360px) }
+.right { color: var(--leaf); font-weight: 600 }
+.wrong { color: var(--ember); font-weight: 600 }
+.grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px }
+.grades button { padding: 12px 4px }
+.grades .again { background: var(--ember); color: var(--on-accent) }
+.grades .good { background: var(--leaf); color: var(--on-accent) }
+.grades .pick { outline: 3px solid var(--sun) }
+.bar { height: 6px; background: var(--raised); border-radius: 3px; overflow: hidden }
+.bar i { display: block; height: 100%; background: var(--sun); transition: width .25s linear }
+.modelabel { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted) }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
+  <h1>Cards</h1>
+  <div id="main"><p class="status">Loading…</p></div>
+</div>
+<script src="family-auth.js"></script>
+<script>
+(function () {
+  var cfg, view = { at: "home" }, data = {}, session = null, tick = null;
+  var main = document.getElementById("main");
+  var MODE = { forward: "Front to back", reverse: "Back to front", meaning: "What it means", recall: "Name the word", spell: "Spell it" };
+  var MODES = { basic: ["forward", "reverse"], word: ["meaning", "recall", "spell"] };
+  var GRADES = [["again", "Again"], ["hard", "Hard"], ["good", "Good"], ["easy", "Easy"]];
+  var canSpeak = typeof window.speechSynthesis !== "undefined" && typeof window.SpeechSynthesisUtterance !== "undefined";
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function status(msg) { var s = document.getElementById("status"); if (s) s.textContent = msg || ""; }
+  function plural(n, w) { return n + " " + w + (n === 1 ? "" : "s"); }
+
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method,
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (j) {
+        if (!res.ok) { var e = new Error(j.error || ("error " + res.status)); e.status = res.status; throw e; }
+        return j;
+      });
+    });
+  }
+  function fail(e) { status("Couldn’t do that: " + e.message); }
+
+  // ---- home ----
+  function home() {
+    view = { at: "home" };
+    return api("GET", "/summary").then(function (s) { data.summary = s; renderHome(); });
+  }
+  function renderHome() {
+    var s = data.summary;
+    main.innerHTML =
+      '<div class="stats"><div class="stat"><b>' + s.due + '</b><span>due now</span></div><div class="stat"><b>' + s.streak + "</b><span>" + (s.streak === 1 ? "day" : "days") + ' in a row</span></div>' +
+        '<div class="stat"><b>' + s.today.reviews + '</b><span>reviewed today</span></div></div>' +
+      '<div class="row"><button class="btn primary" data-study="">Study everything due</button></div>' +
+      "<section><h2>Decks</h2>" + (s.decks.length ? "<ul>" + s.decks.map(function (d) {
+        return '<li><button class="open" data-deck="' + esc(d.id) + '"><strong>' + esc(d.name) + "</strong><small>" + (d.kind === "word" ? "Words" : "Cards") + " · " + plural(d.cards, "card") + (d.new ? " · " + d.new + " new" : "") + "</small></button>" +
+          '<div class="row">' + (d.due ? '<span class="chip due">' + d.due + " due</span>" : "") + '<button class="btn ghost" data-study="' + esc(d.id) + '">Study</button></div></li>';
+      }).join("") + "</ul>" : '<p class="meta">No decks yet. Make one below: a word deck for vocabulary and spelling, a basic deck for anything else.</p>') + "</section>" +
+      '<section><h2>New deck</h2><form id="newdeck" class="row"><input class="grow" name="name" maxlength="60" placeholder="Words to know" aria-label="Deck name" required>' +
+        '<select name="kind" aria-label="Kind"><option value="word">Words (meaning, recall, spelling)</option><option value="basic">Basic (front and back)</option></select><button class="btn primary">Make it</button></form>' +
+        '<p class="status" id="status"></p></section>';
+  }
+
+  // ---- a deck ----
+  function deck(id) {
+    view = { at: "deck", id: id };
+    return Promise.all([api("GET", "/decks"), api("GET", "/decks/" + id + "/cards")]).then(function (r) {
+      data.deck = r[0].filter(function (d) { return d.id === id; })[0];
+      data.cards = r[1];
+      renderDeck();
+    });
+  }
+  function cardFields(kind, c) {
+    c = c || {};
+    if (kind === "word") {
+      return '<div class="row"><input class="grow" name="word" maxlength="100" placeholder="Word" aria-label="Word" required value="' + esc(c.word) + '"><input name="pos" maxlength="30" placeholder="noun, verb…" aria-label="Part of speech" value="' + esc(c.pos) + '"></div>' +
+        '<textarea name="definition" maxlength="1000" placeholder="What it means" aria-label="Definition" required>' + esc(c.definition) + "</textarea>" +
+        '<input name="example" maxlength="500" placeholder="An example sentence (optional)" aria-label="Example" value="' + esc(c.example) + '">';
+    }
+    return '<textarea name="front" maxlength="1000" placeholder="Front: the question" aria-label="Front" required>' + esc(c.front) + "</textarea>" +
+      '<textarea name="back" maxlength="2000" placeholder="Back: the answer" aria-label="Back" required>' + esc(c.back) + "</textarea>" +
+      '<label class="row meta"><input type="checkbox" name="reverse"' + (c.modes && c.modes.indexOf("reverse") >= 0 ? " checked" : "") + "> Also study it back to front</label>";
+  }
+  function cardOf(form, kind) {
+    var f = form.elements;
+    if (kind === "word") return { word: f.word.value, definition: f.definition.value, example: f.example.value || undefined, pos: f.pos.value || undefined };
+    return { front: f.front.value, back: f.back.value, reverse: f.reverse.checked };
+  }
+  function renderDeck() {
+    var d = data.deck, kind = d.kind;
+    main.innerHTML =
+      '<button class="back" data-home>← All decks</button>' +
+      '<div class="row"><h2 class="grow">' + esc(d.name) + '</h2><span class="chip">' + (kind === "word" ? "Words" : "Basic") + "</span>" + (d.due || d.new ? '<button class="btn primary" data-study="' + esc(d.id) + '">Study</button>' : "") + "</div>" +
+      '<section><h2>Add a card</h2><form id="addcard" class="grid">' + cardFields(kind) + '<div class="row"><button class="btn primary">Add</button><span class="status" id="status"></span></div></form>' +
+        "<details><summary>Paste many at once</summary><form id=\"import\" class=\"grid\" style=\"margin-top:8px\"><p class=\"meta\">One a line: " +
+        (kind === "word" ? "word, then its meaning, then (optional) an example, split by tabs, or “word - meaning”." : "front, then back, split by a tab, or “front - back”.") +
+        '</p><textarea name="text" aria-label="Cards to add, one a line"></textarea><div class="row"><button class="btn primary">Add them</button></div></form></details></section>' +
+      "<section><h2>" + plural(data.cards.length, "card") + "</h2><ul>" + data.cards.map(function (c) {
+        var head = kind === "word" ? "<strong>" + esc(c.word) + "</strong>" + (c.pos ? " <small>" + esc(c.pos) + "</small>" : "") : "<strong>" + esc(c.front) + "</strong>";
+        var sub = kind === "word" ? c.definition : c.back;
+        return '<li><div class="what">' + head + "<small>" + esc(sub) + '</small></div><button class="x" data-delcard="' + esc(c.id) + '" aria-label="Delete">&times;</button></li>';
+      }).join("") + "</ul></section>" +
+      '<details><summary>Rename or delete this deck</summary><form id="rename" class="row" style="margin-top:8px"><input class="grow" name="name" maxlength="60" value="' + esc(d.name) + '" aria-label="Deck name"><button class="btn">Rename</button>' +
+        '<button class="btn ghost" type="button" data-deldeck>Delete deck</button></form></details>';
+  }
+
+  // ---- study ----
+  function blank(text, word) {
+    if (!text || !word) return text || "";
+    return text.replace(new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "_____");
+  }
+  function speak(word) {
+    if (!canSpeak || !word) return;
+    try { window.speechSynthesis.cancel(); var u = new SpeechSynthesisUtterance(word); u.rate = 0.85; window.speechSynthesis.speak(u); } catch (e) {}
+  }
+  function startStudy(deckId) {
+    view = { at: "setup", deck: deckId || "" };
+    main.innerHTML = '<button class="back" data-home>← All decks</button><section><h2>Study</h2><form id="setup" class="grid">' +
+      '<div class="row"><label class="meta">Session <select name="minutes"><option value="0">until done</option><option value="5">5 minutes</option><option value="10" selected>10 minutes</option><option value="20">20 minutes</option></select></label>' +
+      '<label class="meta">Each card <select name="seconds"><option value="0">no clock</option><option value="10">10 seconds</option><option value="20">20 seconds</option><option value="30">30 seconds</option></select></label></div>' +
+      '<div class="row meta">' + Object.keys(MODE).map(function (m) { return '<label><input type="checkbox" name="mode" value="' + m + '" checked> ' + MODE[m] + "</label>"; }).join("") + "</div>" +
+      '<div class="row"><button class="btn primary">Start</button><span class="status" id="status"></span></div></form></section>';
+  }
+  function begin(form) {
+    var f = form.elements, modes = [].filter.call(f.mode, function (x) { return x.checked; }).map(function (x) { return x.value; });
+    if (!modes.length) return status("Pick at least one way to study.");
+    var q = "?modes=" + modes.join(",") + (view.deck ? "&deck=" + view.deck : "");
+    api("GET", "/study" + q).then(function (r) {
+      var items = r.due.concat(r.new);
+      if (!items.length) return status("Nothing to study right now" + (r.newLeft ? "." : ": today’s new cards are done. Come back tomorrow."));
+      session = { items: items, i: 0, minutes: +f.minutes.value, seconds: +f.seconds.value, started: Date.now(), reviewed: 0, again: 0, deck: view.deck, retried: {} };
+      view = { at: "study" };
+      show();
+    }).catch(fail);
+  }
+  function show() {
+    clearInterval(tick);
+    var s = session, x = s.items[s.i];
+    var over = s.minutes && Date.now() - s.started >= s.minutes * 60000;
+    if (!x || over) return finish();
+    s.shownAt = Date.now(); s.revealed = false; s.typed = null; s.timedOut = false;
+    var c = x.card, prompt = "";
+    if (x.mode === "forward") prompt = '<div class="say">' + esc(c.front) + "</div>";
+    else if (x.mode === "reverse") prompt = '<div class="say">' + esc(c.back) + "</div>";
+    else if (x.mode === "meaning") prompt = '<div class="big">' + esc(c.word) + "</div>" + (c.pos ? "<small>" + esc(c.pos) + "</small>" : "") + (canSpeak ? '<button class="btn ghost" type="button" data-speak>Say it</button>' : "");
+    else if (x.mode === "recall") prompt = '<div class="say">' + esc(c.definition) + "</div>" + (c.example ? '<div class="ex">' + esc(blank(c.example, c.word)) + "</div>" : "") + '<input id="typed" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="The word" aria-label="The word">';
+    else if (x.mode === "spell") prompt = (canSpeak ? '<button class="btn" type="button" data-speak>Say it again</button>' : '<div class="meta">(Your browser can’t speak: spell it from the meaning)</div>') +
+      '<div class="say">' + esc(c.definition) + "</div>" + (c.example ? '<div class="ex">' + esc(blank(c.example, c.word)) + "</div>" : "") + '<input id="typed" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Spell it" aria-label="Spell it">';
+    var left = s.items.length - s.i;
+    main.innerHTML = '<div class="row"><button class="back grow" data-stop>← Stop</button><small>' + plural(left, "card") + " left · " + esc(x.deckName) + "</small></div>" +
+      (s.seconds ? '<div class="bar"><i id="clock" style="width:100%"></i></div>' : "") +
+      '<div class="card" id="card"><div class="modelabel">' + esc(MODE[x.mode]) + "</div>" + prompt + '<div id="answer"></div></div>' +
+      '<div id="controls"><div class="row"><button class="btn primary grow" data-reveal>' + (x.mode === "recall" || x.mode === "spell" ? "Check" : "Show answer") + "</button></div></div>" +
+      '<p class="meta">Keys: Enter or space to ' + (x.mode === "recall" || x.mode === "spell" ? "check" : "show") + ", then 1–4 to grade.</p>";
+    if (x.mode === "spell") speak(c.word);
+    var typed = document.getElementById("typed");
+    if (typed) typed.focus();
+    if (s.seconds) {
+      tick = setInterval(function () {
+        var gone = (Date.now() - s.shownAt) / 1000, el = document.getElementById("clock");
+        if (el) el.style.width = Math.max(0, 100 - gone / s.seconds * 100) + "%";
+        if (gone >= s.seconds && !s.revealed) { s.timedOut = true; reveal(); }
+      }, 250);
+    }
+  }
+  function reveal() {
+    var s = session, x = s.items[s.i], c = x.card;
+    if (s.revealed) return;
+    s.revealed = true;
+    clearInterval(tick);
+    var typed = document.getElementById("typed"), suggest = "good", verdict = "";
+    if (typed) {
+      s.typed = typed.value;
+      typed.disabled = true;
+      var right = s.typed.trim().toLowerCase() === String(c.word).trim().toLowerCase();
+      verdict = right ? '<div class="right">Right</div>' : '<div class="wrong">' + (s.typed.trim() ? "Not quite: you wrote “" + esc(s.typed) + "”" : "No answer") + "</div>";
+      suggest = right ? "good" : "again";
+    }
+    if (s.timedOut) { verdict = '<div class="wrong">Out of time</div>' + verdict; suggest = "again"; }
+    var ans = "";
+    if (x.mode === "forward") ans = '<div class="say">' + esc(c.back) + "</div>";
+    else if (x.mode === "reverse") ans = '<div class="say">' + esc(c.front) + "</div>";
+    else if (x.mode === "meaning") ans = '<div class="say">' + esc(c.definition) + "</div>" + (c.example ? '<div class="ex">' + esc(c.example) + "</div>" : "");
+    else ans = '<div class="big">' + esc(c.word) + "</div>" + (c.example ? '<div class="ex">' + esc(c.example) + "</div>" : "");
+    if (c.notes) ans += "<small>" + esc(c.notes) + "</small>";
+    document.getElementById("answer").innerHTML = '<div class="answer">' + verdict + ans + "</div>";
+    s.suggest = suggest;
+    document.getElementById("controls").innerHTML = '<div class="grades">' + GRADES.map(function (g, i) {
+      return '<button class="btn ' + g[0] + (g[0] === suggest ? " pick" : "") + '" data-grade="' + g[0] + '">' + (i + 1) + " · " + g[1] + "</button>";
+    }).join("") + "</div>";
+  }
+  function grade(g) {
+    var s = session, x = s.items[s.i];
+    if (!s.revealed || s.saving) return;
+    s.saving = true;
+    api("POST", "/decks/" + x.deck + "/cards/" + x.id + "/review", { mode: x.mode, grade: g, ms: Date.now() - s.shownAt }).then(function () {
+      s.saving = false; s.reviewed++;
+      // Missed ones come round again later in the session (once), as they're due again in 10 minutes
+      if (g === "again") { s.again++; var k = x.id + x.mode; if (!s.retried[k]) { s.retried[k] = true; s.items.push(x); } }
+      s.i++;
+      show();
+    }).catch(function (e) { s.saving = false; status(e.message); main.insertAdjacentHTML("beforeend", '<p class="status">Couldn’t save that grade: ' + esc(e.message) + "</p>"); });
+  }
+  function finish() {
+    clearInterval(tick);
+    var s = session, mins = Math.round((Date.now() - s.started) / 60000);
+    view = { at: "done" };
+    main.innerHTML = '<section><h2>Done</h2><p>' + plural(s.reviewed, "review") + (s.again ? ", " + s.again + " to see again soon" : "") + (mins ? ", " + plural(mins, "minute") : "") + ".</p>" +
+      '<div class="row"><button class="btn primary" data-home>Back to decks</button></div></section>';
+    session = null;
+  }
+
+  // ---- events ----
+  main.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var f = e.target;
+    if (f.id === "newdeck") api("POST", "/decks", { name: f.elements.name.value, kind: f.elements.kind.value }).then(function (d) { return deck(d.id); }).catch(fail);
+    else if (f.id === "addcard") api("POST", "/decks/" + view.id + "/cards", cardOf(f, data.deck.kind)).then(function () { return deck(view.id); }).then(function () {
+      status("Added."); var first = document.querySelector("#addcard input, #addcard textarea"); if (first) first.focus();
+    }).catch(fail);
+    else if (f.id === "import") api("POST", "/decks/" + view.id + "/import", { text: f.elements.text.value }).then(function (r) {
+      return deck(view.id).then(function () { status("Added " + plural(r.added, "card") + (r.skipped.length ? "; skipped line " + r.skipped.join(", ") + " (missing a part)" : "") + "."); });
+    }).catch(fail);
+    else if (f.id === "rename") api("PUT", "/decks/" + view.id, { name: f.elements.name.value, rev: data.deck.rev }).then(function () { return deck(view.id); }).catch(fail);
+    else if (f.id === "setup") begin(f);
+  });
+  main.addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    if (b.hasAttribute("data-home")) home().catch(fail);
+    else if (b.dataset.deck) deck(b.dataset.deck).catch(fail);
+    else if (b.dataset.study !== undefined) startStudy(b.dataset.study);
+    else if (b.dataset.delcard) api("DELETE", "/decks/" + view.id + "/cards/" + b.dataset.delcard).then(function () { return deck(view.id); }).catch(fail);
+    else if (b.hasAttribute("data-deldeck") && confirm("Delete “" + data.deck.name + "” and its " + plural(data.cards.length, "card") + "?")) api("DELETE", "/decks/" + view.id).then(home).catch(fail);
+    else if (b.hasAttribute("data-reveal")) reveal();
+    else if (b.dataset.grade) grade(b.dataset.grade);
+    else if (b.hasAttribute("data-speak")) speak(session.items[session.i].card.word);
+    else if (b.hasAttribute("data-stop")) finish();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (view.at !== "study" || !session) return;
+    if (!session.revealed && (e.key === "Enter" || (e.key === " " && e.target.id !== "typed"))) { e.preventDefault(); reveal(); }
+    else if (session.revealed && /^[1-4]$/.test(e.key)) { e.preventDefault(); grade(GRADES[+e.key - 1][0]); }
+    else if (session.revealed && e.key === "Enter") { e.preventDefault(); grade(session.suggest); }
+  });
+
+  function gate(msg) {
+    main.innerHTML = '<p class="status">' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button>';
+    document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
+    document.getElementById("signout").hidden = false;
+    document.getElementById("signout").onclick = function () { FamilyAuth.logout(); };
+    return home().catch(function (e) {
+      if (e.status === 403) return gate("Your account doesn’t have access to Cards.");
+      throw new Error("Couldn’t load. Reload to try again.");
+    });
+  }).catch(function (e) { gate(e.message); });
+})();
+</script>
+</body>
+</html>

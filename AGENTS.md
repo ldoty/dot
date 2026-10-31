@@ -34,6 +34,7 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail; dot@dot-y.co, molly@dot-y.co and otto@dot-y.co: the gate that hands members’ mail to Dot, to Molly (`tools/archive`), or to Otto (`tools/otto`) |
 | `platform/billing` | | | Account-wide $75/mo budget + cost anomaly alerts |
 | `tools/archive` | archive.dot-y.co | `family_archive` | The family's documents, kept by **Molly** (molly@dot-y.co): drawers (each person's own, shareable like lists), a catalog with links between files, files in a versioned KMS bucket; intake reads PDFs and text. Email Molly documents and she files them; Claude Code reaches it through `platform/mcp`. Notes in `tools/archive/README.md` |
+| `tools/cards` | cards.dot-y.co | `lukes_cards` | Luke's flashcards: decks of basic cards and word cards (meaning, recall, spelling by ear), spaced repetition (SM-2 per way of studying), timed sessions. Dot and Claude Code read, make decks and add cards (additions only) |
 | `tools/otto` | otto.dot-y.co | `lukes_otto` | **Otto**: Luke's agent, Claude Code in its own container on the home server (CT 103), signed in to his claude.ai account: manages his Gmail inbox through the Gmail connector (read, label, archive; never sends or deletes there) and emails him from otto@dot-y.co. Work comes from the page, Dot or Claude Code (both need his own OK first), his email to otto@, and schedules (“the daily brief at 6”). The agent holds no AWS credentials, only a key for its own API. Notes in `tools/otto/AGENTS.md` |
 | `platform/mcp` | (API only) | `family_mcp` | The family's tools in Claude Code: one remote MCP server that finds tools the way Dot does and borrows the person's token on each (signer `mcp`). Notes in `platform/mcp/README.md` |
 | `platform/family` | dot-y.co/family | `family_admin` | The family's groups and display names, shared by every tool (table `family-people`); tools read them with `platform/api/people.mjs` |
@@ -67,12 +68,12 @@ person* from the other tool's **delegated client** (`platform/api/delegation.mjs
   every non-GET from them** (403 `read-only`) except the writes its manifest declares (`method` on an operation;
   `writeRoutes()` in `platform/api/dot-manifest.mjs` gives the tool its own allowlist from the same manifest). A declared
   write that needs the person's OK answers 202 `{ confirm_id, prompt }`, and Dot sends the confirmation only after their own
-  reply. Declared today: House's automations (create, change, delete; each asks first), Otto's staging a command and its schedules (each asks first), and Health's logging a session, a body weight, food or a dose, adding to the journal, a meditation or a supplement (additions only, so no asking), and changing a supplement (asks first; never a medication). Built into Dot instead: House's
+  reply. Declared today: House's automations (create, change, delete; each asks first), Otto's staging a command and its schedules (each asks first), Cards' making a deck and adding a card (additions only, so no asking), and Health's logging a session, a body weight, food or a dose, adding to the journal, a meditation or a supplement (additions only, so no asking), and changing a supplement (asks first; never a medication). Built into Dot instead: House's
   `POST /commands` (Dot's `house_control`), editing lists the person can edit (Dot's `lists_change`), never sharing, and events on calendars they may change (Dot's calendar tools). Reads are audited by the reader.
 
-Current links: Dot → any tool with a manifest (today the three finances tools, House, Lists, Health, the Archive and Otto); finances tools → Budget (as their person);
+Current links: Dot → any tool with a manifest (today the three finances tools, House, Lists, Health, the Archive, Otto and Cards); finances tools → Budget (as their person);
 Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`); Claude Code (`platform/mcp`, signer `mcp`, Luke only for now) → the tools
-whose `delegates` list `"mcp"` (Luke’s and Shared Finances, House, Lists, Health, Archive, Otto). It never confirms a write that needs the person's OK.
+whose `delegates` list `"mcp"` (Luke’s and Shared Finances, House, Lists, Health, Archive, Otto, Cards). It never confirms a write that needs the person's OK.
 
 ### Dot (the assistant) and tool discovery
 

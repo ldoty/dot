@@ -26,6 +26,7 @@ tools/
   health/                 health.dot-y.co: each person's workouts, plan, sessions, progress and daily journal
   house-hunt/             house-hunt.dot-y.co: Greer neighborhoods we're weighing, with prices and shared notes
   assistant/              assistant.dot-y.co: Luke's chat with Claude (Bedrock) + calendar tools
+  cards/                  cards.dot-y.co: Luke's flashcards (basic and word decks, spelling by ear, spaced repetition)
   chamber/                chamber.dot-y.co: mushroom chamber Arduino firmware, build notes, telemetry
   otto/                   otto.dot-y.co: Otto, Luke's agent on the home server (inbox via Claude Code + Gmail; otto@dot-y.co)
   sms/                    Dot-y texting program: opt-in API behind dot-y.co/sms (+ /privacy, /terms)
