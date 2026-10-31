@@ -2,7 +2,8 @@
 # Google Workspace), stored in a private bucket for 90 days, and forwarded to Gmail by a Lambda
 # with Reply-To set to the original sender. dot-y.co is a verified SES sending domain (DKIM,
 # SPF via a MAIL FROM subdomain, DMARC) so forwarded mail isn't treated as spoofed.
-# dot@dot-y.co (email Dot) is in dot.tf; househunt@ adds its own rule from tools/house-hunt.
+# dot@dot-y.co (email Dot) is in dot.tf, molly@ in molly.tf, otto@ in otto.tf; househunt@ adds its own rule
+# from tools/house-hunt.
 
 terraform {
   required_version = ">= 1.10"
@@ -132,6 +133,17 @@ resource "aws_s3_bucket_lifecycle_configuration" "mail" {
       days = 8
     }
   }
+  # Mail to Otto (otto.tf): the worker keeps the words as long, for Otto's answer in the same thread
+  rule {
+    id     = "otto-expire-after-8-days"
+    status = "Enabled"
+    filter {
+      prefix = "otto/"
+    }
+    expiration {
+      days = 8
+    }
+  }
   # Mail to Dot (dot.tf) can carry photos, which Dot keeps a week; the conversation keeps the words
   rule {
     id     = "dot-expire-after-8-days"
@@ -154,7 +166,7 @@ resource "aws_s3_bucket_policy" "mail" {
         Effect    = "Allow"
         Principal = { Service = "ses.amazonaws.com" }
         Action    = "s3:PutObject"
-        Resource  = ["${aws_s3_bucket.mail.arn}/inbound/*", "${aws_s3_bucket.mail.arn}/dot/*", "${aws_s3_bucket.mail.arn}/molly/*"]
+        Resource  = ["${aws_s3_bucket.mail.arn}/inbound/*", "${aws_s3_bucket.mail.arn}/dot/*", "${aws_s3_bucket.mail.arn}/molly/*", "${aws_s3_bucket.mail.arn}/otto/*"]
         Condition = { StringEquals = { "AWS:SourceAccount" = data.aws_caller_identity.current.account_id } }
       },
       {
@@ -170,6 +182,13 @@ resource "aws_s3_bucket_policy" "mail" {
         Principal = { AWS = data.aws_lambda_function.molly_worker.role }
         Action    = "s3:GetObject"
         Resource  = "${aws_s3_bucket.mail.arn}/molly/*"
+      },
+      {
+        # Otto's mail worker (tools/otto) reads the messages its gate hands it (otto.tf), and nothing else here
+        Effect    = "Allow"
+        Principal = { AWS = data.aws_lambda_function.otto_worker.role }
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.mail.arn}/otto/*"
       },
     ]
   })

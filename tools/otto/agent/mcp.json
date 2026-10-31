@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "otto": { "type": "stdio", "command": "node", "args": ["/opt/otto/tools.mjs"] }
+  }
+}

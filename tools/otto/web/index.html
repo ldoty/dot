@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Otto</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="family.css">
+<style>
+/* One narrow column: Otto's state, something to do, what waits for an OK, what it did, what it runs on its own */
+.wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 24px }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+.top a { color: var(--muted); text-decoration: none; font-size: 14px }
+h1 { font-size: clamp(32px, 6vw, 48px) }
+h2 { font-size: 20px; margin: 0 0 8px }
+section { display: grid; gap: 10px }
+textarea, input, select { background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 9px 12px; color: var(--ink); font: inherit; min-width: 0 }
+textarea:focus, input:focus, select:focus { border-color: var(--pool); outline: none }
+textarea { width: 100%; box-sizing: border-box; min-height: 84px; resize: vertical }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+.row > input[name=name] { flex: 1 }
+ul { list-style: none; margin: 0; padding: 0 }
+li { padding: 12px 0; border-bottom: 1px solid var(--line); display: grid; gap: 6px }
+li .head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline }
+li .prompt { white-space: pre-wrap; overflow-wrap: anywhere }
+li small, .status, .meta { color: var(--muted); font-size: 14px }
+.chip { font-size: 12px; padding: 2px 8px; border-radius: var(--r-pill); background: var(--raised); white-space: nowrap }
+.chip.done { background: var(--leaf); color: var(--on-accent) }
+.chip.failed { background: var(--ember); color: var(--on-accent) }
+.chip.running, .chip.queued { background: var(--pool); color: var(--on-accent) }
+.chip.asking { background: var(--sun); color: var(--on-sun) }
+details pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--body); background: var(--raised); padding: 10px 12px; border-radius: var(--r-sm); margin: 6px 0 0 }
+.acts { display: flex; gap: 8px }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); margin-right: 6px }
+.dot.on { background: var(--leaf) }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
+  <h1>Otto</h1>
+  <div id="main"><p class="status">Loading…</p></div>
+</div>
+<script src="family-auth.js"></script>
+<script>
+(function () {
+  var cfg, state = { status: null, commands: [], schedules: [] };
+  var main = document.getElementById("main");
+  var LABEL = { asking: "Waiting for your OK", queued: "Queued", running: "Running", done: "Done", failed: "Failed", discarded: "Discarded" };
+  var FROM = { page: "From this page", asked: "Through Dot or Claude Code", schedule: "Scheduled", email: "Emailed to Otto" };
+  var DAYS = { "FREQ=DAILY": "Every day", "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR": "Weekdays", "FREQ=WEEKLY;BYDAY=SA,SU": "Weekends" };
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function status(msg) { var s = document.getElementById("status"); if (s) s.textContent = msg || ""; }
+  function when(iso) { return iso ? new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""; }
+
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method,
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    });
+  }
+  function errorOf(res) { return res.json().then(function (j) { return j.error || ("error " + res.status); }, function () { return "error " + res.status; }); }
+
+  function load() {
+    return Promise.all([api("GET", "/status"), api("GET", "/commands"), api("GET", "/schedules")]).then(function (rs) {
+      if (rs[0].status === 403) { gate("Your account doesn’t have access to Otto."); return; }
+      if (!rs.every(function (r) { return r.ok; })) throw new Error("Couldn’t load. Reload to try again.");
+      return Promise.all(rs.map(function (r) { return r.json(); })).then(function (j) {
+        state.status = j[0]; state.commands = j[1]; state.schedules = j[2]; render();
+      });
+    });
+  }
+
+  function command(c) {
+    var acts = c.status === "asking" ? '<div class="acts"><button class="btn primary" data-approve="' + esc(c.id) + '">Approve</button><button class="btn ghost" data-discard="' + esc(c.id) + '">Discard</button></div>'
+      : c.status === "queued" ? '<div class="acts"><button class="btn ghost" data-discard="' + esc(c.id) + '">Discard</button></div>' : "";
+    return '<li><div class="head"><span class="prompt">' + esc(c.prompt) + '</span><span class="chip ' + esc(c.status) + '">' + esc(LABEL[c.status] || c.status) + "</span></div>" +
+      "<small>" + esc(FROM[c.source] || c.source) + " · " + esc(when(c.createdAt)) + (c.finishedAt ? " · finished " + esc(when(c.finishedAt)) : "") + "</small>" +
+      (c.result ? "<details" + (state.commands[0] === c ? " open" : "") + "><summary>What Otto said</summary><pre>" + esc(c.result) + "</pre></details>" : "") + acts + "</li>";
+  }
+
+  function schedule(s) {
+    return '<li><div class="head"><strong>' + esc(s.name) + '</strong><span class="chip">' + esc(s.status === "on" ? "On" : s.status === "paused" ? "Paused" : "Stopped") + "</span></div>" +
+      "<small>" + esc(s.says) + (s.next_at ? " · next " + esc(when(s.next_at)) : "") + (s.last_run ? " · last " + esc(s.last_run.outcome) + " " + esc(when(s.last_run.at)) : "") + "</small>" +
+      '<details><summary>Prompt</summary><pre>' + esc(s.prompt) + "</pre></details>" +
+      '<div class="acts"><button class="btn ghost" data-pause="' + esc(s.id) + '">' + (s.enabled ? "Pause" : "Resume") + '</button><button class="btn ghost" data-delsched="' + esc(s.id) + '">Delete</button></div></li>';
+  }
+
+  function render() {
+    var st = state.status, asking = state.commands.filter(function (c) { return c.status === "asking"; });
+    var rest = state.commands.filter(function (c) { return c.status !== "asking"; });
+    main.innerHTML =
+      '<p class="meta"><span class="dot' + (st.agent.online ? " on" : "") + '"></span>' + (st.agent.online ? "Otto is online at home" : st.agent.seenAt ? "Otto was last seen " + esc(when(st.agent.seenAt)) : "Otto hasn’t checked in yet") +
+        (st.queued || st.running ? " · " + st.running + " running, " + st.queued + " queued" : "") + "</p>" +
+      '<section><h2>Give Otto something to do</h2><form id="stage"><textarea id="prompt" maxlength="4000" aria-label="What Otto should do" placeholder="Archive everything from Houzz older than a week, and tell me how many"></textarea>' +
+        '<div class="row"><button class="btn primary">Queue it</button><span class="status" id="status"></span></div></form></section>' +
+      (asking.length ? "<section><h2>Waiting for your OK</h2><p class=\"meta\">Staged through Dot or Claude Code. They don’t run until you approve them.</p><ul>" + asking.map(command).join("") + "</ul></section>" : "") +
+      "<section><h2>What Otto did</h2>" + (rest.length ? "<ul>" + rest.map(command).join("") + "</ul>" : '<p class="meta">Nothing yet.</p>') + "</section>" +
+      "<section><h2>On its own</h2>" + (state.schedules.length ? "<ul>" + state.schedules.map(schedule).join("") + "</ul>" : '<p class="meta">No schedules yet.</p>') +
+        '<details><summary>Add a schedule</summary><form id="sched" style="display:grid;gap:8px;margin-top:8px">' +
+        '<div class="row"><input name="name" maxlength="60" placeholder="Daily brief" aria-label="Name" required><input name="time" type="time" value="06:00" aria-label="Time" required>' +
+        '<select name="rule" aria-label="Days">' + Object.keys(DAYS).map(function (k) { return '<option value="' + esc(k) + '">' + esc(DAYS[k]) + "</option>"; }).join("") + "</select></div>" +
+        '<textarea name="prompt" maxlength="4000" aria-label="What Otto does each time" placeholder="What Otto does each time, in full" required></textarea>' +
+        '<div class="row"><button class="btn primary">Save schedule</button></div></form></details></section>';
+  }
+
+  function act(p) { return p.then(function (res) { if (!res.ok) return errorOf(res).then(function (m) { throw new Error(m); }); return load(); }).catch(function (e) { status("Couldn’t do that: " + e.message); }); }
+
+  main.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (e.target.id === "stage") {
+      var p = document.getElementById("prompt").value.trim(); if (!p) return;
+      act(api("POST", "/commands", { prompt: p }));
+    } else if (e.target.id === "sched") {
+      var f = e.target.elements;
+      act(api("POST", "/schedules", { name: f.name.value.trim(), time: f.time.value, prompt: f.prompt.value.trim(), repeat: { rule: f.rule.value } }));
+    }
+  });
+  main.addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.approve) act(api("POST", "/commands/" + b.dataset.approve + "/approve"));
+    else if (b.dataset.discard) act(api("DELETE", "/commands/" + b.dataset.discard));
+    else if (b.dataset.pause) {
+      var s = state.schedules.filter(function (x) { return x.id === b.dataset.pause; })[0];
+      act(api("PATCH", "/schedules/" + s.id, { enabled: !s.enabled, rev: s.rev }));
+    } else if (b.dataset.delsched && confirm("Delete this schedule?")) act(api("DELETE", "/schedules/" + b.dataset.delsched));
+  });
+
+  function gate(msg) {
+    main.innerHTML = '<p class="status">' + esc(msg) + '</p><button class="btn primary" id="signin">Sign in</button>';
+    document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
+    document.getElementById("signout").hidden = false;
+    document.getElementById("signout").onclick = function () { FamilyAuth.logout(); };
+    // Keep it current while a command runs; quietly, so a half-typed prompt isn't lost
+    setInterval(function () {
+      var typing = document.activeElement && /TEXTAREA|INPUT|SELECT/.test(document.activeElement.tagName);
+      if (!typing && !document.hidden) load().catch(function () {});
+    }, 15000);
+    return load();
+  }).catch(function (e) { gate(e.message); });
+})();
+</script>
+</body>
+</html>

@@ -31,9 +31,10 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 | `tools/chamber` | chamber.dot-y.co | `lukes_chamber` | Mushroom chamber: Arduino firmware + build notes; the board posts telemetry to `POST /ingest` (device key), the page shows it and sets the board’s settings |
 | `tools/house` | house.dot-y.co | `family_house` | Home Assistant by room, per-person grants; a relay at home dials out (WebSocket, device key) and reports only what `relay/ceiling.json` exposes; automations (made through Dot) run on the relay. Notes in `tools/house/AGENTS.md` |
 | `tools/sms` | (API only) | | Dot-y texting program: opt-in consent records, and Twilio’s webhook that hands members’ texts to Dot |
-| `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail; dot@dot-y.co and molly@dot-y.co: the gate that hands members’ mail to Dot, or to Molly (`tools/archive`) |
+| `platform/email` | | | contact@dot-y.co: SES receive → S3 → forward to Gmail; dot@dot-y.co, molly@dot-y.co and otto@dot-y.co: the gate that hands members’ mail to Dot, to Molly (`tools/archive`), or to Otto (`tools/otto`) |
 | `platform/billing` | | | Account-wide $75/mo budget + cost anomaly alerts |
 | `tools/archive` | archive.dot-y.co | `family_archive` | The family's documents, kept by **Molly** (molly@dot-y.co): drawers (each person's own, shareable like lists), a catalog with links between files, files in a versioned KMS bucket; intake reads PDFs and text. Email Molly documents and she files them; Claude Code reaches it through `platform/mcp`. Notes in `tools/archive/README.md` |
+| `tools/otto` | otto.dot-y.co | `lukes_otto` | **Otto**: Luke's agent, Claude Code in its own container on the home server (CT 103), signed in to his claude.ai account: manages his Gmail inbox through the Gmail connector (read, label, archive; never sends or deletes there) and emails him from otto@dot-y.co. Work comes from the page, Dot or Claude Code (both need his own OK first), his email to otto@, and schedules (“the daily brief at 6”). The agent holds no AWS credentials, only a key for its own API. Notes in `tools/otto/AGENTS.md` |
 | `platform/mcp` | (API only) | `family_mcp` | The family's tools in Claude Code: one remote MCP server that finds tools the way Dot does and borrows the person's token on each (signer `mcp`). Notes in `platform/mcp/README.md` |
 | `platform/family` | dot-y.co/family | `family_admin` | The family's groups and display names, shared by every tool (table `family-people`); tools read them with `platform/api/people.mjs` |
 
@@ -66,12 +67,12 @@ person* from the other tool's **delegated client** (`platform/api/delegation.mjs
   every non-GET from them** (403 `read-only`) except the writes its manifest declares (`method` on an operation;
   `writeRoutes()` in `platform/api/dot-manifest.mjs` gives the tool its own allowlist from the same manifest). A declared
   write that needs the person's OK answers 202 `{ confirm_id, prompt }`, and Dot sends the confirmation only after their own
-  reply. Declared today: House's automations (create, change, delete; each asks first), and Health's logging a session, a body weight, food or a dose, adding to the journal, a meditation or a supplement (additions only, so no asking), and changing a supplement (asks first; never a medication). Built into Dot instead: House's
+  reply. Declared today: House's automations (create, change, delete; each asks first), Otto's staging a command and its schedules (each asks first), and Health's logging a session, a body weight, food or a dose, adding to the journal, a meditation or a supplement (additions only, so no asking), and changing a supplement (asks first; never a medication). Built into Dot instead: House's
   `POST /commands` (Dot's `house_control`), editing lists the person can edit (Dot's `lists_change`), never sharing, and events on calendars they may change (Dot's calendar tools). Reads are audited by the reader.
 
-Current links: Dot → any tool with a manifest (today the three finances tools, House, Lists, Health and the Archive); finances tools → Budget (as their person);
+Current links: Dot → any tool with a manifest (today the three finances tools, House, Lists, Health, the Archive and Otto); finances tools → Budget (as their person);
 Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`); Claude Code (`platform/mcp`, signer `mcp`, Luke only for now) → the tools
-whose `delegates` list `"mcp"` (Luke’s and Shared Finances, House, Lists, Health, Archive). It never confirms a write that needs the person's OK.
+whose `delegates` list `"mcp"` (Luke’s and Shared Finances, House, Lists, Health, Archive, Otto). It never confirms a write that needs the person's OK.
 
 ### Dot (the assistant) and tool discovery
 
@@ -83,8 +84,8 @@ protocol above; never in a scheduled ask's read-only run). Dot **remembers** wha
 personal notes, shown on its page under “What Dot knows”), and runs **scheduled asks** (`api/schedules.mjs`:
 “a budget overview every Sunday at 1”) as the person, read-only, sending the answer by text or email.
 
-**Automations** are everything that runs on its own, of three kinds, each run where it must: House's (on the relay
-at home), Dot's scheduled asks (in AWS) and Lists' reminders (Lists' sweep). They work alike: days are the same
+**Automations** are everything that runs on its own, of four kinds, each run where it must: House's (on the relay
+at home), Dot's scheduled asks (in AWS), Lists' reminders (Lists' sweep) and Otto's schedules (queued by Otto's sweep, run at home). They work alike: days are the same
 RRULE subset (`tools/lists/api/repeat.mjs`, shared), each describes itself in one shape (`automationItem` in
 `platform/api/dot-manifest.mjs`: says, on/paused/stopped and why, last run, next run), and from Dot every change
 to a House automation or a scheduled ask needs the person's own reply. A tool joins by giving a manifest operation
@@ -187,6 +188,8 @@ npm run test:live
 | `/family/sms/twilio-webhook` | SecureString, set by hand: `{accountSid, authToken}`, only for the webhook's signature checks |
 | `/family/assistant/sms-worker` | Dot’s SMS worker Lambda, which only the SMS webhook may invoke |
 | `/family/assistant/email-worker` | Dot’s email worker Lambda, which only the dot@ gate in `platform/email` may invoke (apply the assistant first) |
+| `/family/otto/mail-worker` | Otto’s mail worker Lambda, which only the otto@ gate in `platform/email` may invoke (apply `tools/otto` first) |
+| `/family/otto/agent-key` | SecureString, set by hand: the agent’s key for Otto’s `/agent/*` routes (also in CT 103’s `/etc/otto/agent-key`) |
 | `/family/archive/molly-worker` | Molly’s worker Lambda, which only the molly@ gate in `platform/email` may invoke (apply the archive first) |
 
 ## Tool notes
@@ -201,6 +204,9 @@ Read them first when a change crosses into one of those tools (e.g. Dot or Finan
 ### Others
 - **House Hunt**: `rev`-checked writes; SES → bucket → ingest Lambda (`api/ingest.mjs`, bundled by `npm run build`) that accepts
   allowed senders with DMARC passing and has Claude extract listings as untrusted data into a fixed schema.
+- **Otto**: the agent can't sign in, so `/agent/*` has no authorizer; `api/agent.mjs` checks `x-otto-key` against
+  `/family/otto/agent-key`, and emails only the owner. Every delegated write answers 202: a delegated token
+  can't say whether it came from Dot or Claude Code, so only Luke's reply in Dot or his Approve on the page makes work.
 - **Chamber**: the board can't sign in, so `POST /ingest` has no authorizer; `api/ingest.mjs` checks the
   `x-chamber-key` header against the SecureString `/family/chamber/device-key` (set by hand) and its role can only
   write readings. Control runs on the Arduino; nothing in the cloud may become part of its loop. Firmware notes in

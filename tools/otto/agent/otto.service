@@ -1,0 +1,27 @@
+# Otto (tools/otto/agent/otto.mjs): asks Otto's agent API for work and runs it with Claude Code.
+# /etc/otto/env (root:otto 0640): OTTO_API=<tofu output agent_api_url>, DISABLE_AUTOUPDATER=1
+# /etc/otto/agent-key (root:otto 0640): the same value as SSM /family/otto/agent-key
+# Claude Code is signed in to Luke's claude.ai account once, by hand, as otto (README): its credentials
+# live in /home/otto/.claude, with the claude.ai connectors (Gmail) that come with the account
+[Unit]
+Description=Otto, Luke's agent
+# network-online.target doesn't wait in the container: wait for a default route (as the house relay does)
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+User=otto
+Group=otto
+WorkingDirectory=/home/otto/work
+EnvironmentFile=/etc/otto/env
+ExecStartPre=/bin/sh -c 'until ip route | grep -q ^default; do sleep 2; done'
+ExecStart=/usr/bin/node /opt/otto/otto.mjs
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/otto
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -101,7 +101,7 @@ export function requestPath(op, input = {}) {
 
 // ---- the shapes roles answer in ----
 
-export const KINDS = ['house', 'ask', 'reminder'];
+export const KINDS = ['house', 'ask', 'reminder', 'otto'];
 const STATUS = ['on', 'paused', 'stopped'];
 const OUTCOMES = ['done', 'failed', 'missed'];
 const iso = (x) => typeof x === 'string' && !Number.isNaN(Date.parse(x));
@@ -109,7 +109,7 @@ const words = (x, max) => (typeof x === 'string' && x.trim() ? x.trim().slice(0,
 
 /**
  * One automation as every tool gives it, or null if it isn't one (a tool's other fields are dropped):
- *   { id, kind: house | ask | reminder, name, says (what it does, in words), status: on | paused | stopped,
+ *   { id, kind: house | ask | reminder | otto, name, says (what it does, in words), status: on | paused | stopped,
  *     why? (stopped), owner: { name }?, mine, can_change, last_run: { at, outcome: done | failed | missed } | null,
  *     next_at: ISO | null }
  */

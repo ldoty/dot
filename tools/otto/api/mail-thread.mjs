@@ -1,0 +1,1 @@
+../../../platform/api/mail-thread.mjs

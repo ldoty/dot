@@ -210,7 +210,7 @@ body { display: flex; flex-direction: column }
     };
     // Everything that runs on its own for you, from every tool, in one shape (GET /automations).
     // Your scheduled asks are Dot's own: pause, resume or delete them here. The rest change where they live, or by asking Dot.
-    var KIND = { house: "House automation", ask: "Scheduled ask", reminder: "List reminder" };
+    var KIND = { house: "House automation", ask: "Scheduled ask", reminder: "List reminder", otto: "Otto schedule" };
     var LAST = { done: "last ran ", failed: "last time it didn’t work, ", missed: "missed one, " };
     var autos = running.automations;
     var sched = '<section class="card"><h3>Runs on its own</h3>' +
