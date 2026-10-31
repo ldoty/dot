@@ -68,8 +68,9 @@ resource "aws_iam_role_policy" "agent" {
         Resource = "arn:aws:cognito-idp:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:userpool/${local.pool_id}"
       },
       {
+        # SendEmail with raw content (threaded replies) is authorized as SendRawEmail
         Effect    = "Allow"
-        Action    = "ses:SendEmail"
+        Action    = ["ses:SendRawEmail", "ses:SendEmail"]
         Resource  = "*"
         Condition = { StringEquals = { "ses:FromAddress" = local.otto_address } }
       },
