@@ -24,8 +24,16 @@ pct create "$CT" "local:vztmpl/$TEMPLATE" --hostname otto --unprivileged 1 --fea
 
 # The internet, and the router for DHCP and DNS; nothing else on the home network
 GW=$(ip route | awk '/^default/ {print $3; exit}')
-LAN=$(ip -o -f inet addr show "$BRIDGE" | awk '{print $4; exit}')
+LAN=$(ip -o -f inet route show dev "$BRIDGE" scope link | awk '{print $1; exit}') # the network (192.168.0.0/24), not the host's address
 mkdir -p /etc/pve/firewall
+# Guest rules apply only with the datacenter firewall on; on, but accepting, so the host and other guests stay as open as before
+[ -f /etc/pve/firewall/cluster.fw ] || cat > /etc/pve/firewall/cluster.fw <<FW
+[OPTIONS]
+# On only so guest rules apply (Otto, CT 103: no home network). Host and other guests stay open as before.
+enable: 1
+policy_in: ACCEPT
+policy_out: ACCEPT
+FW
 cat > "/etc/pve/firewall/$CT.fw" <<FW
 [OPTIONS]
 enable: 1

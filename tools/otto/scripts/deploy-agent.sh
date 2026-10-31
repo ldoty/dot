@@ -16,8 +16,8 @@ node -e "JSON.parse(require('fs').readFileSync('$dir/managed-settings.json','utf
 
 stage="/tmp/otto-agent.$$"
 ssh "$PVE" "mkdir -p $stage"
-# -L: mcp.mjs is a symlink to platform/api; copy what it points at
-scp -q -L "${files[@]/#/$dir/}" "$PVE:$stage/"
+# mcp.mjs is a symlink to platform/api: scp copies the file it points at
+scp -q "${files[@]/#/$dir/}" "$PVE:$stage/"
 ssh "$PVE" bash -s <<EOF
 set -euo pipefail
 for f in otto.mjs tools.mjs mcp.mjs mcp.json OTTO.md; do pct push $CT $stage/\$f /opt/otto/\$f --perms 0644; done
