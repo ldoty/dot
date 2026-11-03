@@ -544,7 +544,7 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
       (t.moved ? ' <span class="moved">counts in ' + esc(shortMonth(t.month)) + "</span>" : "") + "</span>" +
       '<span class="money amt' + (amt > 0 ? " in" : "") + '">' + (amt > 0 ? "+" : "") + usd.format(amt) + "</span>" +
       (withFile ? '<div class="file">' + picker(t, a && a.owner) +
-        '<label><input type="checkbox" data-remember="' + esc(t.id) + '" checked> same merchant from now on</label>' +
+        '<label><input type="checkbox" data-remember="' + esc(t.id) + '"> same merchant from now on</label>' +
         '<label>Counts in <select data-month="' + esc(t.id) + '" aria-label="Month ' + esc(t.description) + ' counts in">' + [-1, 0, 1].map(function (n) {
           var m = shift(t.date.slice(0, 7), n);
           return '<option value="' + m + '"' + (m === t.month ? " selected" : "") + ">" + esc(shortMonth(m)) + (n ? "" : " (posted)") + "</option>";

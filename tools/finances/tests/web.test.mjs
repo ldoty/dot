@@ -269,17 +269,31 @@ test('three months: one stacked column per month, stacks are my categories; hove
   p.close();
 });
 
-test('to file: pick a line, and the merchant’s other transactions follow', async () => {
+test('to file: by default only that transaction is filed, and no rule is made', async () => {
+  const p = await open();
+  const btn = [...p.d.querySelectorAll('#to-file [data-pick]')].find((x) => x.getAttribute('aria-label').includes('Whole Foods'));
+  assert.equal(p.el(`[data-remember="${btn.dataset.pick}"]`).checked, false, 'same merchant starts unchecked');
+  await p.click(`#to-file [data-pick="${btn.dataset.pick}"]`);
+  const groceries = [...p.d.querySelectorAll('.pick-list li')].find((li) => li.textContent === 'Groceries');
+  await p.click(`.pick-list li[data-choice="${groceries.dataset.choice}"]`);
+  assert.ok(p.requests.includes(`PUT /transactions/${btn.dataset.pick}`));
+  assert.match(p.el('#to-file h3').textContent, /To file \(2\)/);
+  assert.equal(table.get('LUKE', 'RULE#WHOLE FOODS'), undefined, 'not remembered unless asked');
+  p.close();
+});
+
+test('to file: with “same merchant” checked, the merchant’s other transactions follow', async () => {
   const p = await open();
   assert.match(p.el('#to-file h3').textContent, /To file \(3\)/);
   const btn = [...p.d.querySelectorAll('#to-file [data-pick]')].find((x) => x.getAttribute('aria-label').includes('Whole Foods'));
+  p.el(`[data-remember="${btn.dataset.pick}"]`).checked = true;
   await p.click(`#to-file [data-pick="${btn.dataset.pick}"]`);
   const groceries = [...p.d.querySelectorAll('.pick-list li')].find((li) => li.textContent === 'Groceries');
   await p.click(`.pick-list li[data-choice="${groceries.dataset.choice}"]`);
   assert.ok(p.requests.includes(`PUT /transactions/${btn.dataset.pick}`));
   assert.equal(p.el('.col[data-cat="Luke›Food"] .cval').textContent, '$149');
   assert.match(p.el('#to-file h3').textContent, /To file \(2\)/);
-  assert.equal(table.get('LUKE', 'RULE#WHOLE FOODS').line, 'L.f1', 'remembered by default');
+  assert.equal(table.get('LUKE', 'RULE#WHOLE FOODS').line, 'L.f1', 'remembered when asked');
   p.close();
 });
 
