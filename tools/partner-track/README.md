@@ -7,7 +7,8 @@ Contribution Units. Seven modules named for financing rounds (Pre-seed to Exit),
 a quiz, a hands-on tool, a skill builder and journal questions. The tools are a $25M fund model
 (gross to net), a power-law simulator (2,000 seed funds), a napkin buyout with an ownership pool, and
 a prediction log with a Brier score. Beyond the modules: the plan (the company first, then the firm),
-a field kit, and the collected journal.
+a field kit, and the collected journal. Ideas not yet in the course (Contribution Units v2:
+distributions, a displacement policy, the bootstrapped version) are in `FUTURE.md`.
 
 | Where | What |
 |---|---|
