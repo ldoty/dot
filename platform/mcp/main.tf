@@ -192,6 +192,10 @@ resource "aws_lambda_function" "server" {
       PUBLIC_URL  = aws_apigatewayv2_api.api.api_endpoint
       AUTH_DOMAIN = data.aws_ssm_parameter.auth_domain.value
       SIGNER_KEY  = data.aws_ssm_parameter.signer_key.value
+      # Tools whose changes that ask first (202) are confirmed here. Luke's choice for Otto: its OK is Claude
+      # Code's own permission prompt, from `ask` rules on mcp__dot-y__otto_stage and _schedule_* in his
+      # settings, which no model can answer. Every other tool's OK stays with Dot or its page.
+      CONFIRM_APPS = "lukes_otto"
     }
   }
 }

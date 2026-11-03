@@ -1,6 +1,8 @@
-// Otto's own tool for Claude, as a stdio MCP server (mcp.json starts it for each run): send_email, to
-// Luke, from otto@dot-y.co, through Otto's agent API (api/agent.mjs). The address isn't an input: the API
+// Otto's own tools for Claude, as a stdio MCP server (mcp.json starts it for each run), through Otto's
+// agent API (api/agent.mjs). send_email: to Luke, from otto@dot-y.co. The address isn't an input: the API
 // sends only to the owner's verified email, a few per command, and only while that command is running.
+// clear_brief: for Luke's reply to a brief (only then is it allowed, and the API checks it again), it
+// queues the brief's clear, whose words are fixed.
 // The command comes from OTTO_COMMAND, which otto.mjs sets for the run.
 import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -25,6 +27,18 @@ export function ottoTools({ api, key, command, fetchFn = fetch }) {
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw toolError(`not sent: ${j.error ?? res.status}`);
       return 'Sent to Luke.';
+    },
+  }, {
+    name: 'clear_brief',
+    description: 'For Luke’s reply to a brief, when he asks to clear it: queues a run that marks the brief’s Otto/Clear mail read and confirms in this thread. Once per reply.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    async run() {
+      const res = await fetchFn(`${api}/agent/clear`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-otto-key': key }, body: JSON.stringify({ command }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw toolError(`not queued: ${j.error ?? res.status}`);
+      return 'Queued: the brief’s Otto/Clear mail will be marked read, and Luke told in this thread.';
     },
   }];
 }

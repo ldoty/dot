@@ -17,7 +17,8 @@ label, archive and mark mail read, but it never sends from Gmail and never delet
 | `api/mail.mjs` | Mail to otto@ (via the gate in `platform/email/otto.tf`): keeps the words and queues a command. Bundled by `npm run build` |
 | `api/schedules.mjs`, `api/store.mjs` | Schedule rules and wording; the table's rows and helpers |
 | `agent/otto.mjs` | The runner in the container: poll, `claude -p`, report |
-| `agent/tools.mjs` | Claude's `send_email` (stdio MCP server; `mcp.json`) |
+| `agent/tools.mjs` | Claude's `send_email` and `clear_brief` (stdio MCP server; `mcp.json`) |
+| `agent/guard.mjs` | A managed PreToolUse hook: a clear run may remove only `UNREAD` and Luke's own labels |
 | `agent/OTTO.md` | Otto's standing instructions (appended to the system prompt; root's) |
 | `agent/managed-settings.json` | Claude Code's managed settings in the container: what is never allowed |
 | `scripts/create-container.sh`, `scripts/deploy-agent.sh` | Make CT 103 once; copy `agent/` and restart |
@@ -29,17 +30,29 @@ label, archive and mark mail read, but it never sends from Gmail and never delet
 | `page` | Luke on otto.dot-y.co: queued at once | Gmail read, label, archive, mark read or spam; `send_email` |
 | `asked` | Dot or Claude Code stage it (`asking`). It's queued after Luke's own reply in Dot (`?confirm_id=`), or after Approve on the page (within a day) | the same |
 | `schedule` | The sweep, at the schedule's time, with exactly the saved prompt. Saving a schedule from Dot or Claude Code needs his OK the same way | the same |
-| `email` | Luke's DMARC-passing mail to otto@ (the gate checks `lukes_otto` and the verified email) | Gmail **read only**; `send_email` to answer in the thread |
+| `email` | Luke's DMARC-passing mail to otto@ (the gate checks `lukes_otto` and the verified email) | Gmail **read only**; `send_email` to answer in the thread. A reply to a brief also gets `clear_brief` |
+| `clear` | `clear_brief`, during a reply to a brief, once per reply. Always the fixed `CLEAR_PROMPT` (`store.mjs`) | Gmail search and `unlabel_thread`, removing only `UNREAD` and Luke's labels (`guard.mjs`); `send_email` to confirm |
+
+### Clearing from a reply
+
+The brief (a schedule) labels what Luke should see `Otto/Review`, and what can be marked read `Otto/Clear`.
+Every email a schedule sends is recorded as a `BRIEF` row under the Message-ID SES gave it. Mail to otto@
+that names one in In-Reply-To or References is a reply to a brief. Its run may call `clear_brief`, and the
+agent API queues `CLEAR_PROMPT` as a `clear` command, threaded under the reply. What the email says only
+decides *whether* that happens, never what it does. So the worst a forged or injected "clear" can do is
+mark the mail the brief already sorted as clearable read. The guard means even a misled clear run can't
+archive, unstar or spam anything.
 
 A delegated token looks the same whether it comes from Dot or from Claude Code (both are `via: dot`).
 Dot reads texts and email from outside. So nothing a delegated token sends turns into work until Luke
-says yes himself. Claude Code can't give that yes (`platform/mcp` never confirms a 202), so a command
-staged there waits on the page.
+says yes himself. In Claude Code, that yes is its own permission prompt. Luke's settings `ask` before
+`mcp__dot-y__otto_stage` and `_schedule_*`, and `platform/mcp` (`CONFIRM_APPS`) then confirms the 202 at once.
 
 In the container, every run is:
 `claude -p … --restricted --permission-mode dontAsk --allowedTools <the source's list> --disallowedTools <never>`.
 - `--restricted` removes Bash, the other code-running tools and WebFetch, and ignores user and project settings.
 - `dontAsk` refuses anything not on the allowlist.
+- The managed settings also run `guard.mjs` before every Gmail call (managed hooks only).
 - The managed settings deny the same "never" list again: sending, replying, forwarding, drafts, trash,
   label edits, Drive, Docs, code and file writes, and reading `/etc/otto` or `/opt/otto`.
 - Gmail content is framed as data. `OTTO.md` is root's, so nothing Otto reads can rewrite its instructions.
@@ -53,6 +66,7 @@ In the container, every run is:
 | `PENDING` / `<confirm id>` | A delegated change waiting for the person's reply (2 minutes) |
 | `MAIL` / `<SES id>` | A message to otto@: from, subject, text, Message-ID and References for threading. Kept 8 days |
 | `SENT#<day>` / `<at>#<cmd>` | An email Otto sent (the manifest's `sent` role). Kept 3 days |
+| `BRIEF` / `<Message-ID>` | An email a schedule sent, so a reply to it can clear it. Kept 8 days |
 | `AGENT` / `SEEN` | When the agent last asked for work (online = within 3 minutes) |
 
 ## Deploy

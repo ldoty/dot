@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { readFileSync } from 'node:fs';
-import { CHANGE_TOOLS, NEVER, READ_TOOLS, SEND_TOOL, claudeArgs, framePrompt, makeAgent, runClaude, toolsFor } from '../agent/otto.mjs';
+import { CHANGE_TOOLS, CLEAR_TOOL, NEVER, READ_TOOLS, SEND_TOOL, UNLABEL_THREAD, claudeArgs, framePrompt, makeAgent, runClaude, toolsFor } from '../agent/otto.mjs';
+import { refuse } from '../agent/guard.mjs';
 import { ottoTools, serveStdio } from '../agent/tools.mjs';
 import { mcpServer } from '../agent/mcp.mjs';
 
@@ -15,8 +16,32 @@ test('an email run may read the inbox and answer, never change it', () => {
   for (const s of ['page', 'asked', 'schedule']) for (const t of CHANGE_TOOLS) assert.ok(toolsFor(s).includes(t), `${s}: ${t}`);
 });
 
+test('a reply to a brief adds only clear_brief; a clear run may only search and unlabel', () => {
+  assert.deepEqual(toolsFor('email', { brief: true }), [...READ_TOOLS, SEND_TOOL, CLEAR_TOOL]);
+  for (const s of ['page', 'asked', 'schedule', 'clear']) assert.ok(!toolsFor(s).includes(CLEAR_TOOL), s);
+  const clear = toolsFor('clear');
+  assert.deepEqual(clear.filter((t) => CHANGE_TOOLS.includes(t)), [UNLABEL_THREAD]);
+  assert.ok(!clear.includes('mcp__claude_ai_Gmail__get_thread'), 'no message bodies to read');
+  const a = claudeArgs({ id: 'c1', source: 'email', brief: true, mail: {} }, { mcpConfig: 'm', instructions: 'i' });
+  assert.ok(a[a.indexOf('--allowedTools') + 1].includes(CLEAR_TOOL));
+  assert.match(framePrompt({ source: 'email', brief: true, mail: {} }), /call clear_brief once/);
+});
+
+test('the guard: a clear run marks read and removes Luke’s labels, never archives; other runs aren’t its business', () => {
+  const call = (labelIds, tool = UNLABEL_THREAD) => ({ tool_name: tool, tool_input: { threadId: 't', labelIds } });
+  assert.equal(refuse(call(['UNREAD', 'Label_15']), 'clear'), null);
+  assert.equal(refuse(call([], 'mcp__claude_ai_Gmail__search_threads'), 'clear'), null);
+  for (const l of [['INBOX'], ['UNREAD', 'INBOX'], ['STARRED'], ['IMPORTANT'], []]) assert.ok(refuse(call(l), 'clear'), l.join());
+  assert.ok(refuse(call(['UNREAD'], 'mcp__claude_ai_Gmail__label_thread'), 'clear'));
+  assert.ok(refuse(call(['UNREAD'], 'mcp__claude_ai_Gmail__mark_thread_spam'), 'clear'));
+  assert.equal(refuse(call(['INBOX']), 'schedule'), null);
+  const hooks = JSON.parse(readFileSync(new URL('../agent/managed-settings.json', import.meta.url), 'utf8'));
+  assert.equal(hooks.allowManagedHooksOnly, true);
+  assert.match(JSON.stringify(hooks.hooks.PreToolUse), /node \/opt\/otto\/guard\.mjs/);
+});
+
 test('nothing allowed is on the never list, and the never list covers sending, deleting and code', () => {
-  for (const s of ['page', 'asked', 'schedule', 'email']) for (const t of toolsFor(s)) assert.ok(!NEVER.includes(t), t);
+  for (const s of ['page', 'asked', 'schedule', 'email', 'clear']) for (const t of toolsFor(s, { brief: true })) assert.ok(!NEVER.includes(t), t);
   for (const t of ['Bash', 'WebFetch', 'Write', 'mcp__claude_ai_Gmail__send_message', 'mcp__claude_ai_Gmail__forward', 'mcp__claude_ai_Gmail__trash_thread']) assert.ok(NEVER.includes(t), t);
   // The managed settings (root's, in the container) deny the same, so a run can't widen them
   const managed = JSON.parse(readFileSync(new URL('../agent/managed-settings.json', import.meta.url), 'utf8')).permissions.deny;
@@ -83,5 +108,5 @@ test('the tool server speaks MCP over stdio', async () => {
   input.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(lines.length, 1, 'nothing back for a notification');
-  assert.deepEqual(JSON.parse(lines[0]).result.tools.map((t) => t.name), ['send_email']);
+  assert.deepEqual(JSON.parse(lines[0]).result.tools.map((t) => t.name), ['send_email', 'clear_brief']);
 });

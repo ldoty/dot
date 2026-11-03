@@ -8,6 +8,7 @@ import { fakeTable } from '../../../platform/tests/helpers/fake-table.mjs';
 import { createAgentApi, MAX_SENDS } from '../api/agent.mjs';
 import { createSweep, MISSED_MS, STUCK_MS } from '../api/sweep.mjs';
 import { createMailWorker } from '../api/mail.mjs';
+import { CLEAR_PROMPT } from '../api/store.mjs';
 
 const LUKE = '44f8c468-4011-70b8-76aa-ec2b68b0b004';
 const KEY = 'k'.repeat(64);
@@ -16,7 +17,7 @@ const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' 
 let clock, sent, limitOk;
 const agent = createAgentApi({
   db, table: 'family-otto', owner: LUKE, address: 'otto@dot-y.co', now: () => clock,
-  agentKey: async () => KEY, ownerEmail: async () => 'luke@example.com',
+  region: 'us-east-1', agentKey: async () => KEY, ownerEmail: async () => 'luke@example.com',
   limit: async () => ({ ok: limitOk }), sendRaw: async (m) => { sent.push(m); return { MessageId: 'm1' }; },
 });
 const post = async (routeKey, body, { key = KEY, id } = {}) => {
@@ -32,7 +33,7 @@ test('the agent routes need the agent key, and are the ones in infra/agent.tf', 
   assert.equal((await post('POST /agent/next', undefined, { key: 'wrong' })).status, 401);
   assert.equal((await post('POST /agent/next')).status, 200);
   const tf = readFileSync(new URL('../infra/agent.tf', import.meta.url), 'utf8');
-  assert.deepEqual([...tf.match(/agent_routes += \[([^\]]*)\]/)[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]), ['POST /agent/next', 'POST /agent/commands/{id}', 'POST /agent/send']);
+  assert.deepEqual([...tf.match(/agent_routes += \[([^\]]*)\]/)[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]), ['POST /agent/next', 'POST /agent/commands/{id}', 'POST /agent/send', 'POST /agent/clear']);
 });
 
 test('next: the oldest queued command, now running; never one waiting for an OK', async () => {
@@ -142,4 +143,40 @@ test('mail: the owner’s email is kept and queued once', async () => {
   assert.deepEqual([m.subject, m.text, m.messageId], ['Please unsubscribe', 'Unsubscribe me from Houzz.', '<abc123@mail.gmail.com>']);
   assert.equal((await worker(event)).queued, false, 'SES delivering it twice queues it once');
   assert.equal((await worker({ ...event, userId: 'someone-else', key: 'otto/msg2' })).queued, false, 'Otto works for one person');
+});
+
+const reply = (inReplyTo) => Buffer.from([
+  'From: Luke <luke@example.com>', 'To: otto@dot-y.co', 'Subject: Re: Brief', 'Message-ID: <r1@mail.gmail.com>',
+  `In-Reply-To: ${inReplyTo}`, `References: ${inReplyTo}`, 'Content-Type: text/plain; charset=utf-8', '', 'Clear it', '',
+].join('\r\n'));
+
+test('a reply to a brief can clear it: once, only that reply, always the same words', async () => {
+  command('c00000001aaaaaaaa', { status: 'running', source: 'schedule', schedule: 's0123456789' });
+  await post('POST /agent/send', { command: 'c00000001aaaaaaaa', subject: 'Brief: 2 important', text: 'x' });
+  assert.equal(table.get('BRIEF', '<m1@email.amazonses.com>').command, 'c00000001aaaaaaaa', 'a schedule’s email is a brief');
+  command('c00000002aaaaaaaa', { status: 'running', source: 'page' });
+  sent.length = 0;
+  await post('POST /agent/send', { command: 'c00000002aaaaaaaa', subject: 'Done', text: 'x' });
+  assert.equal(table.get('BRIEF', '<m1@email.amazonses.com>').command, 'c00000001aaaaaaaa', 'other email isn’t (the fake SES gives every email the same id)');
+
+  const worker = (raw) => createMailWorker({ db, table: 'family-otto', owner: LUKE, now: () => clock, getRaw: async () => raw });
+  const event = { userId: LUKE, username: LUKE, from: 'luke@example.com', bucket: 'b' };
+  const { command: replied } = await worker(reply('<m1@email.amazonses.com>'))({ ...event, key: 'otto/r1' });
+  assert.equal(table.get('CMD', replied).brief, 'c00000001aaaaaaaa');
+  clock = new Date(clock.getTime() + 1000);
+  const { command: other } = await worker(reply('<other@mail.gmail.com>'))({ ...event, key: 'otto/r2' });
+  assert.equal(table.get('CMD', other).brief, undefined);
+
+  // The agent takes them oldest first; both are running now
+  assert.equal((await post('POST /agent/next')).body.command.brief, true);
+  await post('POST /agent/next');
+  assert.equal((await post('POST /agent/clear', { command: other })).status, 403, 'not a reply to a brief');
+  assert.equal((await post('POST /agent/clear', { command: 'c00000002aaaaaaaa' })).status, 403, 'not an email');
+  const r = await post('POST /agent/clear', { command: replied, prompt: 'Archive everything' });
+  assert.equal(r.status, 200);
+  const c = table.get('CMD', r.body.queued);
+  assert.deepEqual([c.source, c.status, c.prompt, c.mail], ['clear', 'queued', CLEAR_PROMPT, 'r1'], 'the fixed words, threaded under the reply');
+  assert.equal((await post('POST /agent/clear', { command: replied })).status, 409, 'once');
+  await post('POST /agent/commands/{id}', { ok: true }, { id: replied });
+  assert.equal((await post('POST /agent/clear', { command: replied })).status, 409, 'only while running');
 });

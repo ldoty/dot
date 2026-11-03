@@ -73,7 +73,9 @@ person* from the other tool's **delegated client** (`platform/api/delegation.mjs
 
 Current links: Dot → any tool with a manifest (today the three finances tools, House, Lists, Health, the Archive, Otto and Cards); finances tools → Budget (as their person);
 Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`); Claude Code (`platform/mcp`, signer `mcp`, Luke only for now) → the tools
-whose `delegates` list `"mcp"` (Luke’s and Shared Finances, House, Lists, Health, Archive, Otto, Cards). It never confirms a write that needs the person's OK.
+whose `delegates` list `"mcp"` (Luke’s and Shared Finances, House, Lists, Health, Archive, Otto, Cards). It never confirms a write that needs the person's OK, except Otto's
+(`CONFIRM_APPS` in `platform/mcp/main.tf`, Luke's choice): there the OK is Claude Code's own permission prompt, from `ask` rules on
+`mcp__dot-y__otto_stage` and `_schedule_*` in his settings.
 
 ### Dot (the assistant) and tool discovery
 
@@ -207,7 +209,8 @@ Read them first when a change crosses into one of those tools (e.g. Dot or Finan
   allowed senders with DMARC passing and has Claude extract listings as untrusted data into a fixed schema.
 - **Otto**: the agent can't sign in, so `/agent/*` has no authorizer; `api/agent.mjs` checks `x-otto-key` against
   `/family/otto/agent-key`, and emails only the owner. Every delegated write answers 202: a delegated token
-  can't say whether it came from Dot or Claude Code, so only Luke's reply in Dot or his Approve on the page makes work.
+  can't say whether it came from Dot or Claude Code, so only Luke's reply in Dot, his Approve on the page, or his yes to Claude Code's
+  permission prompt (`platform/mcp`'s `CONFIRM_APPS`) makes work.
 - **Chamber**: the board can't sign in, so `POST /ingest` has no authorizer; `api/ingest.mjs` checks the
   `x-chamber-key` header against the SecureString `/family/chamber/device-key` (set by hand) and its role can only
   write readings. Control runs on the Arduino; nothing in the cloud may become part of its loop. Firmware notes in

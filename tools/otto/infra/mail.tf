@@ -20,7 +20,7 @@ resource "aws_iam_role_policy" "mail" {
   role = aws_iam_role.mail.id
   policy = jsonencode({
     Version   = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = ["dynamodb:PutItem"], Resource = aws_dynamodb_table.main.arn }]
+    Statement = [{ Effect = "Allow", Action = ["dynamodb:PutItem", "dynamodb:GetItem"], Resource = aws_dynamodb_table.main.arn }]
   })
 }
 

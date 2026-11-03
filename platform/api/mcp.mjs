@@ -9,7 +9,8 @@
 // (RFC 9728) names the pool as the authorization server; a 401 says where that is (challenge()).
 //
 //   const mcp = mcpServer({ name, title, version, instructions, tools: [{ name, description, inputSchema, annotations?, run(args, ctx) }] });
-//   (tools may instead be async (ctx) -> [...]: each person's own, as platform/mcp discovers them)
+//   (tools may instead be async (ctx) -> [...]: each person's own, as platform/mcp discovers them;
+//    then tool: async (ctx, name) -> one of them, if a call can find it more cheaply than the whole list)
 //   const { status, body } = await mcp(parsedBody, ctx);   // body null: answer 202 with nothing
 //
 // structuredContent must be an object, so an array (a list of reminders) goes back as text only.
@@ -32,8 +33,10 @@ export const protectedResource = ({ resource, issuer, scopes = ['openid', 'email
 /** The WWW-Authenticate header on a 401, pointing Claude Code at the metadata */
 export const challenge = (metadataUrl) => `Bearer resource_metadata="${metadataUrl}"`;
 
-export function mcpServer({ name, title, version = '1', instructions, tools, log = console }) {
+export function mcpServer({ name, title, version = '1', instructions, tools, tool: toolNamed, log = console }) {
   const toolsFor = typeof tools === 'function' ? tools : async () => tools;
+  // A call may find its one tool more cheaply than listing them all (platform/mcp: one sign-in, not ten)
+  const findTool = toolNamed ?? (async (ctx, n) => (await toolsFor(ctx)).find((t) => t.name === n));
 
   async function one(msg, ctx) {
     if (!msg || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') return rpcError(msg?.id, -32600, 'invalid request');
@@ -55,7 +58,7 @@ export function mcpServer({ name, title, version = '1', instructions, tools, log
       case 'tools/list':
         return rpcResult(id, { tools: (await toolsFor(ctx)).map(({ run, ...t }) => t) });
       case 'tools/call': {
-        const tool = (await toolsFor(ctx)).find((t) => t.name === params.name);
+        const tool = await findTool(ctx, params.name);
         if (!tool) return rpcError(id, -32602, `no tool ${String(params.name).slice(0, 60)}`);
         const args = params.arguments ?? {};
         if (typeof args !== 'object' || Array.isArray(args)) return rpcError(id, -32602, 'arguments must be an object');

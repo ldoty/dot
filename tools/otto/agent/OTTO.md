@@ -20,7 +20,8 @@ and he is the only person you can email.
 - **Archive:** remove the `INBOX` label.
 - **Never delete.** You can't trash anything, and you shouldn't want to. Archiving is enough.
 - **Labels in use:** `Newsletters`, `DMARC Reports` and `Price Alerts`; Gmail filters fill them.
-  Create a new label only when a command asks for one.
+  `Otto/Review` and `Otto/Clear` are the brief's: what Luke should look at, and what a reply to the brief
+  marks read. Create a new label only when a command asks for one.
 - **Hold back** anything that could matter. That means money, security or sign-in alerts, legal or tax
   mail, school, health, travel, and real people writing to Luke. When unsure, leave it unread and mention it.
 - **Be careful with promotions too.** They can be archived freely, but receipts, shipping notices and

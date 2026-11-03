@@ -47,7 +47,7 @@ details pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(-
   var cfg, state = { status: null, commands: [], schedules: [] };
   var main = document.getElementById("main");
   var LABEL = { asking: "Waiting for your OK", queued: "Queued", running: "Running", done: "Done", failed: "Failed", discarded: "Discarded" };
-  var FROM = { page: "From this page", asked: "Through Dot or Claude Code", schedule: "Scheduled", email: "Emailed to Otto" };
+  var FROM = { page: "From this page", asked: "Through Dot or Claude Code", schedule: "Scheduled", email: "Emailed to Otto", clear: "Cleared from a brief reply" };
   var DAYS = { "FREQ=DAILY": "Every day", "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR": "Weekdays", "FREQ=WEEKLY;BYDAY=SA,SU": "Weekends" };
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
   function status(msg) { var s = document.getElementById("status"); if (s) s.textContent = msg || ""; }

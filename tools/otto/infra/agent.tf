@@ -7,7 +7,7 @@
 
 locals {
   agent_key_param = "/family/otto/agent-key"
-  agent_routes    = ["POST /agent/next", "POST /agent/commands/{id}", "POST /agent/send"]
+  agent_routes    = ["POST /agent/next", "POST /agent/commands/{id}", "POST /agent/send", "POST /agent/clear"]
 }
 
 # The daily limit on what Dot-y sends unasked (tools/sms/infra/sends.tf; apply that first)

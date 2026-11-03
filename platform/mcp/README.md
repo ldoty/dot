@@ -19,8 +19,12 @@ operation as `<tool>_<operation>`. No tool has MCP code of its own.
    signed with core's `mcp` key (`delegation_signers`, which lists the people it may act for). A tool
    takes part only if its `delegates` lists `"mcp"`, and the Cognito group gate still applies.
 3. **What it may do**: what the tool allows a borrowed token: reads, and the writes its manifest
-   declares. A write that needs the person's OK (202 `confirm_id`) is never confirmed from here, because
-   in Claude Code the model could answer for them; it says where to do it instead.
+   declares. A write that needs the person's OK (202 `confirm_id`) isn't confirmed from here, because
+   in Claude Code the model could answer for them; it says where to do it instead. The exception is
+   the tools in `CONFIRM_APPS` (`main.tf`), today only Otto (Luke's choice). For those, the OK is Claude
+   Code's own permission prompt, from `ask` rules on `mcp__dot-y__otto_stage` and `mcp__dot-y__otto_schedule_*`
+   in Luke's `~/.claude/settings.json`, and the server sends the confirmation at once. Those rules are
+   the human gate, so keep them.
 
 Sign-in passes through this API (`mcp-auth.mjs`) because Claude Code sends RFC 8707 `resource`, which
 makes Cognito's code exchange fail. The pass-through forwards only the standard PKCE fields, for this

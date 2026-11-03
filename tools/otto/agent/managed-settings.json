@@ -23,5 +23,19 @@
       "mcp__claude_ai_Claude_Docs"
     ],
     "disableBypassPermissionsMode": "disable"
+  },
+  "allowManagedHooksOnly": true,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__claude_ai_Gmail__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /opt/otto/guard.mjs"
+          }
+        ]
+      }
+    ]
   }
 }

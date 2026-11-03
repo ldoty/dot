@@ -9,7 +9,7 @@ set -euo pipefail
 PVE="${PVE:-root@192.168.0.235}"
 CT="${CT:-103}"
 dir="$(cd "$(dirname "$0")/../agent" && pwd)"
-files=(otto.mjs tools.mjs mcp.mjs mcp.json OTTO.md managed-settings.json otto.service)
+files=(otto.mjs tools.mjs guard.mjs mcp.mjs mcp.json OTTO.md managed-settings.json otto.service)
 
 node -e "JSON.parse(require('fs').readFileSync('$dir/managed-settings.json','utf8')); JSON.parse(require('fs').readFileSync('$dir/mcp.json','utf8'))" \
   || { echo "a settings file is invalid JSON; not deploying" >&2; exit 1; }
@@ -20,7 +20,7 @@ ssh "$PVE" "mkdir -p $stage"
 scp -q "${files[@]/#/$dir/}" "$PVE:$stage/"
 ssh "$PVE" bash -s <<EOF
 set -euo pipefail
-for f in otto.mjs tools.mjs mcp.mjs mcp.json OTTO.md; do pct push $CT $stage/\$f /opt/otto/\$f --perms 0644; done
+for f in otto.mjs tools.mjs guard.mjs mcp.mjs mcp.json OTTO.md; do pct push $CT $stage/\$f /opt/otto/\$f --perms 0644; done
 pct push $CT $stage/managed-settings.json /etc/claude-code/managed-settings.json --perms 0644
 pct push $CT $stage/otto.service /etc/systemd/system/otto.service --perms 0644
 rm -rf $stage

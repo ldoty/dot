@@ -6,19 +6,22 @@
 //                                       now running; also marks the agent seen
 //   POST /agent/commands/{id}        { ok, result } -> { id, status } a running command finished
 //   POST /agent/send                 { command, subject, text } -> { sent: true } an email to the owner, from otto@
+//   POST /agent/clear                { command } -> { queued } the owner replied to a brief asking to clear it: queues
+//                                       CLEAR_PROMPT (store.mjs) as a command of its own, once per reply
 // What a stolen key can do: take queued commands (and so keep them from Otto), write results, and email
 // the owner, at most MAX_SENDS per command and within the owner's daily limit on everything Dot-y sends
 // unasked (send-limit.mjs). It can't queue anything, read the owner's mail, or email anyone else:
-// the only address it ever sends to is the owner's verified email, looked up here.
+// the only address it ever sends to is the owner's verified email, looked up here. And while the owner's
+// reply to a brief is running, it can queue that brief's clear: mail labeled Otto/Clear marked read.
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
-import { CMD_ID, MAX_RESULT, commandOut, makeStore } from './store.mjs';
+import { CLEAR_PROMPT, CMD_ID, KEEP_BRIEFS_S, MAX_RESULT, commandId, commandOut, makeStore } from './store.mjs';
 import { LIMIT_REACHED, makeSendLimit } from './send-limit.mjs';
-import { newMessage, oneLine, replyMessage } from './mail-thread.mjs';
+import { newMessage, oneLine, replyMessage, sesMessageId } from './mail-thread.mjs';
 
 export const MAX_SENDS = 3;     // emails per command
 const MAX_SUBJECT = 150;
@@ -33,7 +36,7 @@ const digest = (s) => createHash('sha256').update(String(s)).digest();
 
 /**
  * deps: db, table, agentKey() -> the key, owner (the sub Otto works for), ownerEmail() -> their verified email or null,
- *       limit(sub) -> { ok } (send-limit.mjs), sendRaw({ to, raw }) -> { MessageId }, address (otto@…), now()
+ *       limit(sub) -> { ok } (send-limit.mjs), sendRaw({ to, raw }) -> { MessageId }, address (otto@…), region, now()
  */
 export function createAgentApi(deps) {
   const { get, all, putAt, put } = makeStore({ db: deps.db, table: deps.table });
@@ -49,7 +52,7 @@ export function createAgentApi(deps) {
       console.log('command taken', JSON.stringify({ id: row.sk, source: row.source }));
       return json(200, {
         command: {
-          id: row.sk, prompt: row.prompt, source: row.source,
+          id: row.sk, prompt: row.prompt, source: row.source, ...(row.brief ? { brief: true } : {}),
           ...(mail ? { mail: { from: mail.from, subject: mail.subject, text: mail.text, receivedAt: mail.receivedAt } } : {}),
         },
       });
@@ -96,7 +99,11 @@ export function createAgentApi(deps) {
     const raw = mail?.messageId
       ? replyMessage({ name: 'Otto', from: deps.address, to, subject: mail.subject, inReplyTo: mail.messageId, references: mail.references ?? [], body: text, date: t })
       : newMessage({ name: 'Otto', from: deps.address, to, subject, body: text, date: t });
-    await deps.sendRaw({ to, raw });
+    const { MessageId } = await deps.sendRaw({ to, raw });
+    // A schedule's email is a brief: the owner's reply to it may clear it
+    if (row.source === 'schedule' && !mail && MessageId) {
+      await put({ pk: 'BRIEF', sk: sesMessageId(MessageId, deps.region), command: id, expires: Math.floor(t.getTime() / 1000) + KEEP_BRIEFS_S });
+    }
     const sentAt = t.toISOString();
     await put({
       pk: `SENT#${sentAt.slice(0, 10)}`, sk: `${sentAt}#${id}`, toSub: deps.owner, subject, text: text.slice(0, 600), command: id,
@@ -104,6 +111,24 @@ export function createAgentApi(deps) {
     });
     console.log('email sent', JSON.stringify({ command: id }));
     return json(200, { sent: true });
+  }
+
+  // Only the owner's reply to a brief, while it runs, and once: what's queued is always CLEAR_PROMPT
+  async function clear(body) {
+    const id = body.command;
+    const row = CMD_ID.test(id ?? '') ? await get('CMD', id) : null;
+    if (!row || row.status !== 'running') return json(409, { error: 'only while a command is running' });
+    if (row.source !== 'email' || !row.brief) return json(403, { error: 'only a reply to a brief can clear it' });
+    if (row.cleared) return json(409, { error: 'already queued', queued: row.cleared });
+    const t = deps.now();
+    const queued = commandId(t);
+    if (!(await putAt({ ...row, cleared: queued, rev: row.rev + 1 }, row.rev))) return json(409, { error: 'the command changed meanwhile; try again' });
+    await putAt({
+      pk: 'CMD', sk: queued, prompt: CLEAR_PROMPT, source: 'clear', mail: row.mail, brief: row.brief, status: 'queued',
+      by: row.by, createdAt: t.toISOString(), rev: 1, expires: row.expires,
+    });
+    console.log('clear queued', JSON.stringify({ command: queued, reply: id }));
+    return json(200, { queued });
   }
 
   return async function handler(event) {
@@ -126,6 +151,7 @@ export function createAgentApi(deps) {
       case 'POST /agent/next': return next();
       case 'POST /agent/commands/{id}': return finish(event.pathParameters?.id, body);
       case 'POST /agent/send': return send(body);
+      case 'POST /agent/clear': return clear(body);
       default: return json(404, { error: 'no route' });
     }
   };
@@ -140,7 +166,7 @@ export const handler = async (event) => (live ??= (() => {
   const ses = new SESv2Client({});
   let cached = null;
   return createAgentApi({
-    db, table: env.TABLE, owner: env.OWNER, address: env.OTTO_ADDRESS, now: () => new Date(),
+    db, table: env.TABLE, owner: env.OWNER, address: env.OTTO_ADDRESS, region: env.AWS_REGION, now: () => new Date(),
     agentKey: async () => {
       if (cached && cached.until > Date.now()) return cached.key;
       const r = await ssm.send(new GetParameterCommand({ Name: env.AGENT_KEY_PARAM, WithDecryption: true }));

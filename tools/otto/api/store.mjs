@@ -1,13 +1,15 @@
 // Otto's table, shared by the API, the agent's API, the sweep and the mail worker.
 //
-// Rows: CMD / <id>                 a command: { prompt, source: page | asked | schedule | email, status, by,
-//                                   createdAt, rev, confirm { id, until }?, schedule?, mail?, startedAt?,
-//                                   finishedAt?, result?, sends?, expires (30 days) }
+// Rows: CMD / <id>                 a command: { prompt, source: page | asked | schedule | email | clear, status, by,
+//                                   createdAt, rev, confirm { id, until }?, schedule?, mail?, brief?, cleared?,
+//                                   startedAt?, finishedAt?, result?, sends?, expires (30 days) }
 //       SCHED / <id>               a schedule (schedules.mjs)
 //       PENDING / <confirm id>     a schedule change from Dot or Claude Code waiting for the person's OK
 //       MAIL / <id>                a message to otto@ (mail.mjs): { from, subject, text, messageId, references,
 //                                   receivedAt, expires (8 days, as the mail bucket keeps it) }
 //       SENT#<UTC day> / <sentAt>#<command>   an email Otto sent: { to, subject, text, command, expires (3 days) }
+//       BRIEF / <Message-ID>       an email a schedule sent (a brief), so a reply to it can clear it (agent.mjs
+//                                   clear): { command, expires (8 days) }
 //       AGENT / SEEN               when the agent at home last asked for work: { at }
 //
 // A command's status: asking (staged through Dot or Claude Code: waits for the person's OK) -> queued ->
@@ -20,6 +22,11 @@ export const CMD_ID = /^c[a-z0-9]{8}[a-f0-9]{8}$/;
 export const KEEP_COMMANDS_S = 30 * 86_400;
 export const MAX_PROMPT = 4000;
 export const MAX_RESULT = 20_000;
+export const CLEAR_LABEL = 'Otto/Clear';
+// What a reply to a brief can do, always in these words: the email only decides whether it happens
+export const CLEAR_PROMPT = `Clear the brief: find every thread labeled ${CLEAR_LABEL} (search label:otto-clear, in pages until none are left), `
+  + `remove UNREAD and ${CLEAR_LABEL} from each, and leave everything else as it is. Then email Luke one line with the count.`;
+export const KEEP_BRIEFS_S = 8 * 86_400;
 export const STATUSES = ['asking', 'queued', 'running', 'done', 'failed', 'discarded'];
 
 export const commandId = (now) => `c${now.getTime().toString(36).padStart(8, '0')}${randomBytes(4).toString('hex')}`;

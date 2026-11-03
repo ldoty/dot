@@ -7,8 +7,8 @@
 //                                     From a delegated token (Dot or Claude Code: the token can't say which):
 //                                     202 { confirm_id, prompt, command_id } first. Dot sends the same request
 //                                     again with ?confirm_id= only after the person's own reply (same person, same
-//                                     prompt, within 2 minutes, once); Claude Code can't, so the person approves it
-//                                     on the page instead (within a day). Until then it's `asking` and never runs.
+//                                     prompt, within 2 minutes, once), or platform/mcp at once after Claude Code's own
+//                                     permission prompt (CONFIRM_APPS); else they approve it on the page (within a day). Until then it's `asking` and never runs.
 //   POST   /commands/{id}/approve   -> the command, queued: one Dot or Claude Code staged (the page only)
 //   DELETE /commands/{id}           -> the command, discarded: one not yet started (the page only)
 //   GET    /schedules               -> [automation…] (schedules.mjs automationOf): what Otto runs on its own

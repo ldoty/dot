@@ -7,7 +7,10 @@
 // Writes are offered only as the tool declares them, and the tool still refuses every other non-GET from
 // a borrowed token. A write that needs the person's OK (202 { confirm_id }) is not done from here: Dot's
 // rule is that only the person's own reply counts, and in Claude Code the model could answer for them.
-// So it says where to do it instead. Every call is logged (who, which tool, what, how it went).
+// So it says where to do it instead, except for the tools in `confirms` (CONFIRM_APPS, main.tf), whose
+// owner chose to give that OK in Claude Code itself: its permission prompt for the tool (an `ask` rule in
+// their settings), which the model can't answer. Those are confirmed here at once. Every call is logged
+// (who, which tool, what, how it went).
 import { requestBody, requestPath, validateManifest } from './dot-manifest.mjs';
 import { toolError } from './mcp.mjs';
 
@@ -15,7 +18,26 @@ const TTL_MS = 5 * 60_000;
 const MAX_CHARS = 100_000; // an answer beyond this is cut, and the model is told so
 const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
 
-export function makeConnect({ listApps, tokenFor, fetch = globalThis.fetch, now = () => Date.now(), log = () => {} }) {
+// Cognito's refusal when sign-ins come too fast: every call borrows a token for every tool, so a few
+// calls at once from a cold start (Claude Code runs tools in parallel) can pass the pool's rate limit
+const THROTTLED = /too many requests|rate exceeded|throttl/i;
+// The pool takes about 120 sign-in calls a second; a burst of cold calls is ~20 each (two per tool), so
+// spread the retries over a few seconds (well inside API Gateway's 29). Jittered, so they don't retry in step
+const RETRY_MS = [400, 1000, 2000, 3000];
+
+export function makeConnect({ listApps, tokenFor, confirms = [], fetch = globalThis.fetch, now = () => Date.now(), log = () => {}, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+  const confirmHere = new Set(confirms);
+  // A throttled borrow is tried again, or the tool would silently drop out of this call (“no tool …”)
+  async function borrowFor(args) {
+    for (let i = 0; ; i++) {
+      try {
+        return await tokenFor(args);
+      } catch (e) {
+        if (i >= RETRY_MS.length || !(e.status === 429 || THROTTLED.test(e.message))) throw e;
+        await sleep(RETRY_MS[i] * (0.5 + Math.random()));
+      }
+    }
+  }
   let apps = null, appsAt = 0;
   const manifests = new Map(); // app -> { at, manifest | null }
 
@@ -41,7 +63,7 @@ export function makeConnect({ listApps, tokenFor, fetch = globalThis.fetch, now 
 
   /** One tool's operations for this person, or [] if it isn't theirs */
   async function toolsOf(app, user) {
-    const borrow = () => tokenFor({ clientId: app.client_id, sub: user.sub, username: user.username, channel: 'mcp' });
+    const borrow = () => borrowFor({ clientId: app.client_id, sub: user.sub, username: user.username, channel: 'mcp' });
     let token;
     try {
       token = await borrow();
@@ -70,13 +92,25 @@ export function makeConnect({ listApps, tokenFor, fetch = globalThis.fetch, now 
           const body = method !== 'GET' ? requestBody(op, input) : null;
           const what = `${method} ${path.split('?')[0]}`;
           // Tokens last minutes; tokenFor keeps one while it's good
-          const res = await fetch(`${app.api_url}${path}`, {
-            method, headers: { authorization: `Bearer ${await borrow()}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+          const tokenNow = await borrow();
+          const send = (to) => fetch(`${app.api_url}${to}`, {
+            method, headers: { authorization: `Bearer ${tokenNow}`, ...(body ? { 'content-type': 'application/json' } : {}) },
             ...(body ? { body: JSON.stringify(body) } : {}),
           });
-          const text = await res.text();
+          const res = await send(path);
+          let text = await res.text();
           let parsed;
           try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+          if (method !== 'GET' && res.status === 202 && parsed?.confirm_id && confirmHere.has(app.app)) {
+            // The same request again with its confirm id: the tool checks it's the same person and change, in time
+            const again = await send(`${path}${path.includes('?') ? '&' : '?'}confirm_id=${encodeURIComponent(parsed.confirm_id)}`);
+            text = await again.text();
+            parsed = undefined;
+            try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+            log({ mcp: app.app, user: user.username, action: what, outcome: again.ok ? 'confirmed in Claude Code' : `${again.status}` });
+            if (!again.ok) throw toolError(`${m.title} answered ${again.status}${parsed?.error ? `: ${String(parsed.error).slice(0, 300)}` : ''}`);
+            return parsed !== undefined && text.length <= MAX_CHARS ? parsed : text.slice(0, MAX_CHARS);
+          }
           if (method !== 'GET' && res.status === 202 && parsed?.confirm_id) {
             log({ mcp: app.app, user: user.username, action: what, outcome: 'needs their OK' });
             throw toolError(`${m.title} needs your OK for this (“${String(parsed.prompt || '').slice(0, 300)}”), which can’t be given from Claude Code yet. Do it on ${m.title}’s page, or ask Dot.`);
@@ -91,8 +125,9 @@ export function makeConnect({ listApps, tokenFor, fetch = globalThis.fetch, now 
   }
 
   /** Every tool this person can use, as MCP tools (names unique: a clash takes the app's name instead) */
-  async function toolsFor(user) {
-    const lists = await Promise.all((await published()).map((app) => toolsOf(app, user)));
+  const toolsFor = async (user) => named(await published(), user);
+  async function named(apps, user) {
+    const lists = await Promise.all(apps.map((app) => toolsOf(app, user)));
     const out = [], names = new Set();
     for (const t of lists.flat()) {
       let name = t.short;
@@ -104,5 +139,20 @@ export function makeConnect({ listApps, tokenFor, fetch = globalThis.fetch, now 
     return out;
   }
 
-  return { toolsFor };
+  /**
+   * The one tool a call names. Finding it through toolsFor signs in to every tool (two Cognito calls
+   * each), and Claude Code's parallel calls then pass Cognito's per-user limit, so a call borrows only
+   * for the tools its name can come from: a tool's manifest name is the last part of its app's name
+   * (lukes_otto: otto_status), and a clash takes the app's name (shared_finances_month). Those are
+   * named together, in the same order, so names come out as in the full list; anything not found that
+   * way is looked for in the full list.
+   */
+  async function toolNamed(user, name) {
+    const all = await published(), tail = (a) => a.app.split('_').pop();
+    const kinds = new Set([String(name).split('_')[0], ...all.filter((a) => String(name).startsWith(`${a.app.replace(/[^a-z0-9]+/g, '_')}_`)).map(tail)]);
+    const found = (await named(all.filter((a) => kinds.has(tail(a))), user)).find((t) => t.name === name);
+    return found ?? (await toolsFor(user)).find((t) => t.name === name);
+  }
+
+  return { toolsFor, toolNamed };
 }
