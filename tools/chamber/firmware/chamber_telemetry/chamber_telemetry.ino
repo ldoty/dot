@@ -32,7 +32,7 @@ Adafruit_SHT4x sht4 = Adafruit_SHT4x();
 
 // Bump on every flash. Published as fw_build so each CSV row says which
 // firmware produced it -- 2026-09-27 saw six flashes in one afternoon.
-const int FW_BUILD = 16;
+const int FW_BUILD = 17;
 
 // The fan is wired but has no control logic yet. It still has to be driven:
 // a 4-wire fan with an UNDRIVEN PWM line runs at 100%, not off. Leaving D3
@@ -552,7 +552,9 @@ void applySettings(char *line) {
     float v = atof(eq + 1);
     if      (!strcmp(k, "rh_on"))         { rhOn = v;        ok &= IN(v, 50, 94); }
     else if (!strcmp(k, "rh_off"))        { rhOff = v;       ok &= IN(v, 51, 95); }
-    else if (!strcmp(k, "fae_period_s"))  { faePeriod = v * 1000UL; ok &= IN(v, 60, 7200); }
+    // Up to 24h from build 17 (was 2h): vents dried the pinning surface, and
+    // the rest fan still exchanges air between them. Exact in float: 30s steps.
+    else if (!strcmp(k, "fae_period_s"))  { faePeriod = v * 1000UL; ok &= IN(v, 60, 86400); }
     else if (!strcmp(k, "vent_s"))        { vent = v * 1000UL;      ok &= IN(v, 10, 600); }
     else if (!strcmp(k, "vent_duty"))     { ventDuty = v;    ok &= IN(v, 20, 100); }
     else if (!strcmp(k, "vent_settle_s")) { ventSettle = v * 1000UL; ok &= IN(v, 0, 600); }

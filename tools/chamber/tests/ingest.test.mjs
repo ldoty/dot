@@ -90,6 +90,18 @@ test('the firmware never stops misting on its water estimate', async () => {
   assert.match(ino, /MIST_BLOCK_NO_RESPONSE/, 'the dry-run check stays');
 });
 
+test('the board range-checks every setting with the same bounds the API does', async () => {
+  // A bound the API allows but the board refuses rejects the whole version, so they must match.
+  const ino = await readFile(new URL('../firmware/chamber_telemetry/chamber_telemetry.ino', import.meta.url), 'utf8');
+  const { spec } = (await call('GET', '/settings')).body;
+  for (const s of spec.filter((x) => x.kind === 'num')) {
+    const m = ino.match(new RegExp(`"${s.key}"\\)+\\s*\\{[^}]*IN\\(v, (\\d+), (\\d+)\\)`));
+    assert.ok(m, `firmware checks ${s.key}`);
+    assert.deepEqual([+m[1], +m[2]], [s.min, s.max], s.key);
+  }
+  assert.equal(spec.find((x) => x.key === 'fae_period_s').max, 86400, 'vents can be up to a day apart');
+});
+
 test('the firmware rebuilds WiFi after failed posts, not only when WiFi says it is down', async () => {
   // 2026-10-27: status() said connected for six hours while every post failed
   const ino = await readFile(new URL('../firmware/chamber_telemetry/chamber_telemetry.ino', import.meta.url), 'utf8');

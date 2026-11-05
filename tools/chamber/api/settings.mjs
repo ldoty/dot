@@ -9,7 +9,7 @@ export const SPEC = [
   ['rh_off', 'Humidity', 'Stop a burst at', '% RH', 51, 95, 0.5, 'num'],
   ['mist_burst_s', 'Humidity', 'Mist burst (max)', 's', 5, 60, 1, 'num'],
   ['mist_settle_s', 'Humidity', 'Settle after burst', 's', 30, 900, 5, 'num'],
-  ['fae_period_s', 'Fresh air (vent)', 'Vent every', 's', 60, 7200, 30, 'num'],
+  ['fae_period_s', 'Fresh air (vent)', 'Vent every', 's', 60, 86400, 30, 'num'],
   ['vent_s', 'Fresh air (vent)', 'Vent length', 's', 10, 600, 5, 'num'],
   ['vent_duty', 'Fresh air (vent)', 'Vent fan speed', '%', 20, 100, 1, 'num'],
   ['vent_settle_s', 'Fresh air (vent)', 'Settle after vent', 's', 0, 600, 5, 'num'],
