@@ -32,7 +32,7 @@ Adafruit_SHT4x sht4 = Adafruit_SHT4x();
 
 // Bump on every flash. Published as fw_build so each CSV row says which
 // firmware produced it -- 2026-09-27 saw six flashes in one afternoon.
-const int FW_BUILD = 15;
+const int FW_BUILD = 16;
 
 // The fan is wired but has no control logic yet. It still has to be driven:
 // a 4-wire fan with an UNDRIVEN PWM line runs at 100%, not off. Leaving D3
@@ -133,7 +133,7 @@ float RH_MIST_OFF_PCT = 92.0;
 // DEFAULTS, and may be overridden while running from the collector's settings
 // panel -- see applySettings(). Every override is range-checked here on the
 // board, so a bad value from the network cannot command anything unsafe.
-// The guards (duty ceiling, volume budget, dry-run check) are deliberately
+// The guards (duty ceiling, dry-run check) are deliberately
 // NOT settable: they are the protection against a bad setting.
 // ---------------------------------------------------------------------------
 
@@ -203,18 +203,14 @@ unsigned long MIST_SETTLE_MS = 100UL * 1000UL;
 
 // PLACEHOLDER. Measure this for real with the `atomizer_output` sketch --
 // weigh the reservoir, run 10 min, weigh again -- and put the true number
-// here. Until then the volume budget is a guess and the no-response check
-// below is doing the actual dry-run protection.
-//
-// 8.0 from build 11 (2026-10-11): deliberately HIGH guess for the new 24W
-// atomizer. Overestimating makes the budget trip early (safe: a nuisance
-// stop); underestimating lets the reservoir run dry before it trips.
+// here. Only feeds the mist_ml estimate in telemetry; nothing acts on it.
 const float MIST_ML_PER_MIN = 8.0;
-// 750 from build 15: the reservoir bin holds ~750 mL (BUILD.md), and the 24V
-// atomizer's own float cuts it out before it runs dry, so this no longer has
-// to trip early to be safe. MIST_ML_PER_MIN above still overestimates, so the
-// count runs ahead of the real water used.
-const float RESERVOIR_ML = 750.0;
+// No volume budget from build 16. Builds 11-15 stopped misting once the
+// estimate reached the reservoir's size, but the estimate was so far off that
+// it stopped a chamber with plenty of water, over and over, until someone said
+// "refilled" on the page. The 24V atomizer's own float cuts it out before it
+// runs dry, and a cut-out atomizer makes no RH rise, which the dry-run check
+// below catches.
 
 // Rate limit, so a slow leak of duty cannot drain the reservoir unnoticed
 // even while every individual burst looks reasonable.
@@ -248,8 +244,7 @@ const int MIST_FAULT_COOLDOWNS = 3;
 const uint32_t WATCHDOG_MS = 5000;
 // STAGED OFF (2026-09-27) until every loop stall is confirmed < 5s -- the
 // WiFiS3 modem layer can wait up to 10s on an unresponsive AT command.
-// loop_max_ms in telemetry is the evidence for turning this on. Also needs
-// the mist volume budget persisted first (a watchdog reset clears it).
+// loop_max_ms in telemetry is the evidence for turning this on.
 const bool WATCHDOG_ENABLED = false;
 
 // WiFi.begin() waits up to 10s for a connection by default, which would trip
@@ -273,8 +268,8 @@ const unsigned long WET_SENSOR_MS = 10UL * 60UL * 1000UL;
 // dry-run check demands -- and the channel latches off despite being fine.
 // This lets you get an uninterrupted RH curve to prove the channel out.
 //
-// Still enforced, because neither depends on chamber geometry: the volume
-// budget, and a hard runtime cap so this cannot run away if you walk off.
+// Still enforced, because it does not depend on chamber geometry: a hard
+// runtime cap so this cannot run away if you walk off.
 const bool MIST_FORCE_ON = false;
 const unsigned long MIST_FORCE_MAX_MS = 10UL * 60UL * 1000UL;
 
@@ -290,7 +285,7 @@ enum ClimateState {
 // in the CSV as a plottable column rather than a string.
 enum MistBlock {
   MIST_BLOCK_NONE = 0,
-  MIST_BLOCK_BUDGET = 1,       // latched -- reservoir budget spent
+  // 1 was the volume budget (builds 11-15); left unused so old rows still read right
   MIST_BLOCK_DUTY = 2,         // transient -- clears next window
   MIST_BLOCK_NO_RESPONSE = 3,  // latched -- misting produces no RH rise
   MIST_BLOCK_WET_SENSOR = 4,   // transient -- clears when RH falls
@@ -431,14 +426,6 @@ unsigned long wifiResets = 0;
 // The modem's firmware (major << 16 | minor << 8 | patch), read once at boot,
 // so the data says which modem build a network fault happened on.
 unsigned long wifiFw = 0;
-
-// Refill handshake. The page counts refills; the board learns the count from
-// each ingest reply and resets the volume budget when it goes up. The first
-// count after boot is only a baseline: the budget already starts at zero, and
-// treating an old count as new would reset it for a refill that never
-// happened (e.g. after hours misting offline).
-bool refillKnown = false;
-long refillId = 0;
 
 // Longest single loop() pass since the last publish. The evidence needed
 // before enabling the watchdog: every pass must stay well under WATCHDOG_MS.
@@ -633,29 +620,9 @@ int formatSettings(char *out, size_t n) {
       LIGHT_ON_HOUR, LIGHT_OFF_HOUR, e, LIGHT_ENABLED ? 1 : 0);
 }
 
-// Someone refilled the reservoir and said so on the page. Clears the volume
-// budget and only that latch: a dry-run latch still needs a power cycle,
-// since it means the water isn't reaching the air, not that it ran out.
-void noteRefill(long id) {
-  if (id < 0) return;
-  if (!refillKnown) {
-    refillKnown = true;
-    refillId = id;
-    return;
-  }
-  if (id <= refillId) return;
-  refillId = id;
-  mistOnMsTotal = 0;
-  if (mistLatchedFault == MIST_BLOCK_BUDGET) mistLatchedFault = MIST_BLOCK_NONE;
-  Serial.print("# mist: refilled (");
-  Serial.print(id);
-  Serial.println("), volume budget reset");
-}
-
 // True when the collector replied (its reply always carries the time).
 bool readTimeSync(WiFiClient &client) {
-  // Headers come first, then "time=...\n", "refill=...\n" and an optional
-  // "cfg=...\n".
+  // Headers come first, then "time=...\n" and an optional "cfg=...\n".
   // static, not stack: the R4's main stack is nominally 1 KB
   // (BSP_CFG_STACK_MAIN_BYTES) and publish() already holds the payload.
   static char buf[768];
@@ -676,9 +643,6 @@ bool readTimeSync(WiFiClient &client) {
     if (end) *end = '\0';
     applySettings(cfg + 4);
   }
-
-  const char *r = strstr(buf, "refill=");
-  if (r) noteRefill(atol(r + 7));
 
   const char *p = strstr(buf, "time=");
   if (!p) return false;
@@ -930,12 +894,6 @@ MistBlock evaluateMistBlock(unsigned long now) {
 
   if (sensorLooksWet(now)) return MIST_BLOCK_WET_SENSOR;
 
-  if (mistMlTotal() >= RESERVOIR_ML) {
-    mistLatchedFault = MIST_BLOCK_BUDGET;
-    Serial.println("# mist: FAULT volume budget spent -- refill, then Refilled on the page (or reboot)");
-    return MIST_BLOCK_BUDGET;
-  }
-
   unsigned long allowance =
       (unsigned long)(MIST_DUTY_WINDOW_MS * (MIST_DUTY_CEILING_PCT / 100.0));
   if (mistOnMsWindow >= allowance) return MIST_BLOCK_DUTY;
@@ -956,7 +914,7 @@ void enterClimateState(ClimateState next, unsigned long now) {
 }
 
 // Close out a burst, accounting its on-time against both the lifetime total
-// (volume budget) and the current window (duty ceiling).
+// (the mist_ml estimate) and the current window (duty ceiling).
 void endMistBurst(unsigned long now) {
   lastBurstMs = now - mistBurstStartedAt;
   mistOnMsTotal += lastBurstMs;
@@ -985,15 +943,11 @@ void updateClimate(unsigned long now) {
     mistForceTickAt = now;
 
     bool capped = mistForceElapsed >= MIST_FORCE_MAX_MS;
-    bool budgetSpent = mistMlTotal() >= RESERVOIR_ML;
 
-    if (capped || budgetSpent) {
-      if (atomizerOn) {
-        Serial.println(capped ? "# mist: force-on runtime cap reached"
-                              : "# mist: force-on stopped, volume budget spent");
-      }
+    if (capped) {
+      if (atomizerOn) Serial.println("# mist: force-on runtime cap reached");
       setAtomizer(false);
-      mistBlock = capped ? MIST_BLOCK_FORCE_CAP : MIST_BLOCK_BUDGET;
+      mistBlock = MIST_BLOCK_FORCE_CAP;
       climateState = CLIMATE_IDLE;
     } else {
       setAtomizer(true);
@@ -1128,8 +1082,6 @@ void publish() {
   fmt2(f, sizeof(f), fanDutyPct);
   fmt2(l, sizeof(l), lightDutyPct);
   fmt2(m, sizeof(m), mistMlTotal());
-  char budget[16];
-  fmt2(budget, sizeof(budget), RESERVOIR_ML);
 
   // BUILD.md:405 -- log actuator state, not just sensors, or you can see that
   // RH dropped but not whether anything was trying to do something about it.
@@ -1145,16 +1097,14 @@ void publish() {
            "wifi_reconnects=%lui,publish_failures=%lui,time_synced=%di,"
            "heater_pulses=%lui,sensor_held=%di,rh_median=%s,"
            "loop_max_ms=%lui,fw_build=%di,cfg_version=%ldi,cfg_rejects=%lui,"
-           "mist_budget_ml=%s,refill_id=%ldi,wifi_resets=%lui,wifi_fw=%lui",
+           "wifi_resets=%lui,wifi_fw=%lui",
            t, h, d, f, fanRpm, l,
            (int)climateState, (int)mistBlock, atomizerOn ? 1 : 0,
            m, mistOnMsTotal / 1000UL, mistBursts,
            (long)WiFi.RSSI(), millis() / 1000,
            sensorErrors, wifiReconnects, publishFailures, haveTime ? 1 : 0,
            heaterPulses, sensorBlanked(millis()) ? 1 : 0, med, loopMaxMs,
-           FW_BUILD, cfgVersion, cfgRejects, budget,
-           refillKnown ? refillId : -1L,  // -1 until the first reply after boot
-           wifiResets, wifiFw);
+           FW_BUILD, cfgVersion, cfgRejects, wifiResets, wifiFw);
   loopMaxMs = 0;  // max since the previous publish
 
   // Always echo to serial, so USB logging still works with WiFi down.

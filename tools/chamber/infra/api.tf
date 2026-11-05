@@ -1,5 +1,5 @@
 locals {
-  routes = ["GET /readings", "GET /readings.csv", "GET /settings", "PUT /settings", "POST /refill"]
+  routes = ["GET /readings", "GET /readings.csv", "GET /settings", "PUT /settings"]
 }
 
 # The tool's handler plus the platform's shared token check

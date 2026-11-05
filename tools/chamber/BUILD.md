@@ -390,7 +390,7 @@ thinner wire on the 12V side (factory leads, pigtails, jumpers) breaks this
 and needs F3.
 
 No fuse catches a **stuck-on atomizer running dry**: it draws its normal 1A.
-That case relies on the firmware RH-response check and volume budget.
+That case relies on the atomizer's own float cutoff and the firmware RH-response check.
 
 - Set the 24V→12V buck to 12.0V **before** connecting the 12V rail (same rule
   as the 5V buck)
@@ -399,11 +399,12 @@ That case relies on the firmware RH-response check and volume budget.
   hardware dry-run interlock the old setup lacked: it holds even if the
   MOSFET fails short or firmware hangs. The firmware guards stay as a second
   layer (a cut-out atomizer makes no RH rise, so the dry-run check flags it)
-- Reservoir is now **~750 mL**; `RESERVOIR_ML` is 750 from build 15 (was 500).
-  The atomizer's own float covers running dry, and `MIST_ML_PER_MIN` (8)
-  still overestimates, so the count trips before the water is really gone.
-  Reset it after a refill with "I refilled it" on the page (build 15), or
-  by power-cycling
+- Reservoir is now **~750 mL**. Build 15 stopped misting when the estimated
+  water used reached 750 (`RESERVOIR_ML`), reset by "I refilled it" on the page.
+  The estimate was far enough off that it kept stopping a chamber with plenty
+  of water, so **build 16 dropped the volume budget** (2026-11-05): the
+  atomizer's own float covers running dry, and the dry-run check flags it.
+  `mist_ml` is still reported, as an estimate only
 - **`MIST_ML_PER_MIN` (1.5) was a placeholder for the old atomizer.** A 24W
   unit almost certainly outputs far more, so the volume budget undercounts
   until `atomizer_output` is rerun on the new unit
@@ -445,9 +446,9 @@ short cannot be caught by firmware, since it is downstream of everything
 firmware controls. What replaces it:
 
 - **Volume budget** — track cumulative mL dispensed against reservoir
-  capacity, refuse to mist past it, manual reset on refill. This covers the
-  realistic case (reservoir empties during normal running) and is why the
-  mL/min measurement is load-bearing
+  capacity, refuse to mist past it, manual reset on refill. *Removed in
+  build 16:* the 24V atomizer's float replaced it, and the estimate tripped
+  far too early
 - **Max continuous runtime and duty ceiling**
 - **RH-response check** — if misting runs and RH does not rise, stop and flag.
   An atomizer firing into an empty reservoir produces no humidity, making this

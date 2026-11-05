@@ -122,16 +122,9 @@ test('a save that lost a race is refused, not merged blindly', async () => {
   assert.equal((await call('GET', '/settings')).body.desired.version, 2);
 });
 
-test('refill: counted up, logged with who said so, and shown with the settings', async () => {
-  assert.equal((await call('GET', '/settings')).body.refill, null);
-  const r = await call('POST', '/refill');
-  assert.equal(r.status, 200);
-  assert.equal(r.body.refill.id, 1);
-  assert.ok(r.body.refill.by && r.body.refill.at);
-  assert.equal((await call('POST', '/refill')).body.refill.id, 2);
-  assert.equal((await call('GET', '/settings')).body.refill.id, 2);
-  const log = table.dump().filter(([k]) => k.startsWith('SETLOG|')).map(([, v]) => [v.event, v.version]);
-  assert.deepEqual(log, [['refilled', 1], ['refilled', 2]]);
+test('no refill route: the board keeps no water count to reset', async () => {
+  assert.equal((await call('POST', '/refill')).status, 404);
+  assert.equal('refill' in (await call('GET', '/settings')).body, false);
 });
 
 test('API Gateway routes match the ones the handler serves', async () => {

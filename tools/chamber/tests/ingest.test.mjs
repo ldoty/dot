@@ -35,9 +35,8 @@ test('replies with local time of day, through daylight saving time', async () =>
 test('hands the board saved settings in the cfg line it parses', async () => {
   await call('PUT', '/settings', { values: { mist_burst_s: 25 } });
   const { body } = await post(reading());
-  const [time, refill, cfg, end] = body.split('\n');
+  const [time, cfg, end] = body.split('\n');
   assert.match(time, /^time=\d+$/);
-  assert.equal(refill, 'refill=0');
   assert.match(cfg, /^cfg=1;/);
   assert.ok(cfg.includes(';mist_burst_s=25'));
   assert.equal(end, '', 'ends in a newline, which readTimeSync() relies on');
@@ -47,13 +46,6 @@ test('hands the board saved settings in the cfg line it parses', async () => {
   const widest = Object.fromEntries(spec.map((s) => [s.key, s.kind === 'bool' ? 1 : s.max - (s.step < 1 ? s.step : 0)]));
   assert.equal((await call('PUT', '/settings', { values: widest })).status, 200);
   assert.ok(Buffer.byteLength((await post(reading())).body) < 400);
-});
-
-test('hands the board the refill count, which only the page raises', async () => {
-  assert.equal((await post(reading())).body.split('\n')[1], 'refill=0', 'none counted yet');
-  await call('POST', '/refill');
-  await call('POST', '/refill');
-  assert.equal((await post(reading())).body.split('\n')[1], 'refill=2');
 });
 
 test('records what the board runs, and logs applied, defaults and refused versions', async () => {
@@ -87,8 +79,15 @@ test('the firmware sends what this endpoint expects', async () => {
   assert.match(ino, /POST \/ingest HTTP\/1\.1/);
   assert.match(ino, /x-chamber-key: /);
   assert.match(ino, /WiFiSSLClient client;/, 'API Gateway only speaks HTTPS');
-  assert.match(ino, /strstr\(buf, "refill="\)/, 'reads the refill count from the reply');
-  assert.match(ino, /refill_id=%ldi/, 'reports the count it has, so the page can say when a refill took');
+});
+
+test('the firmware never stops misting on its water estimate', async () => {
+  // Builds 11-15 latched misting off once the mL estimate reached the reservoir's size; the
+  // estimate ran so high it stopped a chamber with plenty of water. The atomizer's float covers dry.
+  const ino = await readFile(new URL('../firmware/chamber_telemetry/chamber_telemetry.ino', import.meta.url), 'utf8');
+  assert.doesNotMatch(ino, /RESERVOIR_ML|MIST_BLOCK_BUDGET/);
+  assert.doesNotMatch(ino, /refill=|refill_id/, 'no refill handshake left to wait on');
+  assert.match(ino, /MIST_BLOCK_NO_RESPONSE/, 'the dry-run check stays');
 });
 
 test('the firmware rebuilds WiFi after failed posts, not only when WiFi says it is down', async () => {
