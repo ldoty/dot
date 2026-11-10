@@ -57,6 +57,7 @@ test('shows categories with their items; b items wait on the shopping list', asy
   assert.deepEqual(p.texts('.cat-head h2'), ['Shelter', 'Kitchen']);
   assert.deepEqual(p.texts('#main .text'), ['Tent', 'Stove']);
   assert.equal(p.d.getElementById('progress').textContent, '0 of 3 packed');
+  assert.deepEqual([...p.d.querySelectorAll('#tabs button')].map((b) => b.dataset.tab), ['pack', 'verify', 'shop', 'check']);
   await p.tab('shop');
   assert.deepEqual(p.texts('#main .text'), ['Fuel']);
   p.close();

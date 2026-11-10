@@ -95,12 +95,12 @@ li:hover .del, .cat-head:hover .del, .del:focus { opacity: .7 }
   var TABS = {
     pack:  { label: "Packing list",  filter: function (i) { return (i.status !== "b" || show.b) && (i.status !== "c" || show.c) && (i.status !== "v" || show.v); },
              newStatus: "", none: "No items yet. Add a category below." },
+    verify: { label: "Verify list",   filter: function (i) { return i.status === "v"; }, newStatus: "v",
+             none: "Nothing to verify. Type v next to an item on the packing list to add it here." },
     shop:  { label: "Shopping list", filter: function (i) { return i.status === "b"; }, newStatus: "b",
              none: "Nothing to buy. Type b next to an item on the packing list to add it here." },
     check: { label: "Check list",    filter: function (i) { return i.status === "c"; }, newStatus: "c",
              none: "Nothing to check. Type c next to an item on the packing list to add it here." },
-    verify: { label: "Verify list",   filter: function (i) { return i.status === "v"; }, newStatus: "v",
-             none: "Nothing to verify. Type v next to an item on the packing list to add it here." },
   };
   var RANK = { "": 0, b: 0, c: 0, v: 0, x: 1 };   // packed items sink to the bottom of their category
 
@@ -439,7 +439,7 @@ li:hover .del, .cat-head:hover .del, .del:focus { opacity: .7 }
         } }, (show[key] ? "✓ " : "") + "Show " + label + " (" + n + ")");
       };
       cards.unshift(el("div", { class: "filters" }, el("span", { class: "filters-label" }, "Also show:"),
-        chip("b", "b · to buy"), chip("c", "c · to check"), chip("v", "v · to verify")));
+        chip("v", "v · to verify"), chip("b", "b · to buy"), chip("c", "c · to check")));
       var addCat = el("input", { class: "add add-cat", placeholder: "+ Add category…", "aria-label": "Add category", maxlength: "200" });
       addCat.addEventListener("keydown", function (e) {
         if (e.key !== "Enter" || !addCat.value.trim()) return;
