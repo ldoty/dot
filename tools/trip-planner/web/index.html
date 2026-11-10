@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trip planner</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="family.css">
+<style>
+/* One narrow column. The calendar (#/) lists trips; a trip (#/trip/<id>) holds its details,
+   notes, itinerary and packing list. */
+.wrap { max-width: 820px; margin: 0 auto; padding: 24px 16px 80px }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px }
+.top a, a.back { color: var(--muted); text-decoration: none; font-size: 14px }
+h1 { font-size: clamp(32px, 6vw, 48px) }
+.status { color: var(--muted); font-size: 14px; min-height: 1.4em }
+.muted { color: var(--muted) }
+section + section, .block + .block { margin-top: 18px }
+
+/* ---- calendar ---- */
+.cal-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 20px 0 10px }
+.cal-head h2 { font-size: 24px; min-width: 9em }
+.cal-head .grow { flex: 1 }
+.icon-btn { border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); border-radius: var(--r-pill); width: 34px; height: 34px; cursor: pointer; font-size: 18px; line-height: 1 }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--surface) }
+.cal .dow { font: 600 12px var(--display); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 6px 8px; background: var(--raised) }
+.day { min-height: 84px; padding: 4px 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); cursor: pointer; min-width: 0 }
+.day:nth-child(7n + 1) { border-left: 0 }
+.day.out { background: var(--bg) }
+.day.out .num { color: color-mix(in srgb, var(--muted) 55%, transparent) }
+.day:hover { background: var(--raised) }
+.num { font-size: 13px; padding: 0 8px; display: inline-block }
+.day.today .num { background: var(--pool); color: var(--on-accent); border-radius: var(--r-pill); padding: 0 7px; margin-left: 4px }
+.bar { display: block; margin-top: 3px; padding: 1px 6px; font-size: 12px; font-weight: 600; line-height: 1.5; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: color-mix(in srgb, var(--leaf) 20%, var(--surface)); color: var(--ink); min-height: 1.5em }
+.bar.first { margin-left: 4px; border-top-left-radius: 6px; border-bottom-left-radius: 6px; box-shadow: inset 3px 0 0 var(--leaf) }
+.bar.last { margin-right: 4px; border-top-right-radius: 6px; border-bottom-right-radius: 6px }
+.bar:hover { background: color-mix(in srgb, var(--leaf) 32%, var(--surface)) }
+@media (max-width: 560px) { .day { min-height: 60px } .bar { font-size: 11px; padding: 0 3px } .cal .dow { padding: 4px; font-size: 11px } }
+
+.trips { list-style: none; margin: 8px 0 0; padding: 0 }
+.trips li a { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; flex-wrap: wrap }
+.trips li a:hover strong { color: var(--pool) }
+.trips small { color: var(--muted); font-size: 14px }
+.list-head { margin-top: 28px; font-size: 22px }
+
+/* ---- forms ---- */
+.form { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-top: 12px }
+.form .full { grid-column: 1 / -1 }
+.form label { display: grid; gap: 4px; font-size: 14px; color: var(--muted) }
+.form input, .form select, textarea { background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 9px 12px; color: var(--ink); min-width: 0; width: 100% }
+.form input:focus, .form select:focus, textarea:focus { border-color: var(--pool); outline: none }
+.form .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+.form .actions .grow { flex: 1 }
+.btn.danger { background: none; border-color: var(--line); color: var(--ember) }
+@media (max-width: 560px) { .form { grid-template-columns: 1fr } }
+
+/* ---- a trip ---- */
+.trip-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-top: 12px }
+.trip-head h1 { margin: 4px 0 }
+.trip-head .where { font-size: 18px; color: var(--muted) }
+.save { font-size: 13px; color: var(--muted) }
+.save.error { color: var(--ember); font-weight: 600 }
+.card h2 { font-size: 20px; margin-bottom: 8px }
+textarea { display: block; font: inherit; line-height: 1.5; resize: vertical; min-height: 6em }
+
+/* ---- packing list ---- */
+.pack-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 28px }
+.pack-head h2 { font-size: 24px }
+.progress { height: 6px; background: var(--line); border-radius: 3px; margin: 14px 0 4px; overflow: hidden }
+.progress > div { height: 100%; background: var(--leaf); transition: width .2s }
+.progress-label, .help { font-size: 13px; color: var(--muted) }
+.help { margin-top: 6px }
+.help kbd { font: 500 12px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; background: var(--surface) }
+.copy-from { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0 }
+.copy-from select { background: var(--raised); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 8px 10px; color: var(--ink); max-width: 100% }
+
+nav { display: flex; gap: 4px; margin: 16px 0; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; overflow-x: auto }
+nav button { border: 0; background: none; color: var(--muted); font-weight: 600; padding: 10px 12px; white-space: nowrap;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer }
+nav button.active { color: var(--ink); border-bottom-color: var(--leaf) }
+nav .count { font-size: 12px; background: var(--raised); color: var(--ink); border-radius: var(--r-pill); padding: 1px 7px; margin-left: 4px }
+
+.cat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 14px }
+.cat.cat-before { box-shadow: 0 -3px 0 var(--leaf) }
+.cat.cat-after { box-shadow: 0 3px 0 var(--leaf) }
+.cat-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px }
+.cat-head h3 { font-size: 17px; font-weight: 600; flex: 1; min-width: 0; outline: none; border-radius: 4px }
+.cat-head h3:focus { background: var(--raised) }
+.tally { font-size: 13px; color: var(--muted) }
+
+#pack ul { list-style: none; margin: 0; padding: 0 4px; min-height: 8px }
+#pack ul.drop-end { box-shadow: inset 0 -2px 0 var(--leaf) }
+#pack li { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: var(--r-sm) }
+#pack li:hover { background: var(--bg) }
+#pack li.empty { color: var(--muted); font-size: 14px; font-style: italic }
+#pack li.drop-before { box-shadow: inset 0 2px 0 var(--leaf) }
+#pack li.drop-after { box-shadow: inset 0 -2px 0 var(--leaf) }
+#pack li.dragging { opacity: .4 }
+#pack li.s-x .text { text-decoration: line-through; color: var(--muted) }
+
+.handle { cursor: grab; color: var(--muted); opacity: .45; user-select: none; padding: 0 2px; font-size: 14px }
+#pack li:hover .handle, .cat-head:hover .handle { opacity: 1 }
+.mark { width: 28px; height: 26px; flex: none; text-align: center; font: 500 14px var(--mono); padding: 0;
+  border: 1.5px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); text-transform: lowercase }
+#pack li.s-b .mark { border-color: var(--wood); background: color-mix(in srgb, var(--sun) 22%, var(--surface)); color: var(--wood) }
+#pack li.s-c .mark { border-color: var(--pool); background: color-mix(in srgb, var(--pool) 12%, var(--surface)); color: var(--pool) }
+#pack li.s-v .mark { border-color: var(--bloom); background: color-mix(in srgb, var(--bloom) 12%, var(--surface)); color: var(--bloom) }
+#pack li.s-x .mark { border-color: var(--muted); background: var(--muted); color: var(--surface) }
+.text { flex: 1; min-width: 0; outline: none; border-radius: 4px; padding: 1px 3px; overflow-wrap: anywhere }
+.text:focus { background: var(--raised) }
+.del { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 18px; line-height: 1; padding: 2px 4px; opacity: 0 }
+#pack li:hover .del, .cat-head:hover .del, .del:focus { opacity: .7 }
+.del:hover { opacity: 1; color: var(--ember) }
+
+.add { display: block; width: calc(100% - 24px); margin: 4px 12px 12px; padding: 6px 8px; font-size: 15px;
+  border: 1px dashed var(--line); border-radius: var(--r-sm); background: transparent; color: var(--ink) }
+.add:focus { outline: none; border-style: solid; border-color: var(--pool) }
+.add.add-cat { width: 100%; margin: 4px 0 0; padding: 10px 12px }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 14px }
+.filters-label { font-size: 14px; color: var(--muted) }
+.chip { font-size: 14px; padding: 4px 12px; border-radius: var(--r-pill); cursor: pointer;
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--muted) }
+.chip.s-b.on { border-color: var(--wood); background: color-mix(in srgb, var(--sun) 22%, var(--surface)); color: var(--wood); font-weight: 600 }
+.chip.s-c.on { border-color: var(--pool); background: color-mix(in srgb, var(--pool) 12%, var(--surface)); color: var(--pool); font-weight: 600 }
+.chip.s-v.on { border-color: var(--bloom); background: color-mix(in srgb, var(--bloom) 12%, var(--surface)); color: var(--bloom); font-weight: 600 }
+.hidden-note { font-size: 13px; color: var(--muted); padding: 0 16px 2px }
+.none { text-align: center; color: var(--muted); padding: 40px 0 }
+@media (hover: none) { .del, .handle { opacity: .7 } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
+  <div id="app"><h1>Trip planner</h1><p class="status">Loading…</p></div>
+</div>
+<script src="family-auth.js"></script>
+<script>
+(function () {
+  var TYPES = { backpacking: "Backpacking" };
+  var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  var DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var TABS = {
+    pack:   { label: "Packing list",  filter: function (i) { return (i.status !== "b" || show.b) && (i.status !== "c" || show.c) && (i.status !== "v" || show.v); },
+              newStatus: "", none: "No items yet. Add a category below." },
+    verify: { label: "Verify list",   filter: function (i) { return i.status === "v"; }, newStatus: "v",
+              none: "Nothing to verify. Type v next to an item on the packing list to add it here." },
+    shop:   { label: "Shopping list", filter: function (i) { return i.status === "b"; }, newStatus: "b",
+              none: "Nothing to buy. Type b next to an item on the packing list to add it here." },
+    check:  { label: "Check list",    filter: function (i) { return i.status === "c"; }, newStatus: "c",
+              none: "Nothing to check. Type c next to an item on the packing list to add it here." },
+  };
+  var RANK = { "": 0, b: 0, c: 0, v: 0, x: 1 };   // packed items sink to the bottom of their category
+
+  var cfg, app = document.getElementById("app");
+  var trips = [];          // summaries, for the calendar
+  var trip = null;         // the open trip, whole (its rev rides along)
+  var month = null;        // the calendar's month, "YYYY-MM"
+  var booking = null;      // the booking form's starting values while it's open
+
+  // The tab and the packing list's filters are this device's own choice, so they stay in localStorage.
+  function stored(key, fallback) { try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; } }
+  function store(key, v) { try { localStorage.setItem(key, v); } catch (e) {} }
+  var tab = stored("packing-tab", "pack");
+  if (!TABS[tab]) tab = "pack";
+  // The packing list hides b, c and v items by default (they live on the other tabs); these toggles bring them back.
+  var show = { b: false, c: false, v: false };
+  try { var s = JSON.parse(stored("packing-show", "{}")); show.b = !!s.b; show.c = !!s.c; show.v = !!s.v; } catch (e) {}
+
+  var dirty = false, inflight = null, saveTimer = null, refocus = null, drag = null, dropAt = null;
+  var markFocus = null;   // after a status change: { id, nextId, prevId } so the cursor lands on a sensible box
+  function uid() { return Math.random().toString(36).slice(2, 10); }
+  function $(id) { return document.getElementById(id); }
+  function all(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+  // Like replaceChildren, but a section left out (null) is skipped rather than shown as "null".
+  function fill(parent) {
+    parent.replaceChildren.apply(parent, Array.prototype.slice.call(arguments, 1).filter(function (k) { return k != null; }));
+  }
+
+  function el(tag, attrs) {
+    var n = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (k === "class") n.className = v;
+      else if (k.indexOf("on") === 0) n.addEventListener(k.slice(2), v);
+      else if (k === "value") n.value = v;
+      else n.setAttribute(k, v);
+    });
+    (function add(kids) {
+      kids.forEach(function (k) { if (Array.isArray(k)) add(k); else if (k != null) n.append(k); });
+    })(Array.prototype.slice.call(arguments, 2));
+    return n;
+  }
+
+  /* ---------- dates: plain "YYYY-MM-DD" strings, local calendar days ---------- */
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function iso(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function parse(s) { var p = s.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function addDays(s, n) { var d = parse(s); d.setDate(d.getDate() + n); return iso(d); }
+  function today() { return iso(new Date()); }
+  function short(s) { var d = parse(s); return MONTHS[d.getMonth()].slice(0, 3) + " " + d.getDate(); }
+  function range(a, b) {
+    var y = a.slice(0, 4);
+    if (a === b) return short(a) + ", " + y;
+    if (a.slice(0, 7) === b.slice(0, 7)) return short(a) + " – " + parse(b).getDate() + ", " + y;
+    if (y === b.slice(0, 4)) return short(a) + " – " + short(b) + ", " + y;
+    return short(a) + ", " + y + " – " + short(b) + ", " + b.slice(0, 4);
+  }
+
+  /* ---------- the API ---------- */
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method,
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    }).then(function (res) {
+      return res.json().catch(function () { return null; }).then(function (b) { return { status: res.status, ok: res.ok, body: b }; });
+    });
+  }
+
+  function emptyList(t) { return !t.categories.length && !t.items.length; }
+  // A copied packing list starts fresh: same categories and items, every mark cleared.
+  function copiedList(from) {
+    return {
+      categories: from.categories.map(function (c) { return { id: c.id, name: c.name }; }),
+      items: from.items.map(function (i) { return { id: i.id, text: i.text, categoryId: i.categoryId, status: "" }; }),
+    };
+  }
+
+  /* ---------- saving the open trip: whole, with its rev, a moment after the last change ---------- */
+  function setSave(kind, msg) {
+    var s = $("save");
+    if (!s) return;
+    s.className = "save" + (kind === "error" ? " error" : "");
+    s.textContent = msg || { saved: "Saved", pending: "Saving…", error: "Not saved. Check your connection." }[kind];
+  }
+
+  function queueSave() {
+    dirty = true;
+    setSave("pending");
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 400);
+  }
+  function commit() { render(); queueSave(); }
+
+  // Resolves once everything typed so far is saved (or has failed), so leaving a trip never drops it.
+  function save() {
+    clearTimeout(saveTimer);
+    if (inflight) return inflight.then(function () { return dirty ? save() : null; });
+    if (!dirty || !trip) return Promise.resolve();
+    var t = trip;
+    dirty = false;
+    inflight = api("PUT", "/trips/" + t.id, t).then(function (r) {
+      if (r.status === 409 && trip === t) {
+        // Saved from another device since we loaded: show theirs rather than overwrite it.
+        trip = r.body.current;
+        dirty = false;
+        drawTrip();
+        setSave("error", "Changed on another device, so this is the latest. Redo your last change.");
+        return;
+      }
+      if (r.status === 404 && trip === t) { setSave("error", "This trip was deleted on another device."); return; }
+      if (!r.ok) throw new Error(r.status);
+      t.rev = r.body.rev;
+      if (trip === t && !dirty) setSave("saved");
+    }).catch(function () {
+      if (trip === t) { dirty = true; setSave("error"); }
+    }).then(function () { inflight = null; });
+    return inflight;
+  }
+
+  // Coming back to the tab: pick up anything saved from another device meanwhile.
+  window.addEventListener("focus", function () {
+    if (!cfg || !trip || dirty || inflight) return;
+    var t = trip;
+    api("GET", "/trips/" + t.id).then(function (r) {
+      if (r.ok && trip === t && !dirty && !inflight && r.body.rev !== t.rev) { trip = r.body; drawTrip(); }
+    }).catch(function () {});
+  });
+  window.addEventListener("beforeunload", function (e) { if (dirty || inflight) e.preventDefault(); });
+
+  /* ---------- routing: #/ is the calendar, #/trip/<id> a trip ---------- */
+  function route() {
+    var m = /^#\/trip\/([A-Za-z0-9_-]+)$/.exec(location.hash);
+    if (m) return openTrip(m[1]);
+    trip = null;
+    return showCalendar();
+  }
+  window.addEventListener("hashchange", function () { save().then(route).catch(function (e) { gate(e.message); }); });
+
+  function gate(msg) {
+    fill(app, el("h1", {}, "Trip planner"), el("p", { class: "status" }, msg),
+      el("button", { class: "btn primary", id: "signin", onclick: function () { FamilyAuth.login(); } }, "Sign in"));
+  }
+  function failed(r) {
+    throw new Error(r.status === 403 ? "Your account doesn’t have access to the trip planner yet." : "Couldn’t load (" + r.status + "). Reload to try again.");
+  }
+
+  /* ---------- the calendar ---------- */
+  function showCalendar() {
+    return api("GET", "/trips").then(function (r) {
+      if (!r.ok) failed(r);
+      trips = r.body;
+      drawCalendar();
+    });
+  }
+
+  function drawCalendar() {
+    if (!month) month = today().slice(0, 7);
+    var first = parse(month + "-01");
+    var start = addDays(month + "-01", -first.getDay());
+    var lastDay = iso(new Date(first.getFullYear(), first.getMonth() + 1, 0));
+    var end = addDays(lastDay, 6 - parse(lastDay).getDay());
+
+    var cal = el("div", { class: "cal", role: "grid", "aria-label": MONTHS[first.getMonth()] + " " + first.getFullYear() });
+    DOW.forEach(function (d) { cal.append(el("div", { class: "dow" }, d)); });
+    for (var day = start; day <= end; day = addDays(day, 1)) cal.append(dayCell(day));
+
+    var t0 = today();
+    var upcoming = trips.filter(function (t) { return t.end >= t0; });
+    var past = trips.filter(function (t) { return t.end < t0; }).reverse();
+
+    fill(app,
+      el("h1", {}, "Trip planner"),
+      el("div", { class: "cal-head" },
+        el("button", { class: "icon-btn", "aria-label": "Previous month", onclick: function () { stepMonth(-1); } }, "‹"),
+        el("h2", { id: "month" }, MONTHS[first.getMonth()] + " " + first.getFullYear()),
+        el("button", { class: "icon-btn", "aria-label": "Next month", onclick: function () { stepMonth(1); } }, "›"),
+        el("button", { class: "btn ghost", onclick: function () { month = null; drawCalendar(); } }, "Today"),
+        el("span", { class: "grow" }),
+        el("button", { class: "btn primary", id: "book-btn", onclick: function () { openBooking(today()); } }, "Book a trip")),
+      booking ? bookingForm() : null,
+      cal,
+      el("h2", { class: "list-head" }, "Upcoming"),
+      tripList(upcoming, "Nothing booked yet. Pick a day on the calendar to book a trip."),
+      past.length ? el("h2", { class: "list-head" }, "Past") : null,
+      past.length ? tripList(past) : null);
+    if (booking) { var n = $("b-name"); if (n) n.focus(); }
+  }
+
+  function stepMonth(n) {
+    var d = parse(month + "-01");
+    d.setMonth(d.getMonth() + n);
+    month = iso(d).slice(0, 7);
+    drawCalendar();
+  }
+
+  function dayCell(day) {
+    var cell = el("div", { class: "day" + (day.slice(0, 7) !== month ? " out" : "") + (day === today() ? " today" : ""),
+      role: "gridcell", "data-day": day, title: "Book a trip starting " + short(day),
+      onclick: function (e) { if (!e.target.closest("a")) openBooking(day); } },
+      el("span", { class: "num" }, String(parse(day).getDate())));
+    trips.forEach(function (t) {
+      if (day < t.start || day > t.end) return;
+      // The name shows where a trip starts and at the start of each week; the rest is the bar alone.
+      var named = day === t.start || parse(day).getDay() === 0;
+      cell.append(el("a", { class: "bar" + (day === t.start ? " first" : "") + (day === t.end ? " last" : ""),
+        href: "#/trip/" + t.id, title: t.name + " · " + range(t.start, t.end) }, named ? t.name : " "));
+    });
+    return cell;
+  }
+
+  function tripList(list, none) {
+    if (!list.length) return el("p", { class: "status" }, none);
+    return el("ul", { class: "trips" }, list.map(function (t) {
+      var bits = [TYPES[t.type] || t.type, range(t.start, t.end)];
+      if (t.where) bits.push(t.where);
+      return el("li", {}, el("a", { href: "#/trip/" + t.id },
+        el("strong", {}, t.name),
+        el("small", {}, bits.join(" · ") + (t.items ? " · " + t.packed + "/" + t.items + " packed" : ""))));
+    }));
+  }
+
+  /* ---------- booking a trip ---------- */
+  function openBooking(day) {
+    // Offer the latest earlier trip with a packing list as the one to copy.
+    var withList = trips.filter(function (t) { return t.items; });
+    var before = withList.filter(function (t) { return t.start <= day; });
+    var from = (before.length ? before[before.length - 1] : withList[withList.length - 1]) || null;
+    booking = { start: day, end: addDays(day, 1), from: from ? from.id : "" };
+    drawCalendar();
+  }
+
+  function bookingForm() {
+    var copyOptions = [el("option", { value: "" }, "Start with an empty list")].concat(
+      trips.filter(function (t) { return t.items; }).slice().reverse().map(function (t) {
+        var o = el("option", { value: t.id }, "Copy from " + t.name + " (" + range(t.start, t.end) + ")");
+        if (t.id === booking.from) o.selected = true;
+        return o;
+      }));
+    var form = el("form", { class: "card form", id: "book", onsubmit: book },
+      el("h2", { class: "full" }, "Book a trip"),
+      el("label", { class: "full" }, "Name", el("input", { id: "b-name", name: "name", required: "", maxlength: "200", placeholder: "Bastion & Luke at Jones Gap" })),
+      el("label", {}, "Type", el("select", { name: "type" }, Object.keys(TYPES).map(function (k) { return el("option", { value: k }, TYPES[k]); }))),
+      el("label", {}, "Where", el("input", { name: "where", maxlength: "200", placeholder: "Campsite 14" })),
+      el("label", {}, "Start", el("input", { type: "date", name: "start", required: "", value: booking.start })),
+      el("label", {}, "End", el("input", { type: "date", name: "end", required: "", value: booking.end })),
+      el("label", { class: "full" }, "Packing list", el("select", { name: "from" }, copyOptions)),
+      el("p", { class: "status full", id: "b-status" }),
+      el("div", { class: "actions full" },
+        el("button", { class: "btn primary", type: "submit" }, "Book it"),
+        el("button", { class: "btn ghost", type: "button", onclick: function () { booking = null; drawCalendar(); } }, "Cancel")));
+    form.elements.start.addEventListener("change", function () {
+      if (form.elements.end.value < form.elements.start.value) form.elements.end.value = form.elements.start.value;
+    });
+    return form;
+  }
+
+  function book(e) {
+    e.preventDefault();
+    var f = e.target.elements, msg = $("b-status");
+    var t = { id: uid(), name: f.name.value.trim(), type: f.type.value, where: f.where.value.trim(),
+              start: f.start.value, end: f.end.value, notes: "", itinerary: "", categories: [], items: [], rev: 0 };
+    if (!t.name) { msg.textContent = "Give the trip a name."; return; }
+    if (!t.start || !t.end || t.end < t.start) { msg.textContent = "The trip has to end on or after the day it starts."; return; }
+    msg.textContent = "Booking…";
+    var copy = f.from.value ? api("GET", "/trips/" + f.from.value).then(function (r) {
+      if (!r.ok) throw new Error("Couldn’t copy that packing list. Try again.");
+      var l = copiedList(r.body);
+      t.categories = l.categories; t.items = l.items;
+    }) : Promise.resolve();
+    copy.then(function () { return api("PUT", "/trips/" + t.id, t); }).then(function (r) {
+      if (!r.ok) throw new Error("Couldn’t book it (" + ((r.body && r.body.error) || r.status) + "). Try again.");
+      booking = null;
+      month = t.start.slice(0, 7);
+      location.hash = "#/trip/" + t.id;
+    }).catch(function (err) { msg.textContent = err.message; });
+  }
+
+  /* ---------- a trip ---------- */
+  function openTrip(id) {
+    return api("GET", "/trips/" + id).then(function (r) {
+      if (r.status === 404) {
+        fill(app, el("a", { class: "back", href: "#/" }, "← All trips"), el("p", { class: "status" }, "That trip isn’t here any more."));
+        return;
+      }
+      if (!r.ok) failed(r);
+      trip = r.body;
+      dirty = false;
+      drawTrip();
+      setSave("saved");
+      window.scrollTo(0, 0);
+    });
+  }
+
+  function autosize(ta) { ta.style.height = "auto"; ta.style.height = Math.max(ta.scrollHeight + 4, 100) + "px"; }
+  function freeText(field, label, placeholder) {
+    var ta = el("textarea", { id: field, "aria-label": label, placeholder: placeholder, maxlength: "20000" });
+    ta.value = trip[field] || "";
+    ta.addEventListener("input", function () { trip[field] = ta.value; autosize(ta); queueSave(); });
+    setTimeout(function () { autosize(ta); }, 0);
+    return el("section", { class: "card" }, el("h2", {}, label), ta);
+  }
+
+  function drawTrip(editing) {
+    var t = trip;
+    var head = el("div", { class: "trip-head" },
+      el("div", {},
+        el("div", { class: "eyebrow" }, (TYPES[t.type] || t.type) + " · " + range(t.start, t.end)),
+        el("h1", { id: "trip-name" }, t.name),
+        t.where ? el("p", { class: "where" }, t.where) : null),
+      el("div", {}, el("span", { class: "save", id: "save" }), " ",
+        el("button", { class: "btn ghost", id: "edit-btn", onclick: function () { drawTrip(true); } }, "Edit details")));
+    fill(app,
+      el("a", { class: "back", href: "#/" }, "← All trips"),
+      editing ? detailsForm() : head,
+      el("div", { style: "margin-top: 20px" },
+        freeText("notes", "Notes", "Anything worth remembering: permits, parking, who’s coming, how it went…"),
+        freeText("itinerary", "Itinerary", "Day by day: when you leave, where you’ll be, what’s planned…")),
+      el("div", { class: "pack-head" }, el("h2", {}, "Packing list")),
+      el("div", { id: "list" },
+        el("div", { class: "progress" }, el("div", { id: "bar" })),
+        el("div", { class: "progress-label", id: "progress" }),
+        el("p", { class: "help" }, "In the box next to an item, type ", el("kbd", {}, "v"), " for the verify list, ",
+          el("kbd", {}, "b"), " to put it on the shopping list, ", el("kbd", {}, "c"), " for the check list, ",
+          el("kbd", {}, "x"), " to mark it packed, or delete the letter to clear it. Tap any text to edit it, and drag ⠿ to move things around."),
+        el("nav", { id: "tabs" })),
+      el("div", { id: "pack" }));
+    render();
+  }
+
+  function detailsForm() {
+    var t = trip;
+    var form = el("form", { class: "card form", id: "details", onsubmit: function (e) {
+      e.preventDefault();
+      var f = form.elements, msg = $("d-status");
+      if (!f.name.value.trim()) { msg.textContent = "Give the trip a name."; return; }
+      if (!f.start.value || !f.end.value || f.end.value < f.start.value) { msg.textContent = "The trip has to end on or after the day it starts."; return; }
+      t.name = f.name.value.trim(); t.type = f.type.value; t.where = f.where.value.trim();
+      t.start = f.start.value; t.end = f.end.value;
+      drawTrip();
+      queueSave();
+    } },
+      el("label", { class: "full" }, "Name", el("input", { name: "name", required: "", maxlength: "200", value: t.name })),
+      el("label", {}, "Type", el("select", { name: "type" }, Object.keys(TYPES).map(function (k) {
+        var o = el("option", { value: k }, TYPES[k]); if (k === t.type) o.selected = true; return o;
+      }))),
+      el("label", {}, "Where", el("input", { name: "where", maxlength: "200", value: t.where || "" })),
+      el("label", {}, "Start", el("input", { type: "date", name: "start", required: "", value: t.start })),
+      el("label", {}, "End", el("input", { type: "date", name: "end", required: "", value: t.end })),
+      el("p", { class: "status full", id: "d-status" }),
+      el("div", { class: "actions full" },
+        el("button", { class: "btn primary", type: "submit" }, "Save"),
+        el("button", { class: "btn ghost", type: "button", onclick: function () { drawTrip(); setSave(dirty ? "pending" : "saved"); } }, "Cancel"),
+        el("span", { class: "grow" }),
+        el("button", { class: "btn danger", type: "button", id: "delete-trip", onclick: deleteTrip }, "Delete trip"),
+        el("span", { class: "save", id: "save" })));
+    return form;
+  }
+
+  function deleteTrip() {
+    var t = trip;
+    if (!confirm("Delete “" + t.name + "” with its notes, itinerary and packing list?")) return;
+    clearTimeout(saveTimer);
+    dirty = false;
+    api("DELETE", "/trips/" + t.id).then(function (r) {
+      if (!r.ok) throw new Error(r.status);
+      trip = null;
+      location.hash = "#/";
+    }).catch(function () { var m = $("d-status"); if (m) m.textContent = "Couldn’t delete it. Try again."; });
+  }
+
+  // An empty packing list can start from another trip's.
+  function copyFrom() {
+    var others = [], box = el("div", { class: "copy-from" });
+    api("GET", "/trips").then(function (r) {
+      if (!r.ok) return;
+      others = r.body.filter(function (t) { return t.items && t.id !== trip.id; }).reverse();
+      if (!others.length) return;
+      var sel = el("select", { "aria-label": "Trip to copy from" }, others.map(function (t) {
+        return el("option", { value: t.id }, t.name + " (" + range(t.start, t.end) + ")");
+      }));
+      box.replaceChildren(el("span", { class: "muted" }, "Start from another trip’s list:"), sel,
+        el("button", { class: "btn ghost", id: "copy-btn", onclick: function () {
+          var t = trip;
+          api("GET", "/trips/" + sel.value).then(function (r2) {
+            if (!r2.ok || trip !== t || !emptyList(t)) return;
+            var l = copiedList(r2.body);
+            t.categories = l.categories; t.items = l.items;
+            commit();
+          });
+        } }, "Copy it"));
+    }).catch(function () {});
+    return box;
+  }
+
+  /* ---------- packing list changes ---------- */
+  function indexOfId(arr, id) { for (var k = 0; k < arr.length; k++) if (arr[k].id === id) return k; return -1; }
+
+  function moveItem(id, categoryId, refId, after) {
+    var it = trip.items.splice(indexOfId(trip.items, id), 1)[0];
+    it.categoryId = categoryId;
+    var at;
+    if (refId) {
+      at = indexOfId(trip.items, refId) + (after ? 1 : 0);
+    } else {
+      var last = -1;
+      trip.items.forEach(function (i, k) { if (i.categoryId === categoryId) last = k; });
+      at = last >= 0 ? last + 1 : trip.items.length;
+    }
+    trip.items.splice(at, 0, it);
+    commit();
+  }
+
+  function moveCategory(id, refId, after) {
+    var c = trip.categories.splice(indexOfId(trip.categories, id), 1)[0];
+    trip.categories.splice(indexOfId(trip.categories, refId) + (after ? 1 : 0), 0, c);
+    commit();
+  }
+
+  function editable(node, getText, setText) {
+    node.contentEditable = "true";
+    node.spellcheck = false;
+    node.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); node.blur(); }
+      if (e.key === "Escape") { node.textContent = getText(); node.blur(); }
+    });
+    node.addEventListener("blur", function () {
+      var v = node.textContent.replace(/\s+/g, " ").trim();
+      if (v !== getText()) setText(v);
+    });
+  }
+
+  /* ---------- drag and drop ---------- */
+  function clearDrop() {
+    all(".drop-before,.drop-after,.drop-end,.cat-before,.cat-after").forEach(function (n) {
+      n.classList.remove("drop-before", "drop-after", "drop-end", "cat-before", "cat-after");
+    });
+  }
+
+  function onCardDragOver(e, c, card, ul) {
+    if (!drag) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    clearDrop();
+    var r, after;
+    if (drag.kind === "cat") {
+      if (drag.id === c.id) { dropAt = null; return; }
+      r = card.getBoundingClientRect();
+      after = e.clientY > r.top + r.height / 2;
+      card.classList.add(after ? "cat-after" : "cat-before");
+      dropAt = { ref: c.id, after: after };
+      return;
+    }
+    var li = e.target.closest("li[data-id]");
+    if (li && li.dataset.id !== drag.id) {
+      r = li.getBoundingClientRect();
+      after = e.clientY > r.top + r.height / 2;
+      li.classList.add(after ? "drop-after" : "drop-before");
+      dropAt = { cat: c.id, ref: li.dataset.id, after: after };
+    } else if (!li) {
+      ul.classList.add("drop-end");
+      dropAt = { cat: c.id, ref: null };
+    } else {
+      dropAt = null;
+    }
+  }
+
+  function onCardDrop(e) {
+    if (!drag) return;
+    e.preventDefault();
+    var d = drag, at = dropAt;
+    drag = dropAt = null;
+    clearDrop();
+    if (!at) return;
+    if (d.kind === "cat") moveCategory(d.id, at.ref, at.after);
+    else moveItem(d.id, at.cat, at.ref, at.after);
+  }
+
+  function startDrag(e, kind, id, node) {
+    drag = { kind: kind, id: id };
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+    e.dataTransfer.setDragImage(node, 12, 12);
+    setTimeout(function () { node.classList.add("dragging"); }, 0);
+  }
+  function endDrag(node) { drag = dropAt = null; clearDrop(); node.classList.remove("dragging"); }
+
+  /* ---------- drawing the packing list ---------- */
+  function itemRow(it) {
+    var li = el("li", { class: "s-" + (it.status || "none") });
+    li.dataset.id = it.id;
+
+    var handle = el("span", { class: "handle", draggable: "true", title: "Drag to move", "aria-hidden": "true" }, "⠿");
+    handle.addEventListener("dragstart", function (e) { startDrag(e, "item", it.id, li); });
+    handle.addEventListener("dragend", function () { endDrag(li); });
+
+    var mark = el("input", { class: "mark", maxlength: "2", autocapitalize: "off", autocomplete: "off",
+                             "aria-label": "Status: v to verify, b to buy, c to check, x packed", title: "v = verify list, b = shopping list, c = check list, x = packed" });
+    mark.value = it.status;
+    mark.addEventListener("focus", function () { mark.select(); });
+    mark.addEventListener("input", function () {
+      var v = mark.value.trim().toLowerCase().slice(-1);
+      if (v && "bcvx".indexOf(v) < 0) { mark.value = it.status; return; }
+      it.status = v;
+      // Look across the whole list, not just this category, so the last item in a category still has a "next".
+      var marks = all("#pack .mark"), k = marks.indexOf(mark);
+      function idOf(m) { return m && m.closest("li").dataset.id; }
+      markFocus = { id: it.id, nextId: idOf(marks[k + 1]), prevId: idOf(marks[k - 1]) };
+      commit();
+    });
+
+    var text = el("span", { class: "text" }, it.text);
+    editable(text, function () { return it.text; }, function (v) {
+      if (!v) trip.items = trip.items.filter(function (i) { return i !== it; });
+      else it.text = v;
+      commit();
+    });
+
+    var del = el("button", { class: "del", title: "Delete item", "aria-label": "Delete " + it.text, onclick: function () {
+      trip.items = trip.items.filter(function (i) { return i !== it; });
+      commit();
+    } }, "×");
+
+    li.append(handle, mark, text, del);
+    return li;
+  }
+
+  function categoryCard(c, items) {
+    var view = TABS[tab];
+    var card = el("section", { class: "cat" });
+    var ul = el("ul");
+    card.addEventListener("dragover", function (e) { onCardDragOver(e, c, card, ul); });
+    card.addEventListener("drop", onCardDrop);
+
+    var handle = el("span", { class: "handle", draggable: "true", title: "Drag to reorder category", "aria-hidden": "true" }, "⠿");
+    handle.addEventListener("dragstart", function (e) { startDrag(e, "cat", c.id, card); });
+    handle.addEventListener("dragend", function () { endDrag(card); });
+
+    var h3 = el("h3", {}, c.name);
+    editable(h3, function () { return c.name; }, function (v) { if (v) c.name = v; commit(); });
+
+    var mine = trip.items.filter(function (i) { return i.categoryId === c.id; });
+    var packed = mine.filter(function (i) { return i.status === "x"; }).length;
+    var tally = el("span", { class: "tally" }, tab === "pack" ? packed + "/" + mine.length : String(items.length));
+
+    var del = el("button", { class: "del", title: "Delete category", "aria-label": "Delete " + c.name, onclick: function () {
+      if (mine.length && !confirm("Delete “" + c.name + "” and its " + mine.length + " item" + (mine.length === 1 ? "" : "s") + "?")) return;
+      trip.categories = trip.categories.filter(function (x) { return x !== c; });
+      trip.items = trip.items.filter(function (i) { return i.categoryId !== c.id; });
+      commit();
+    } }, "×");
+
+    card.append(el("div", { class: "cat-head" }, handle, h3, tally, del));
+
+    var hidden = mine.length - items.length;
+    var sorted = items.map(function (it, k) { return [it, k]; })
+      .sort(function (a, b) { return RANK[a[0].status] - RANK[b[0].status] || a[1] - b[1]; })
+      .map(function (p) { return p[0]; });
+    if (sorted.length) sorted.forEach(function (it) { ul.append(itemRow(it)); });
+    else ul.append(el("li", { class: "empty" }, hidden ? "Everything here is on the verify, shopping or check list." : "Empty. Add an item or drag one here."));
+    card.append(ul);
+    if (tab === "pack" && hidden && sorted.length) card.append(el("div", { class: "hidden-note" }, hidden + " more on the verify, shopping or check list"));
+
+    var add = el("input", { class: "add", placeholder: "Add item…", "aria-label": "Add item to " + c.name, maxlength: "500" });
+    add.dataset.cat = c.id;
+    add.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" || !add.value.trim()) return;
+      trip.items.push({ id: uid(), text: add.value.trim(), categoryId: c.id, status: view.newStatus });
+      refocus = c.id;
+      commit();
+    });
+    card.append(add);
+    return card;
+  }
+
+  // Every render rebuilds the list, so remember where the first visible items sat on screen
+  // and scroll so they end up in the same place afterwards.
+  function captureScroll() {
+    var out = [], rows = all("#pack li[data-id]");
+    for (var k = 0; k < rows.length && out.length < 8; k++) {
+      var top = rows[k].getBoundingClientRect().top;
+      if (top >= 0) out.push({ id: rows[k].dataset.id, top: top });
+    }
+    return out;
+  }
+  function row(id) { return document.querySelector('#pack li[data-id="' + id + '"]'); }
+  function restoreScroll(anchors) {
+    for (var k = 0; k < anchors.length; k++) {
+      var n = row(anchors[k].id);
+      if (n) { window.scrollBy(0, n.getBoundingClientRect().top - anchors[k].top); return; }
+    }
+  }
+
+  function render() {
+    var main = $("pack");
+    if (!trip || !main) return;
+    var anchors = captureScroll();
+    // After a status change, hold the neighbours of the changed item still (the item itself may move or vanish).
+    if (markFocus) {
+      [markFocus.nextId, markFocus.prevId].forEach(function (id) {   // unshift: prev ends up first
+        var n = id && row(id);
+        if (n) anchors.unshift({ id: id, top: n.getBoundingClientRect().top });
+      });
+    }
+    var view = TABS[tab];
+    var total = trip.items.length;
+    var packed = trip.items.filter(function (i) { return i.status === "x"; }).length;
+    $("bar").style.width = total ? (100 * packed / total) + "%" : "0";
+    $("progress").textContent = packed + " of " + total + " packed";
+
+    $("tabs").replaceChildren.apply($("tabs"), Object.keys(TABS).map(function (key) {
+      var t = TABS[key];
+      var n = key === "pack" ? total - packed : trip.items.filter(t.filter).length;
+      return el("button", { class: key === tab ? "active" : "", "data-tab": key, onclick: function () {
+        tab = key;
+        store("packing-tab", key);
+        render();
+      } }, t.label, el("span", { class: "count", title: key === "pack" ? "left to pack" : "" }, String(n)));
+    }));
+
+    var cards = [];
+    trip.categories.forEach(function (c) {
+      var items = trip.items.filter(function (i) { return i.categoryId === c.id && view.filter(i); });
+      if (tab !== "pack" && !items.length) return;
+      cards.push(categoryCard(c, items));
+    });
+    if (!cards.length) cards.push(el("div", { class: "none" }, view.none));
+
+    if (tab === "pack") {
+      var chip = function (key, label) {
+        var n = trip.items.filter(function (i) { return i.status === key; }).length;
+        return el("button", { class: "chip s-" + key + (show[key] ? " on" : ""), "aria-pressed": String(show[key]), onclick: function () {
+          show[key] = !show[key];
+          store("packing-show", JSON.stringify(show));
+          render();
+        } }, (show[key] ? "✓ " : "") + "Show " + label + " (" + n + ")");
+      };
+      if (emptyList(trip)) cards.unshift(copyFrom());
+      else cards.unshift(el("div", { class: "filters" }, el("span", { class: "filters-label" }, "Also show:"),
+        chip("v", "v · to verify"), chip("b", "b · to buy"), chip("c", "c · to check")));
+      var addCat = el("input", { class: "add add-cat", placeholder: "+ Add category…", "aria-label": "Add category", maxlength: "200" });
+      addCat.addEventListener("keydown", function (e) {
+        if (e.key !== "Enter" || !addCat.value.trim()) return;
+        var c = { id: uid(), name: addCat.value.trim() };
+        trip.categories.push(c);
+        refocus = c.id;
+        commit();
+      });
+      cards.push(addCat);
+    }
+    main.replaceChildren.apply(main, cards);
+    restoreScroll(anchors);
+
+    // After typing a letter, keep the cursor on that item if it stayed put,
+    // otherwise move it to the item that took its place (handy for going down the list).
+    if (markFocus) {
+      var f = markFocus;
+      markFocus = null;
+      var marks = all(".mark", main);
+      var find = function (i) { return i && main.querySelector('li[data-id="' + i + '"] .mark'); };
+      var same = find(f.id);
+      var stayed = same && (marks[marks.indexOf(same) + 1] || null) === (find(f.nextId) || null);
+      var box = stayed ? same : find(f.nextId) || find(f.prevId);
+      if (box) { box.focus({ preventScroll: true }); box.select(); }
+    }
+
+    if (refocus) {
+      var input = main.querySelector('.add[data-cat="' + refocus + '"]');
+      refocus = null;
+      if (input) input.focus();
+    }
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
+    $("signout").hidden = false;
+    $("signout").onclick = function () { FamilyAuth.logout(); };
+    return route();
+  }).catch(function (e) { gate(e.message); });
+})();
+</script>
+</body>
+</html>
