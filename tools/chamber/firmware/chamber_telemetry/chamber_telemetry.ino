@@ -32,7 +32,7 @@ Adafruit_SHT4x sht4 = Adafruit_SHT4x();
 
 // Bump on every flash. Published as fw_build so each CSV row says which
 // firmware produced it -- 2026-09-27 saw six flashes in one afternoon.
-const int FW_BUILD = 17;
+const int FW_BUILD = 18;
 
 // The fan is wired but has no control logic yet. It still has to be driven:
 // a 4-wire fan with an UNDRIVEN PWM line runs at 100%, not off. Leaving D3
@@ -133,8 +133,7 @@ float RH_MIST_OFF_PCT = 92.0;
 // DEFAULTS, and may be overridden while running from the collector's settings
 // panel -- see applySettings(). Every override is range-checked here on the
 // board, so a bad value from the network cannot command anything unsafe.
-// The guards (duty ceiling, dry-run check) are deliberately
-// NOT settable: they are the protection against a bad setting.
+// Misting itself is switched only from the page (mist_enabled, build 18).
 // ---------------------------------------------------------------------------
 
 // FAE schedule -- roughly 4-8 air changes/hour. This is a GUESS until the
@@ -212,31 +211,28 @@ const float MIST_ML_PER_MIN = 8.0;
 // runs dry, and a cut-out atomizer makes no RH rise, which the dry-run check
 // below catches.
 
-// Rate limit, so a slow leak of duty cannot drain the reservoir unnoticed
-// even while every individual burst looks reasonable.
-const float MIST_DUTY_CEILING_PCT = 15.0;
-const unsigned long MIST_DUTY_WINDOW_MS = 60UL * 60UL * 1000UL;
+// ---- Misting runs unless the page turns it off (build 18) ----
+//
+// Builds 9-17 also stopped misting on their own: a duty ceiling, a wet-sensor
+// block, and a dry-run check that latched off until a power cycle. On
+// 2026-11-05 that check read fog that never reached the sensor (rest fan cut
+// to 10%, fog left in the reservoir bin) as an empty atomizer, and misting
+// stayed off for five days, out of reach of the settings page. So nothing
+// here switches misting off by itself any more. The 24V atomizer's own float
+// is what protects it from running dry.
+bool MIST_ENABLED = true;
 
-// Dry-run detector: an atomizer firing into an empty reservoir makes no fog,
-// so it produces no RH rise. Bursts shorter than this are not judged, since
-// a burst cut short by another guard proves nothing either way.
-// Judged on the PEAK RH across burst + settle, not the settled value; see
-// CLIMATE_MIST_SETTLE for why.
+// Opt-in dry-run check (dry_run_check). An atomizer that makes no fog makes
+// no RH rise, so MIST_NO_RESPONSE_LIMIT bursts in a row with a peak rise
+// under MIST_RESPONSE_MIN_RH pause misting for MIST_PAUSE_MS, then it tries
+// again. It never latches, and saving any settings clears a pause. Judged on
+// the PEAK RH across burst + settle; see CLIMATE_MIST_SETTLE for why. Bursts
+// shorter than MIST_RESPONSE_MIN_BURST_MS prove nothing and are not judged.
+bool DRY_RUN_CHECK = false;
 const float MIST_RESPONSE_MIN_RH = 0.5;
 const int MIST_NO_RESPONSE_LIMIT = 3;
-
-// What a dry-run trip does. RH is an indirect signal and has false-tripped
-// on a working channel (lid opened, plume missing the sensor), so a trip
-// pauses misting for a cooldown and then tries again rather than latching
-// straight away. An unattended false trip then costs half an hour of RH,
-// not the rest of the night. A trip that keeps recurring is believed:
-// after MIST_FAULT_COOLDOWNS cooldowns in a row with no good burst between,
-// the next trip latches until power cycle.
-//
-// Worst case for a genuinely empty reservoir: 4 trips x 3 bursts = 12 dry
-// 30s bursts spread over ~2h before the latch.
-const unsigned long MIST_FAULT_COOLDOWN_MS = 30UL * 60UL * 1000UL;
-const int MIST_FAULT_COOLDOWNS = 3;
+const unsigned long MIST_RESPONSE_MIN_BURST_MS = 5000;
+const unsigned long MIST_PAUSE_MS = 30UL * 60UL * 1000UL;
 
 // Hardware watchdog: resets the board if loop() stops running. 5s is under
 // the RA4M1's ~5.59s ceiling, and above every bounded stall in the loop --
@@ -251,13 +247,6 @@ const bool WATCHDOG_ENABLED = false;
 // the watchdog on every reconnect attempt while the AP is down. The status
 // keeps being checked each loop, so a slower connect is still picked up.
 const unsigned long WIFI_CONNECT_TIMEOUT_MS = 3000;
-const unsigned long MIST_RESPONSE_MIN_BURST_MS = 5000;
-
-// A sensor with condensation on it reads pinned near 100% regardless of the
-// actual air. That would mask a genuinely dry chamber, so treat a long pin
-// as "do not trust", not as "humid enough".
-const float WET_SENSOR_RH_PCT = 99.0;
-const unsigned long WET_SENSOR_MS = 10UL * 60UL * 1000UL;
 
 // BENCH OVERRIDE: pin the atomizer on and bypass the burst/settle cycle
 // entirely. Set false for normal operation.
@@ -285,14 +274,13 @@ enum ClimateState {
 // in the CSV as a plottable column rather than a string.
 enum MistBlock {
   MIST_BLOCK_NONE = 0,
-  // 1 was the volume budget (builds 11-15); left unused so old rows still read right
-  MIST_BLOCK_DUTY = 2,         // transient -- clears next window
-  MIST_BLOCK_NO_RESPONSE = 3,  // latched -- misting produces no RH rise
-  MIST_BLOCK_WET_SENSOR = 4,   // transient -- clears when RH falls
-  MIST_BLOCK_NO_SENSOR = 5,    // transient -- no valid reading to act on
+  // Retired, left unused so old rows still read right: 1 volume budget
+  // (builds 11-15); 2 duty ceiling, 3 dry-run latch, 4 wet sensor (to 17).
+  MIST_BLOCK_NO_SENSOR = 5,    // no reading for the RH band to act on; clears on its own
   MIST_BLOCK_MODE = 6,         // colonization mode
   MIST_BLOCK_FORCE_CAP = 7,    // bench force-on runtime cap reached
-  MIST_BLOCK_COOLDOWN = 8,     // transient -- dry-run trip, retrying later
+  MIST_BLOCK_COOLDOWN = 8,     // opt-in dry-run check paused misting; retries later
+  MIST_BLOCK_OFF = 9,          // turned off on the page (mist_enabled=0)
 };
 
 ClimateState climateState = CLIMATE_IDLE;
@@ -305,24 +293,15 @@ unsigned long lastBurstMs = 0;
 float rhAtBurstStart = 0;
 float rhPeakSinceBurst = 0;
 int mistNoResponseCount = 0;
-int mistFaultTrips = 0;
 bool mistCoolingDown = false;
 unsigned long mistCooldownStartedAt = 0;
 
 unsigned long mistOnMsTotal = 0;
-unsigned long mistOnMsWindow = 0;
-unsigned long mistWindowStartedAt = 0;
 unsigned long mistBursts = 0;
 
 unsigned long mistForceTickAt = 0;
 unsigned long mistForceElapsed = 0;
 
-bool rhHighTracking = false;
-unsigned long rhHighSinceMs = 0;
-
-// Latched faults survive until a power cycle, on purpose: they mean something
-// is physically wrong, and silently resuming would hide it.
-MistBlock mistLatchedFault = MIST_BLOCK_NONE;
 MistBlock mistBlock = MIST_BLOCK_NONE;
 
 // SHT41 heater pulse (BUILD.md "SHT41 -- heater pulse + creep mitigation").
@@ -539,6 +518,7 @@ void applySettings(char *line) {
   int lOn = LIGHT_ON_HOUR, lOff = LIGHT_OFF_HOUR;
   float lDuty = LIGHT_ON_DUTY_PCT;
   bool lEn = LIGHT_ENABLED;
+  bool mistEn = MIST_ENABLED, dryCheck = DRY_RUN_CHECK;
   bool ok = true;
 
   // Range check helpers: reject (not clamp) -- a silently clamped value
@@ -570,6 +550,8 @@ void applySettings(char *line) {
     else if (!strcmp(k, "light_off_h"))   { lOff = (int)v;   ok &= IN(v, 0, 23); }
     else if (!strcmp(k, "light_duty"))    { lDuty = v;       ok &= IN(v, 0, 100); }
     else if (!strcmp(k, "light_enabled")) { lEn = v != 0; }
+    else if (!strcmp(k, "mist_enabled"))  { mistEn = v != 0; }
+    else if (!strcmp(k, "dry_run_check")) { dryCheck = v != 0; }
     else ok = false;  // unknown key: newer collector than firmware
     if (!ok) break;
   }
@@ -594,6 +576,10 @@ void applySettings(char *line) {
   SHT_HEATER_INTERVAL_MS = htrInt; SHT_HEATER_RECOVER_MS = htrHold;
   LIGHT_ON_HOUR = lOn;             LIGHT_OFF_HOUR = lOff;
   LIGHT_ON_DUTY_PCT = lDuty;       LIGHT_ENABLED = lEn;
+  MIST_ENABLED = mistEn;           DRY_RUN_CHECK = dryCheck;
+  // Saving settings is the remote reset: it clears a dry-run pause and its count.
+  mistCoolingDown = false;
+  mistNoResponseCount = 0;
   cfgVersion = ver;
   cfgReportDue = true;
   Serial.print("# settings: applied version ");
@@ -614,12 +600,13 @@ int formatSettings(char *out, size_t n) {
       "fae_period_s=%lui,vent_s=%lui,vent_duty=%s,vent_settle_s=%lui,"
       "rest_fan=%s,rest_fan_mist=%di,mist_burst_s=%lui,mist_settle_s=%lui,"
       "heater_interval_s=%lui,heater_hold_s=%lui,light_on_h=%di,"
-      "light_off_h=%di,light_duty=%s,light_enabled=%di",
+      "light_off_h=%di,light_duty=%s,light_enabled=%di,mist_enabled=%di,dry_run_check=%di",
       cfgVersion, cfgRejectedVersion, FW_BUILD, a, b, FAE_PERIOD_MS / 1000UL, FAE_BURST_MS / 1000UL,
       c, VENT_SETTLE_MS / 1000UL, d, FAN_REST_DURING_MIST ? 1 : 0,
       MIST_BURST_MAX_MS / 1000UL, MIST_SETTLE_MS / 1000UL,
       SHT_HEATER_INTERVAL_MS / 1000UL, SHT_HEATER_RECOVER_MS / 1000UL,
-      LIGHT_ON_HOUR, LIGHT_OFF_HOUR, e, LIGHT_ENABLED ? 1 : 0);
+      LIGHT_ON_HOUR, LIGHT_OFF_HOUR, e, LIGHT_ENABLED ? 1 : 0,
+      MIST_ENABLED ? 1 : 0, DRY_RUN_CHECK ? 1 : 0);
 }
 
 // True when the collector replied (its reply always carries the time).
@@ -855,50 +842,23 @@ float mistMlTotal() {
   return (mistOnMsTotal / 60000.0) * MIST_ML_PER_MIN;
 }
 
-// Bucketed rather than a true sliding window: it needs no ring buffer, and
-// the difference does not matter for a ceiling this loose.
-void rollMistWindow(unsigned long now) {
-  if (now - mistWindowStartedAt >= MIST_DUTY_WINDOW_MS) {
-    mistWindowStartedAt = now;
-    mistOnMsWindow = 0;
-  }
-}
-
-void updateWetSensorTracking(unsigned long now) {
-  if (!haveReading || lastRh < WET_SENSOR_RH_PCT) {
-    rhHighTracking = false;
-    return;
-  }
-  if (!rhHighTracking) {
-    rhHighTracking = true;
-    rhHighSinceMs = now;
-  }
-}
-
-bool sensorLooksWet(unsigned long now) {
-  return rhHighTracking && (now - rhHighSinceMs) >= WET_SENSOR_MS;
-}
-
+// Nothing here latches: every block clears on its own or from the page.
 MistBlock evaluateMistBlock(unsigned long now) {
   if (MODE != MODE_FRUITING) return MIST_BLOCK_MODE;
-  if (mistLatchedFault != MIST_BLOCK_NONE) return mistLatchedFault;
+  if (!MIST_ENABLED) return MIST_BLOCK_OFF;
 
   if (mistCoolingDown) {
-    if (now - mistCooldownStartedAt < MIST_FAULT_COOLDOWN_MS) {
+    // Turning the check off on the page ends a pause too.
+    if (DRY_RUN_CHECK && now - mistCooldownStartedAt < MIST_PAUSE_MS) {
       return MIST_BLOCK_COOLDOWN;
     }
     mistCoolingDown = false;
-    Serial.println("# mist: cooldown over, retrying");
+    Serial.println("# mist: dry-run pause over, retrying");
   }
 
-  // Never mist on a stale or absent reading -- that is open-loop misting.
+  // Not a guard: the RH band has nothing to act on without a reading, and
+  // misting blind is open-loop. Clears the moment the sensor reads again.
   if (!sensorOk || !haveReading) return MIST_BLOCK_NO_SENSOR;
-
-  if (sensorLooksWet(now)) return MIST_BLOCK_WET_SENSOR;
-
-  unsigned long allowance =
-      (unsigned long)(MIST_DUTY_WINDOW_MS * (MIST_DUTY_CEILING_PCT / 100.0));
-  if (mistOnMsWindow >= allowance) return MIST_BLOCK_DUTY;
 
   return MIST_BLOCK_NONE;
 }
@@ -915,18 +875,14 @@ void enterClimateState(ClimateState next, unsigned long now) {
   }
 }
 
-// Close out a burst, accounting its on-time against both the lifetime total
-// (the mist_ml estimate) and the current window (duty ceiling).
+// Close out a burst, accounting its on-time in the lifetime total (mist_ml).
 void endMistBurst(unsigned long now) {
   lastBurstMs = now - mistBurstStartedAt;
   mistOnMsTotal += lastBurstMs;
-  mistOnMsWindow += lastBurstMs;
   setAtomizer(false);
 }
 
 void updateClimate(unsigned long now) {
-  rollMistWindow(now);
-  updateWetSensorTracking(now);
   mistBlock = evaluateMistBlock(now);
 
   bool fanOverridden = (FAN_FORCE_DUTY_PCT >= 0.0);
@@ -999,7 +955,7 @@ void updateClimate(unsigned long now) {
       break;
 
     case CLIMATE_MIST:
-      // A guard tripping mid-burst stops it immediately.
+      // Turned off on the page (or the sensor lost) mid-burst: stop now.
       if (mistBlock != MIST_BLOCK_NONE) {
         endMistBurst(now);
         enterClimateState(CLIMATE_MIST_SETTLE, now);
@@ -1024,7 +980,7 @@ void updateClimate(unsigned long now) {
       if (now - climateStateAt < MIST_SETTLE_MS) break;
 
       // Now, with the fog given time to evaporate, the reading means
-      // something -- so this is where the dry-run check belongs.
+      // something -- so this is where the (opt-in) dry-run check belongs.
       //
       // Judge on the peak, not the settled value. How far RH has fallen
       // back by the end of the settle is a property of the chamber's leak
@@ -1034,7 +990,8 @@ void updateClimate(unsigned long now) {
       // times running. A dry atomizer makes no fog, so it produces no peak
       // at all -- that is the thing to detect. The peak also catches the
       // 08-24 bench shape, where RH dipped during the burst and rose after.
-      bool judgeable = lastBurstMs >= MIST_RESPONSE_MIN_BURST_MS && haveReading;
+      bool judgeable = DRY_RUN_CHECK &&
+                       lastBurstMs >= MIST_RESPONSE_MIN_BURST_MS && haveReading;
       if (judgeable) {
         if (rhPeakSinceBurst - rhAtBurstStart < MIST_RESPONSE_MIN_RH) {
           mistNoResponseCount++;
@@ -1045,22 +1002,12 @@ void updateClimate(unsigned long now) {
           Serial.println(")");
           if (mistNoResponseCount >= MIST_NO_RESPONSE_LIMIT) {
             mistNoResponseCount = 0;
-            mistFaultTrips++;
-            if (mistFaultTrips > MIST_FAULT_COOLDOWNS) {
-              mistLatchedFault = MIST_BLOCK_NO_RESPONSE;
-              Serial.println("# mist: FAULT dry run, persists after retries -- latched off");
-            } else {
-              mistCoolingDown = true;
-              mistCooldownStartedAt = now;
-              Serial.print("# mist: dry run suspected -- cooling down, trip ");
-              Serial.print(mistFaultTrips);
-              Serial.print("/");
-              Serial.println(MIST_FAULT_COOLDOWNS + 1);
-            }
+            mistCoolingDown = true;
+            mistCooldownStartedAt = now;
+            Serial.println("# mist: dry run suspected -- pausing");
           }
         } else {
           mistNoResponseCount = 0;
-          mistFaultTrips = 0;  // a good burst clears the trip history
         }
       }
 
@@ -1214,7 +1161,6 @@ void setup() {
   climateStateAt = bootAt;
   lastVentAt = bootAt;
   lastHeaterAt = bootAt;
-  mistWindowStartedAt = bootAt;
   mistForceTickAt = bootAt;
 
   if (MIST_FORCE_ON) {

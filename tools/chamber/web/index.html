@@ -83,8 +83,9 @@ th { color: var(--muted); font-weight: 500 }
 <script>
 (function () {
   var STATE = { 0: "idle", 1: "venting", 2: "vent settle", 3: "misting", 4: "mist settle" };
+  // 1–4 are retired (build 18 never sets them), kept so older readings still read right
   var BLOCK = { 0: "—", 1: "budget spent", 2: "duty ceiling", 3: "dry run?", 4: "sensor wet",
-                5: "no sensor", 6: "colonization", 7: "force cap", 8: "cooling down" };
+                5: "no sensor", 6: "colonization", 7: "force cap", 8: "dry-run pause", 9: "turned off" };
   var FIELDS = ["rh_pct", "temp_c", "dewpoint_c", "fan_duty_pct", "fan_rpm", "light_duty_pct", "mist_state",
                 "mist_block", "atomizer_on", "mist_ml", "mist_on_s", "mist_bursts", "uptime_s"];
   var MAX_MIN = 3 * 24 * 60;    // the API serves at most three days

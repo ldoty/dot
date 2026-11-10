@@ -5,6 +5,9 @@
 
 export const SPEC = [
   // key, group, label, unit, min, max, step, kind
+  // Build 18: misting is switched only from here; the board never turns it off by itself
+  ['mist_enabled', 'Humidity', 'Misting on', '', 0, 1, 1, 'bool'],
+  ['dry_run_check', 'Humidity', 'Pause 30 min after 3 bursts with no RH rise', '', 0, 1, 1, 'bool'],
   ['rh_on', 'Humidity', 'Start misting below', '% RH', 50, 94, 0.5, 'num'],
   ['rh_off', 'Humidity', 'Stop a burst at', '% RH', 51, 95, 0.5, 'num'],
   ['mist_burst_s', 'Humidity', 'Mist burst (max)', 's', 5, 60, 1, 'num'],

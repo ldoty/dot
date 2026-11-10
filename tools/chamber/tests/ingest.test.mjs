@@ -81,13 +81,33 @@ test('the firmware sends what this endpoint expects', async () => {
   assert.match(ino, /WiFiSSLClient client;/, 'API Gateway only speaks HTTPS');
 });
 
-test('the firmware never stops misting on its water estimate', async () => {
-  // Builds 11-15 latched misting off once the mL estimate reached the reservoir's size; the
-  // estimate ran so high it stopped a chamber with plenty of water. The atomizer's float covers dry.
+test('the firmware never stops misting by itself: only the page turns it off', async () => {
+  // Builds 11-15 latched misting off on a water estimate that ran far too high; build 17's dry-run
+  // check latched it off for five days on fog that never reached the sensor, out of the page's reach.
+  // The atomizer's own float covers running dry.
   const ino = await readFile(new URL('../firmware/chamber_telemetry/chamber_telemetry.ino', import.meta.url), 'utf8');
   assert.doesNotMatch(ino, /RESERVOIR_ML|MIST_BLOCK_BUDGET/);
   assert.doesNotMatch(ino, /refill=|refill_id/, 'no refill handshake left to wait on');
-  assert.match(ino, /MIST_BLOCK_NO_RESPONSE/, 'the dry-run check stays');
+  assert.doesNotMatch(ino, /mistLatchedFault|MIST_BLOCK_NO_RESPONSE/, 'no latch until power cycle');
+  assert.doesNotMatch(ino, /MIST_DUTY_CEILING|MIST_BLOCK_DUTY|WET_SENSOR|MIST_BLOCK_WET/, 'no duty ceiling or wet-sensor block');
+  assert.match(ino, /^bool MIST_ENABLED = true;/m, 'mists by default');
+  assert.match(ino, /^bool DRY_RUN_CHECK = false;/m, 'the dry-run check is opt-in');
+  const block = ino.slice(ino.indexOf('MistBlock evaluateMistBlock('), ino.indexOf('void enterClimateState('));
+  assert.match(block, /DRY_RUN_CHECK && now - mistCooldownStartedAt/, 'a pause ends when the check is turned off');
+  const apply = ino.slice(ino.indexOf('void applySettings('), ino.indexOf('int formatSettings('));
+  assert.match(apply, /mistCoolingDown = false;/, 'saving settings clears a pause');
+});
+
+test('the board parses and reports every setting the page can save', async () => {
+  // An unknown key makes the board refuse the whole version; a key it doesn't report shows as unknown
+  const ino = await readFile(new URL('../firmware/chamber_telemetry/chamber_telemetry.ino', import.meta.url), 'utf8');
+  const apply = ino.slice(ino.indexOf('void applySettings('), ino.indexOf('int formatSettings('));
+  const report = ino.slice(ino.indexOf('int formatSettings('), ino.indexOf('bool readTimeSync('));
+  const { spec } = (await call('GET', '/settings')).body;
+  for (const s of spec) {
+    assert.ok(apply.includes(`!strcmp(k, "${s.key}")`), `board parses ${s.key}`);
+    assert.match(report, new RegExp(`[",]${s.key}=`), `board reports ${s.key}`);
+  }
 });
 
 test('the board range-checks every setting with the same bounds the API does', async () => {

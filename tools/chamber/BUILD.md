@@ -390,7 +390,8 @@ thinner wire on the 12V side (factory leads, pigtails, jumpers) breaks this
 and needs F3.
 
 No fuse catches a **stuck-on atomizer running dry**: it draws its normal 1A.
-That case relies on the atomizer's own float cutoff and the firmware RH-response check.
+That case relies on the atomizer's own float cutoff (and, if turned on, the
+firmware's opt-in RH-response check).
 
 - Set the 24V→12V buck to 12.0V **before** connecting the 12V rail (same rule
   as the 5V buck)
@@ -405,6 +406,16 @@ That case relies on the atomizer's own float cutoff and the firmware RH-response
   of water, so **build 16 dropped the volume budget** (2026-11-05): the
   atomizer's own float covers running dry, and the dry-run check flags it.
   `mist_ml` is still reported, as an estimate only
+- **Build 18 (2026-11-10): the firmware never turns misting off by itself.**
+  Build 17's dry-run check latched misting off on 2026-11-05 and it stayed off
+  five days: 12 bursts showed under +0.5% RH right after the rest fan went from
+  20% to 10% (fog likely stuck in the reservoir bin, which every vent since
+  has emptied into the chamber at +4-5% RH). The latch needed a power cycle,
+  out of reach of the page. Removed: the latch, the 15%/h duty ceiling, the
+  wet-sensor block. Misting is switched on the page (`mist_enabled`, default
+  on); the dry-run check is opt-in (`dry_run_check`, default off), only ever
+  pauses 30 min, and saving any settings clears a pause. Misting still waits
+  for a sensor reading, since the RH band has nothing to act on without one
 - **`MIST_ML_PER_MIN` (1.5) was a placeholder for the old atomizer.** A 24W
   unit almost certainly outputs far more, so the volume budget undercounts
   until `atomizer_output` is rerun on the new unit
