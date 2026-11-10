@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Packing</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="family.css">
+<style>
+/* One narrow column: header, progress, tabs, then a card per category. */
+.wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 80px }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px }
+.top a { color: var(--muted); text-decoration: none; font-size: 14px }
+.title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap }
+h1 { font-size: clamp(32px, 6vw, 48px) }
+.save { font-size: 13px; color: var(--muted) }
+.save.error { color: var(--ember); font-weight: 600 }
+.progress { height: 6px; background: var(--line); border-radius: 3px; margin: 14px 0 4px; overflow: hidden }
+.progress > div { height: 100%; background: var(--leaf); transition: width .2s }
+.progress-label, .help { font-size: 13px; color: var(--muted) }
+.help { margin-top: 6px }
+.help kbd { font: 500 12px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; background: var(--surface) }
+.status { color: var(--muted); font-size: 14px; min-height: 1.4em }
+
+nav { display: flex; gap: 4px; margin: 16px 0; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; overflow-x: auto }
+nav button { border: 0; background: none; color: var(--muted); font-weight: 600; padding: 10px 12px; white-space: nowrap;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer }
+nav button.active { color: var(--ink); border-bottom-color: var(--leaf) }
+nav .count { font-size: 12px; background: var(--raised); color: var(--ink); border-radius: var(--r-pill); padding: 1px 7px; margin-left: 4px }
+
+.cat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 14px }
+.cat.cat-before { box-shadow: 0 -3px 0 var(--leaf) }
+.cat.cat-after { box-shadow: 0 3px 0 var(--leaf) }
+.cat-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px }
+.cat-head h2 { font-size: 17px; font-weight: 600; flex: 1; min-width: 0; outline: none; border-radius: 4px }
+.cat-head h2:focus { background: var(--raised) }
+.tally { font-size: 13px; color: var(--muted) }
+
+ul { list-style: none; margin: 0; padding: 0 4px; min-height: 8px }
+ul.drop-end { box-shadow: inset 0 -2px 0 var(--leaf) }
+li { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: var(--r-sm) }
+li:hover { background: var(--bg) }
+li.empty { color: var(--muted); font-size: 14px; font-style: italic }
+li.drop-before { box-shadow: inset 0 2px 0 var(--leaf) }
+li.drop-after { box-shadow: inset 0 -2px 0 var(--leaf) }
+li.dragging { opacity: .4 }
+li.s-x .text { text-decoration: line-through; color: var(--muted) }
+
+.handle { cursor: grab; color: var(--muted); opacity: .45; user-select: none; padding: 0 2px; font-size: 14px }
+li:hover .handle, .cat-head:hover .handle { opacity: 1 }
+.mark { width: 28px; height: 26px; flex: none; text-align: center; font: 500 14px var(--mono); padding: 0;
+  border: 1.5px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); text-transform: lowercase }
+li.s-b .mark { border-color: var(--wood); background: color-mix(in srgb, var(--sun) 22%, var(--surface)); color: var(--wood) }
+li.s-c .mark { border-color: var(--pool); background: color-mix(in srgb, var(--pool) 12%, var(--surface)); color: var(--pool) }
+li.s-x .mark { border-color: var(--muted); background: var(--muted); color: var(--surface) }
+.text { flex: 1; min-width: 0; outline: none; border-radius: 4px; padding: 1px 3px; overflow-wrap: anywhere }
+.text:focus { background: var(--raised) }
+.del { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 18px; line-height: 1; padding: 2px 4px; opacity: 0 }
+li:hover .del, .cat-head:hover .del, .del:focus { opacity: .7 }
+.del:hover { opacity: 1; color: var(--ember) }
+
+.add { display: block; width: calc(100% - 24px); margin: 4px 12px 12px; padding: 6px 8px; font-size: 15px;
+  border: 1px dashed var(--line); border-radius: var(--r-sm); background: transparent; color: var(--ink) }
+.add:focus { outline: none; border-style: solid; border-color: var(--pool) }
+.add.add-cat { width: 100%; margin: 4px 0 0; padding: 10px 12px }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 14px }
+.filters-label { font-size: 14px; color: var(--muted) }
+.chip { font-size: 14px; padding: 4px 12px; border-radius: var(--r-pill); cursor: pointer;
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--muted) }
+.chip.s-b.on { border-color: var(--wood); background: color-mix(in srgb, var(--sun) 22%, var(--surface)); color: var(--wood); font-weight: 600 }
+.chip.s-c.on { border-color: var(--pool); background: color-mix(in srgb, var(--pool) 12%, var(--surface)); color: var(--pool); font-weight: 600 }
+.hidden-note { font-size: 13px; color: var(--muted); padding: 0 16px 2px }
+.none { text-align: center; color: var(--muted); padding: 40px 0 }
+@media (hover: none) { .del, .handle { opacity: .7 } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a href="https://dot-y.co/">← dot-y.co</a><button class="btn ghost" id="signout" hidden>Sign out</button></div>
+  <div class="title"><h1>Packing</h1><span class="save" id="save"></span></div>
+  <div id="list" hidden>
+    <div class="progress"><div id="bar"></div></div>
+    <div class="progress-label" id="progress"></div>
+    <p class="help">In the box next to an item, type <kbd>b</kbd> to put it on the shopping list, <kbd>c</kbd> for the check list,
+      <kbd>x</kbd> to mark it packed, or delete the letter to clear it. Tap any text to edit it, and drag <span aria-hidden="true">⠿</span> to move things around.</p>
+    <nav id="tabs"></nav>
+  </div>
+  <main id="main"><p class="status">Loading…</p></main>
+</div>
+<script src="family-auth.js"></script>
+<script>
+(function () {
+  var TABS = {
+    pack:  { label: "Packing list",  filter: function (i) { return (i.status !== "b" || show.b) && (i.status !== "c" || show.c); },
+             newStatus: "", none: "No items yet. Add a category below." },
+    shop:  { label: "Shopping list", filter: function (i) { return i.status === "b"; }, newStatus: "b",
+             none: "Nothing to buy. Type b next to an item on the packing list to add it here." },
+    check: { label: "Check list",    filter: function (i) { return i.status === "c"; }, newStatus: "c",
+             none: "Nothing to check. Type c next to an item on the packing list to add it here." },
+  };
+  var RANK = { "": 0, b: 0, c: 0, x: 1 };   // packed items sink to the bottom of their category
+
+  var cfg, state = { categories: [], items: [] }, rev = 0;
+  // The tab and the packing list's filters are this device's own choice, so they stay in localStorage.
+  function stored(key, fallback) { try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; } }
+  function store(key, v) { try { localStorage.setItem(key, v); } catch (e) {} }
+  var tab = stored("packing-tab", "pack");
+  if (!TABS[tab]) tab = "pack";
+  // The packing list hides b and c items by default (they live on the other tabs); these toggles bring them back.
+  var show = { b: false, c: false };
+  try { var s = JSON.parse(stored("packing-show", "{}")); show.b = !!s.b; show.c = !!s.c; } catch (e) {}
+
+  var dirty = false, saving = false, saveTimer = null, refocus = null, drag = null, dropAt = null;
+  var markFocus = null;   // after a status change: { id, nextId, prevId } so the cursor lands on a sensible box
+  function uid() { return Math.random().toString(36).slice(2, 10); }
+  function $(id) { return document.getElementById(id); }
+  function all(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+
+  function el(tag, attrs) {
+    var n = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (k === "class") n.className = v;
+      else if (k.indexOf("on") === 0) n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v);
+    });
+    for (var i = 2; i < arguments.length; i++) n.append(arguments[i]);
+    return n;
+  }
+
+  /* ---------- saving: the whole list with its rev, a moment after the last change ---------- */
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method,
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    });
+  }
+
+  function setSave(kind, msg) {
+    var s = $("save");
+    s.className = "save" + (kind === "error" ? " error" : "");
+    s.textContent = msg || { saved: "Saved", pending: "Saving…", error: "Not saved. Check your connection." }[kind];
+  }
+
+  function adopt(list) {
+    state = { categories: list.categories, items: list.items };
+    rev = list.rev;
+  }
+
+  function commit() {
+    dirty = true;
+    render();
+    setSave("pending");
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 250);
+  }
+
+  function save() {
+    if (saving) return;   // the save in flight runs again when it lands
+    saving = true;
+    var sent = JSON.stringify(state);
+    api("PUT", "/list", { categories: state.categories, items: state.items, rev: rev }).then(function (res) {
+      return res.json().then(function (body) {
+        if (res.status === 409) {
+          // Saved from another device since we loaded: show theirs rather than overwrite it.
+          adopt(body.current);
+          dirty = false;
+          render();
+          setSave("error", "Changed on another device, so this is the latest. Redo your last change.");
+          return;
+        }
+        if (!res.ok) throw new Error(res.status);
+        rev = body.rev;
+        if (JSON.stringify(state) === sent) { dirty = false; setSave("saved"); }
+      });
+    }).catch(function () { setSave("error"); }).then(function () {
+      saving = false;
+      if (dirty) { clearTimeout(saveTimer); saveTimer = setTimeout(save, 250); }
+    });
+  }
+
+  // Coming back to the tab: pick up anything saved from another device meanwhile.
+  window.addEventListener("focus", function () {
+    if (dirty || saving || !cfg) return;
+    api("GET", "/list").then(function (res) { return res.ok ? res.json() : null; }).then(function (list) {
+      if (list && list.rev !== rev && !dirty && !saving) { adopt(list); render(); }
+    }).catch(function () {});
+  });
+  window.addEventListener("beforeunload", function (e) { if (dirty) e.preventDefault(); });
+
+  /* ---------- changes ---------- */
+  function indexOfId(arr, id) { for (var k = 0; k < arr.length; k++) if (arr[k].id === id) return k; return -1; }
+
+  function moveItem(id, categoryId, refId, after) {
+    var it = state.items.splice(indexOfId(state.items, id), 1)[0];
+    it.categoryId = categoryId;
+    var at;
+    if (refId) {
+      at = indexOfId(state.items, refId) + (after ? 1 : 0);
+    } else {
+      var last = -1;
+      state.items.forEach(function (i, k) { if (i.categoryId === categoryId) last = k; });
+      at = last >= 0 ? last + 1 : state.items.length;
+    }
+    state.items.splice(at, 0, it);
+    commit();
+  }
+
+  function moveCategory(id, refId, after) {
+    var c = state.categories.splice(indexOfId(state.categories, id), 1)[0];
+    state.categories.splice(indexOfId(state.categories, refId) + (after ? 1 : 0), 0, c);
+    commit();
+  }
+
+  function editable(node, getText, setText) {
+    node.contentEditable = "true";
+    node.spellcheck = false;
+    node.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); node.blur(); }
+      if (e.key === "Escape") { node.textContent = getText(); node.blur(); }
+    });
+    node.addEventListener("blur", function () {
+      var v = node.textContent.replace(/\s+/g, " ").trim();
+      if (v !== getText()) setText(v);
+    });
+  }
+
+  /* ---------- drag and drop ---------- */
+  function clearDrop() {
+    all(".drop-before,.drop-after,.drop-end,.cat-before,.cat-after").forEach(function (n) {
+      n.classList.remove("drop-before", "drop-after", "drop-end", "cat-before", "cat-after");
+    });
+  }
+
+  function onCardDragOver(e, c, card, ul) {
+    if (!drag) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    clearDrop();
+    var r, after;
+    if (drag.kind === "cat") {
+      if (drag.id === c.id) { dropAt = null; return; }
+      r = card.getBoundingClientRect();
+      after = e.clientY > r.top + r.height / 2;
+      card.classList.add(after ? "cat-after" : "cat-before");
+      dropAt = { ref: c.id, after: after };
+      return;
+    }
+    var li = e.target.closest("li[data-id]");
+    if (li && li.dataset.id !== drag.id) {
+      r = li.getBoundingClientRect();
+      after = e.clientY > r.top + r.height / 2;
+      li.classList.add(after ? "drop-after" : "drop-before");
+      dropAt = { cat: c.id, ref: li.dataset.id, after: after };
+    } else if (!li) {
+      ul.classList.add("drop-end");
+      dropAt = { cat: c.id, ref: null };
+    } else {
+      dropAt = null;
+    }
+  }
+
+  function onCardDrop(e) {
+    if (!drag) return;
+    e.preventDefault();
+    var d = drag, at = dropAt;
+    drag = dropAt = null;
+    clearDrop();
+    if (!at) return;
+    if (d.kind === "cat") moveCategory(d.id, at.ref, at.after);
+    else moveItem(d.id, at.cat, at.ref, at.after);
+  }
+
+  function startDrag(e, kind, id, node) {
+    drag = { kind: kind, id: id };
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+    e.dataTransfer.setDragImage(node, 12, 12);
+    setTimeout(function () { node.classList.add("dragging"); }, 0);
+  }
+  function endDrag(node) { drag = dropAt = null; clearDrop(); node.classList.remove("dragging"); }
+
+  /* ---------- drawing ---------- */
+  function itemRow(it) {
+    var li = el("li", { class: "s-" + (it.status || "none") });
+    li.dataset.id = it.id;
+
+    var handle = el("span", { class: "handle", draggable: "true", title: "Drag to move", "aria-hidden": "true" }, "⠿");
+    handle.addEventListener("dragstart", function (e) { startDrag(e, "item", it.id, li); });
+    handle.addEventListener("dragend", function () { endDrag(li); });
+
+    var mark = el("input", { class: "mark", maxlength: "2", autocapitalize: "off", autocomplete: "off",
+                             "aria-label": "Status: b to buy, c to check, x packed", title: "b = shopping list, c = check list, x = packed" });
+    mark.value = it.status;
+    mark.addEventListener("focus", function () { mark.select(); });
+    mark.addEventListener("input", function () {
+      var v = mark.value.trim().toLowerCase().slice(-1);
+      if (v && "bcx".indexOf(v) < 0) { mark.value = it.status; return; }
+      it.status = v;
+      // Look across the whole page, not just this category, so the last item in a list still has a "next".
+      var marks = all("#main .mark"), k = marks.indexOf(mark);
+      function idOf(m) { return m && m.closest("li").dataset.id; }
+      markFocus = { id: it.id, nextId: idOf(marks[k + 1]), prevId: idOf(marks[k - 1]) };
+      commit();
+    });
+
+    var text = el("span", { class: "text" }, it.text);
+    editable(text, function () { return it.text; }, function (v) {
+      if (!v) state.items = state.items.filter(function (i) { return i !== it; });
+      else it.text = v;
+      commit();
+    });
+
+    var del = el("button", { class: "del", title: "Delete item", "aria-label": "Delete " + it.text, onclick: function () {
+      state.items = state.items.filter(function (i) { return i !== it; });
+      commit();
+    } }, "×");
+
+    li.append(handle, mark, text, del);
+    return li;
+  }
+
+  function categoryCard(c, items) {
+    var view = TABS[tab];
+    var card = el("section", { class: "cat" });
+    var ul = el("ul");
+    card.addEventListener("dragover", function (e) { onCardDragOver(e, c, card, ul); });
+    card.addEventListener("drop", onCardDrop);
+
+    var handle = el("span", { class: "handle", draggable: "true", title: "Drag to reorder category", "aria-hidden": "true" }, "⠿");
+    handle.addEventListener("dragstart", function (e) { startDrag(e, "cat", c.id, card); });
+    handle.addEventListener("dragend", function () { endDrag(card); });
+
+    var h2 = el("h2", {}, c.name);
+    editable(h2, function () { return c.name; }, function (v) { if (v) c.name = v; commit(); });
+
+    var mine = state.items.filter(function (i) { return i.categoryId === c.id; });
+    var packed = mine.filter(function (i) { return i.status === "x"; }).length;
+    var tally = el("span", { class: "tally" }, tab === "pack" ? packed + "/" + mine.length : String(items.length));
+
+    var del = el("button", { class: "del", title: "Delete category", "aria-label": "Delete " + c.name, onclick: function () {
+      if (mine.length && !confirm("Delete “" + c.name + "” and its " + mine.length + " item" + (mine.length === 1 ? "" : "s") + "?")) return;
+      state.categories = state.categories.filter(function (x) { return x !== c; });
+      state.items = state.items.filter(function (i) { return i.categoryId !== c.id; });
+      commit();
+    } }, "×");
+
+    card.append(el("div", { class: "cat-head" }, handle, h2, tally, del));
+
+    var hidden = mine.length - items.length;
+    var sorted = items.map(function (it, k) { return [it, k]; })
+      .sort(function (a, b) { return RANK[a[0].status] - RANK[b[0].status] || a[1] - b[1]; })
+      .map(function (p) { return p[0]; });
+    if (sorted.length) sorted.forEach(function (it) { ul.append(itemRow(it)); });
+    else ul.append(el("li", { class: "empty" }, hidden ? "Everything here is on the shopping or check list." : "Empty. Add an item or drag one here."));
+    card.append(ul);
+    if (tab === "pack" && hidden && sorted.length) card.append(el("div", { class: "hidden-note" }, hidden + " more on the shopping or check list"));
+
+    var add = el("input", { class: "add", placeholder: "Add item…", "aria-label": "Add item to " + c.name, maxlength: "500" });
+    add.dataset.cat = c.id;
+    add.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" || !add.value.trim()) return;
+      state.items.push({ id: uid(), text: add.value.trim(), categoryId: c.id, status: view.newStatus });
+      refocus = c.id;
+      commit();
+    });
+    card.append(add);
+    return card;
+  }
+
+  // Every render rebuilds the list, so remember where the first visible items sat on screen
+  // and scroll so they end up in the same place afterwards.
+  function captureScroll() {
+    var out = [], rows = all("#main li[data-id]");
+    for (var k = 0; k < rows.length && out.length < 8; k++) {
+      var top = rows[k].getBoundingClientRect().top;
+      if (top >= 0) out.push({ id: rows[k].dataset.id, top: top });
+    }
+    return out;
+  }
+  function row(id) { return document.querySelector('#main li[data-id="' + id + '"]'); }
+  function restoreScroll(anchors) {
+    for (var k = 0; k < anchors.length; k++) {
+      var n = row(anchors[k].id);
+      if (n) { window.scrollBy(0, n.getBoundingClientRect().top - anchors[k].top); return; }
+    }
+  }
+
+  function render() {
+    var anchors = captureScroll();
+    // After a status change, hold the neighbours of the changed item still (the item itself may move or vanish).
+    if (markFocus) {
+      [markFocus.nextId, markFocus.prevId].forEach(function (id) {   // unshift: prev ends up first
+        var n = id && row(id);
+        if (n) anchors.unshift({ id: id, top: n.getBoundingClientRect().top });
+      });
+    }
+    var view = TABS[tab];
+    var total = state.items.length;
+    var packed = state.items.filter(function (i) { return i.status === "x"; }).length;
+    $("list").hidden = false;
+    $("bar").style.width = total ? (100 * packed / total) + "%" : "0";
+    $("progress").textContent = packed + " of " + total + " packed";
+
+    $("tabs").replaceChildren.apply($("tabs"), Object.keys(TABS).map(function (key) {
+      var t = TABS[key];
+      var n = key === "pack" ? total - packed : state.items.filter(t.filter).length;
+      return el("button", { class: key === tab ? "active" : "", "data-tab": key, onclick: function () {
+        tab = key;
+        store("packing-tab", key);
+        render();
+      } }, t.label, el("span", { class: "count", title: key === "pack" ? "left to pack" : "" }, String(n)));
+    }));
+
+    var main = $("main");
+    var cards = [];
+    state.categories.forEach(function (c) {
+      var items = state.items.filter(function (i) { return i.categoryId === c.id && view.filter(i); });
+      if (tab !== "pack" && !items.length) return;
+      cards.push(categoryCard(c, items));
+    });
+    if (!cards.length) cards.push(el("div", { class: "none" }, view.none));
+
+    if (tab === "pack") {
+      var chip = function (key, label) {
+        var n = state.items.filter(function (i) { return i.status === key; }).length;
+        return el("button", { class: "chip s-" + key + (show[key] ? " on" : ""), "aria-pressed": String(show[key]), onclick: function () {
+          show[key] = !show[key];
+          store("packing-show", JSON.stringify(show));
+          render();
+        } }, (show[key] ? "✓ " : "") + "Show " + label + " (" + n + ")");
+      };
+      cards.unshift(el("div", { class: "filters" }, el("span", { class: "filters-label" }, "Also show:"),
+        chip("b", "b · to buy"), chip("c", "c · to check")));
+      var addCat = el("input", { class: "add add-cat", placeholder: "+ Add category…", "aria-label": "Add category", maxlength: "200" });
+      addCat.addEventListener("keydown", function (e) {
+        if (e.key !== "Enter" || !addCat.value.trim()) return;
+        var c = { id: uid(), name: addCat.value.trim() };
+        state.categories.push(c);
+        refocus = c.id;
+        commit();
+      });
+      cards.push(addCat);
+    }
+    main.replaceChildren.apply(main, cards);
+    restoreScroll(anchors);
+
+    // After typing b / c / x, keep the cursor on that item if it stayed put,
+    // otherwise move it to the item that took its place (handy for going down the list).
+    if (markFocus) {
+      var f = markFocus;
+      markFocus = null;
+      var marks = all(".mark", main);
+      var find = function (i) { return i && main.querySelector('li[data-id="' + i + '"] .mark'); };
+      var same = find(f.id);
+      var stayed = same && (marks[marks.indexOf(same) + 1] || null) === (find(f.nextId) || null);
+      var box = stayed ? same : find(f.nextId) || find(f.prevId);
+      if (box) { box.focus({ preventScroll: true }); box.select(); }
+    }
+
+    if (refocus) {
+      var input = main.querySelector('.add[data-cat="' + refocus + '"]');
+      refocus = null;
+      if (input) input.focus();
+    }
+  }
+
+  function gate(msg) {
+    var main = $("main");
+    main.replaceChildren(el("p", { class: "status" }, msg), el("button", { class: "btn primary", id: "signin", onclick: function () { FamilyAuth.login(); } }, "Sign in"));
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account.");
+    $("signout").hidden = false;
+    $("signout").onclick = function () { FamilyAuth.logout(); };
+    return api("GET", "/list").then(function (res) {
+      if (res.status === 403) return gate("Your account doesn’t have access to Packing yet.");
+      if (!res.ok) throw new Error("Couldn’t load (" + res.status + "). Reload to try again.");
+      return res.json().then(function (list) { adopt(list); setSave("saved"); render(); });
+    });
+  }).catch(function (e) { gate(e.message); });
+})();
+</script>
+</body>
+</html>
