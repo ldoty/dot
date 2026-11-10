@@ -102,3 +102,18 @@ test('if another device saved first, the page shows theirs instead of overwritin
   assert.match(p.d.getElementById('save').textContent, /another device/);
   p.close();
 });
+
+test('v puts an item on the verify list, and a chip brings it back to the packing list', async () => {
+  const p = await open();
+  await p.mark('i1', 'v');
+  assert.equal((await call('GET', '/list')).body.items[0].status, 'v');
+  assert.deepEqual(p.texts('#main .text'), ['Stove']);
+  assert.match(p.d.querySelector('[data-tab="verify"]').textContent, /Verify list\s*1/);
+  await p.tab('verify');
+  assert.deepEqual(p.texts('#main .text'), ['Tent']);
+  await p.tab('pack');
+  p.d.querySelector('.chip.s-v').click();
+  await p.tab('pack');
+  assert.deepEqual(p.texts('#main .text'), ['Tent', 'Stove']);
+  p.close();
+});

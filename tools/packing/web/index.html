@@ -52,6 +52,7 @@ li:hover .handle, .cat-head:hover .handle { opacity: 1 }
   border: 1.5px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); text-transform: lowercase }
 li.s-b .mark { border-color: var(--wood); background: color-mix(in srgb, var(--sun) 22%, var(--surface)); color: var(--wood) }
 li.s-c .mark { border-color: var(--pool); background: color-mix(in srgb, var(--pool) 12%, var(--surface)); color: var(--pool) }
+li.s-v .mark { border-color: var(--bloom); background: color-mix(in srgb, var(--bloom) 12%, var(--surface)); color: var(--bloom) }
 li.s-x .mark { border-color: var(--muted); background: var(--muted); color: var(--surface) }
 .text { flex: 1; min-width: 0; outline: none; border-radius: 4px; padding: 1px 3px; overflow-wrap: anywhere }
 .text:focus { background: var(--raised) }
@@ -69,6 +70,7 @@ li:hover .del, .cat-head:hover .del, .del:focus { opacity: .7 }
   border: 1.5px solid var(--line); background: var(--surface); color: var(--muted) }
 .chip.s-b.on { border-color: var(--wood); background: color-mix(in srgb, var(--sun) 22%, var(--surface)); color: var(--wood); font-weight: 600 }
 .chip.s-c.on { border-color: var(--pool); background: color-mix(in srgb, var(--pool) 12%, var(--surface)); color: var(--pool); font-weight: 600 }
+.chip.s-v.on { border-color: var(--bloom); background: color-mix(in srgb, var(--bloom) 12%, var(--surface)); color: var(--bloom); font-weight: 600 }
 .hidden-note { font-size: 13px; color: var(--muted); padding: 0 16px 2px }
 .none { text-align: center; color: var(--muted); padding: 40px 0 }
 @media (hover: none) { .del, .handle { opacity: .7 } }
@@ -82,7 +84,7 @@ li:hover .del, .cat-head:hover .del, .del:focus { opacity: .7 }
     <div class="progress"><div id="bar"></div></div>
     <div class="progress-label" id="progress"></div>
     <p class="help">In the box next to an item, type <kbd>b</kbd> to put it on the shopping list, <kbd>c</kbd> for the check list,
-      <kbd>x</kbd> to mark it packed, or delete the letter to clear it. Tap any text to edit it, and drag <span aria-hidden="true">⠿</span> to move things around.</p>
+      <kbd>v</kbd> for the verify list, <kbd>x</kbd> to mark it packed, or delete the letter to clear it. Tap any text to edit it, and drag <span aria-hidden="true">⠿</span> to move things around.</p>
     <nav id="tabs"></nav>
   </div>
   <main id="main"><p class="status">Loading…</p></main>
@@ -91,14 +93,16 @@ li:hover .del, .cat-head:hover .del, .del:focus { opacity: .7 }
 <script>
 (function () {
   var TABS = {
-    pack:  { label: "Packing list",  filter: function (i) { return (i.status !== "b" || show.b) && (i.status !== "c" || show.c); },
+    pack:  { label: "Packing list",  filter: function (i) { return (i.status !== "b" || show.b) && (i.status !== "c" || show.c) && (i.status !== "v" || show.v); },
              newStatus: "", none: "No items yet. Add a category below." },
     shop:  { label: "Shopping list", filter: function (i) { return i.status === "b"; }, newStatus: "b",
              none: "Nothing to buy. Type b next to an item on the packing list to add it here." },
     check: { label: "Check list",    filter: function (i) { return i.status === "c"; }, newStatus: "c",
              none: "Nothing to check. Type c next to an item on the packing list to add it here." },
+    verify: { label: "Verify list",   filter: function (i) { return i.status === "v"; }, newStatus: "v",
+             none: "Nothing to verify. Type v next to an item on the packing list to add it here." },
   };
-  var RANK = { "": 0, b: 0, c: 0, x: 1 };   // packed items sink to the bottom of their category
+  var RANK = { "": 0, b: 0, c: 0, v: 0, x: 1 };   // packed items sink to the bottom of their category
 
   var cfg, state = { categories: [], items: [] }, rev = 0;
   // The tab and the packing list's filters are this device's own choice, so they stay in localStorage.
@@ -106,9 +110,9 @@ li:hover .del, .cat-head:hover .del, .del:focus { opacity: .7 }
   function store(key, v) { try { localStorage.setItem(key, v); } catch (e) {} }
   var tab = stored("packing-tab", "pack");
   if (!TABS[tab]) tab = "pack";
-  // The packing list hides b and c items by default (they live on the other tabs); these toggles bring them back.
-  var show = { b: false, c: false };
-  try { var s = JSON.parse(stored("packing-show", "{}")); show.b = !!s.b; show.c = !!s.c; } catch (e) {}
+  // The packing list hides b, c and v items by default (they live on the other tabs); these toggles bring them back.
+  var show = { b: false, c: false, v: false };
+  try { var s = JSON.parse(stored("packing-show", "{}")); show.b = !!s.b; show.c = !!s.c; show.v = !!s.v; } catch (e) {}
 
   var dirty = false, saving = false, saveTimer = null, refocus = null, drag = null, dropAt = null;
   var markFocus = null;   // after a status change: { id, nextId, prevId } so the cursor lands on a sensible box
@@ -294,12 +298,12 @@ li:hover .del, .cat-head:hover .del, .del:focus { opacity: .7 }
     handle.addEventListener("dragend", function () { endDrag(li); });
 
     var mark = el("input", { class: "mark", maxlength: "2", autocapitalize: "off", autocomplete: "off",
-                             "aria-label": "Status: b to buy, c to check, x packed", title: "b = shopping list, c = check list, x = packed" });
+                             "aria-label": "Status: b to buy, c to check, v to verify, x packed", title: "b = shopping list, c = check list, v = verify list, x = packed" });
     mark.value = it.status;
     mark.addEventListener("focus", function () { mark.select(); });
     mark.addEventListener("input", function () {
       var v = mark.value.trim().toLowerCase().slice(-1);
-      if (v && "bcx".indexOf(v) < 0) { mark.value = it.status; return; }
+      if (v && "bcvx".indexOf(v) < 0) { mark.value = it.status; return; }
       it.status = v;
       // Look across the whole page, not just this category, so the last item in a list still has a "next".
       var marks = all("#main .mark"), k = marks.indexOf(mark);
@@ -356,9 +360,9 @@ li:hover .del, .cat-head:hover .del, .del:focus { opacity: .7 }
       .sort(function (a, b) { return RANK[a[0].status] - RANK[b[0].status] || a[1] - b[1]; })
       .map(function (p) { return p[0]; });
     if (sorted.length) sorted.forEach(function (it) { ul.append(itemRow(it)); });
-    else ul.append(el("li", { class: "empty" }, hidden ? "Everything here is on the shopping or check list." : "Empty. Add an item or drag one here."));
+    else ul.append(el("li", { class: "empty" }, hidden ? "Everything here is on the shopping, check or verify list." : "Empty. Add an item or drag one here."));
     card.append(ul);
-    if (tab === "pack" && hidden && sorted.length) card.append(el("div", { class: "hidden-note" }, hidden + " more on the shopping or check list"));
+    if (tab === "pack" && hidden && sorted.length) card.append(el("div", { class: "hidden-note" }, hidden + " more on the shopping, check or verify list"));
 
     var add = el("input", { class: "add", placeholder: "Add item…", "aria-label": "Add item to " + c.name, maxlength: "500" });
     add.dataset.cat = c.id;
@@ -435,7 +439,7 @@ li:hover .del, .cat-head:hover .del, .del:focus { opacity: .7 }
         } }, (show[key] ? "✓ " : "") + "Show " + label + " (" + n + ")");
       };
       cards.unshift(el("div", { class: "filters" }, el("span", { class: "filters-label" }, "Also show:"),
-        chip("b", "b · to buy"), chip("c", "c · to check")));
+        chip("b", "b · to buy"), chip("c", "c · to check"), chip("v", "v · to verify")));
       var addCat = el("input", { class: "add add-cat", placeholder: "+ Add category…", "aria-label": "Add category", maxlength: "200" });
       addCat.addEventListener("keydown", function (e) {
         if (e.key !== "Enter" || !addCat.value.trim()) return;

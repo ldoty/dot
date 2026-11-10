@@ -4,7 +4,7 @@
 
 Luke's backpacking gear list, moved here from a local Python server so it works from any device.
 Items sit in categories; the box beside each takes a letter: **b** puts it on the shopping list,
-**c** on the check list, **x** marks it packed. Text edits in place; drag ⠿ to reorder items and categories.
+**c** on the check list, **v** on the verify list, **x** marks it packed. Text edits in place; drag ⠿ to reorder items and categories.
 
 | Folder | What |
 |---|---|

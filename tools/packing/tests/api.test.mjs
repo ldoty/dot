@@ -81,3 +81,9 @@ test('keeps only the fields the page uses, and tidies text', async () => {
   assert.deepEqual(body.items, [{ id: 'i1', text: 'Tent and stakes', categoryId: 'cat1', status: '' }]);
   assert.equal(table.get('TOOL', 'LIST#main').updatedBy, 'luke');
 });
+
+test('every status the page uses is accepted: to pack, buy, check, verify, packed', async () => {
+  const items = ['', 'b', 'c', 'v', 'x'].map((status, k) => ({ id: `s${k}`, text: `Item ${k}`, categoryId: 'cat1', status }));
+  assert.equal((await call('PUT', '/list', { categories: LIST.categories, items, rev: 0 })).status, 200);
+  assert.deepEqual((await call('GET', '/list')).body.items.map((i) => i.status), ['', 'b', 'c', 'v', 'x']);
+});

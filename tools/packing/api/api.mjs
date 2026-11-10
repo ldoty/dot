@@ -2,7 +2,7 @@
 // Routes (all require a lukes_packing access token):
 //   GET /list  -> { categories: [{ id, name }], items: [{ id, text, categoryId, status }], rev }
 //   PUT /list  { categories, items, rev } -> { rev }   (409 { error, current } if someone saved since `rev`)
-// status is '' (to pack), 'b' (to buy), 'c' (to check) or 'x' (packed).
+// status is '' (to pack), 'b' (to buy), 'c' (to check), 'v' (to verify) or 'x' (packed).
 // The token is re-verified here (signature, issuer, client, expiry, group); API Gateway's
 // authorizer is not trusted on its own.
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -12,7 +12,7 @@ import { verifyAccessToken } from './verify-token.mjs';
 const { TABLE, GROUP, ISSUER, CLIENT_ID } = process.env;
 const KEY = { pk: 'TOOL', sk: 'LIST#main' };
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
-const STATUSES = ['', 'b', 'c', 'x'];
+const STATUSES = ['', 'b', 'c', 'v', 'x'];
 // Far above a real list, far below DynamoDB's 400 KB row limit.
 const MAX_CATEGORIES = 100, MAX_ITEMS = 1500;
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
