@@ -6,7 +6,7 @@
 //   PUT    /trips/{id}   { …that, rev } -> { rev }   rev 0 books a new trip; 409 { error, current } if
 //                         someone saved since `rev`, 404 if the trip was deleted meanwhile
 //   DELETE /trips/{id}
-// A packing item's status is '' (to pack), 'b' (to buy), 'c' (to check), 'v' (to verify) or 'x' (packed).
+// A packing item's status is '' (to pack), 'b' (to buy), 'c' (to check), 'v' (to verify), 'p' (on the packed list) or 'x' (packed).
 // The token is re-verified here (signature, issuer, client, expiry, group); API Gateway's
 // authorizer is not trusted on its own.
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -17,7 +17,7 @@ const { TABLE, GROUP, ISSUER, CLIENT_ID } = process.env;
 const PK = 'TOOL';
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const TYPES = ['backpacking'];
-const STATUSES = ['', 'b', 'c', 'v', 'x'];
+const STATUSES = ['', 'b', 'c', 'v', 'p', 'x'];
 // Far above a real trip, far below DynamoDB's 400 KB row limit.
 const MAX_CATEGORIES = 100, MAX_ITEMS = 1500, MAX_TEXT = 20000;
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));

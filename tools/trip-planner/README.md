@@ -6,7 +6,7 @@ Luke's trips. The page opens on a month calendar: each trip is a bar across its 
 day (or **Book a trip**) books one: name, type (backpacking for now), where, dates, and a packing list
 that starts empty or as a copy of another trip's (same categories and items, every mark cleared).
 A trip (`#/trip/<id>`) holds its details, free-text **notes** and **itinerary**, and its **packing list**:
-the box beside each item takes a letter: **v** puts it on the verify list, **b** on the shopping list,
+the box beside each item takes a letter: **v** puts it on the verify list, **p** on the packed list, **b** on the shopping list,
 **c** on the check list, **x** marks it packed. Text edits in place; drag ⠿ to reorder.
 
 It began as the packing list at packing.dot-y.co (`scripts/from-packing.mjs` moved that list in as

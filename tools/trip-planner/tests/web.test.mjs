@@ -110,7 +110,7 @@ test('a trip shows its details, notes, itinerary and packing list; notes save as
   assert.equal(p.$('#notes').value, 'Permit in the glovebox');
   assert.equal(p.$('#itinerary').value, 'Sat: hike in\nSun: hike out');
   assert.deepEqual(p.texts('#pack .text'), ['Tent', 'Stove']);
-  assert.deepEqual([...p.d.querySelectorAll('#tabs button')].map((b) => b.dataset.tab), ['pack', 'verify', 'shop', 'check']);
+  assert.deepEqual([...p.d.querySelectorAll('#tabs button')].map((b) => b.dataset.tab), ['pack', 'verify', 'packed', 'shop', 'check']);
   p.fill('#notes', 'Permit in the glovebox\nCampsite 14');
   p.fill('#itinerary', 'Fri night: drive up');
   await wait(600);
@@ -128,9 +128,18 @@ test('the packing list still works: letters, tabs and adding', async () => {
   assert.deepEqual(p.texts('#pack .text'), ['Stove']);
   await p.click('[data-tab="verify"]');
   assert.deepEqual(p.texts('#pack .text'), ['Tent']);
+  await p.mark('i1', 'p');
+  assert.equal((await call('GET', '/trips/t1')).body.items[0].status, 'p');
+  assert.deepEqual(p.texts('#pack .text'), [], 'it leaves the verify list');
+  await p.click('[data-tab="packed"]');
+  assert.deepEqual(p.texts('#pack .text'), ['Tent']);
   await p.click('[data-tab="pack"]');
+  assert.deepEqual(p.texts('#pack .text'), ['Stove'], 'hidden from the packing list');
+  await p.click('.chip.s-p');
+  assert.deepEqual(p.texts('#pack .text'), ['Tent', 'Stove'], 'until shown');
+  await p.click('.chip.s-p');
   await p.mark('i3', 'q');
-  assert.equal((await call('GET', '/trips/t1')).body.rev, 2, 'other letters are ignored');
+  assert.equal((await call('GET', '/trips/t1')).body.rev, 3, 'other letters are ignored');
   await p.enter(p.$('.add[data-cat="cat1"]'), 'Stakes');
   assert.deepEqual((await call('GET', '/trips/t1')).body.items.map((i) => i.text), ['Tent', 'Fuel', 'Stove', 'Stakes']);
   p.close();

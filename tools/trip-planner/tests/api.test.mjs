@@ -79,10 +79,10 @@ test('refuses malformed trips rather than saving part of one', async () => {
   assert.equal(table.keys().length, 0);
 });
 
-test('every packing status is accepted: to pack, verify, buy, check, packed', async () => {
-  const items = ['', 'v', 'b', 'c', 'x'].map((status, k) => ({ id: `s${k}`, text: `Item ${k}`, categoryId: 'cat1', status }));
+test('every packing status is accepted: to pack, verify, packed list, buy, check, packed', async () => {
+  const items = ['', 'v', 'p', 'b', 'c', 'x'].map((status, k) => ({ id: `s${k}`, text: `Item ${k}`, categoryId: 'cat1', status }));
   assert.equal((await book('t1', { items })).status, 200);
-  assert.deepEqual((await call('GET', '/trips/t1')).body.items.map((i) => i.status), ['', 'v', 'b', 'c', 'x']);
+  assert.deepEqual((await call('GET', '/trips/t1')).body.items.map((i) => i.status), ['', 'v', 'p', 'b', 'c', 'x']);
 });
 
 test('keeps only the fields the page uses, and tidies text', async () => {
