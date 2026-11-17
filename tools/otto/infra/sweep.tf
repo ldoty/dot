@@ -68,6 +68,9 @@ resource "aws_cloudwatch_event_rule" "sweep" {
   name                = "family-otto-sweep"
   description         = "Queue Otto's schedules that are due"
   schedule_expression = "rate(1 minute)"
+  # Otto is turned off (2026-11-17): the agent and CT 103 are stopped, so nothing queues schedules either.
+  # To turn it back on: ENABLED here, then start CT 103 (and onboot 1) and `systemctl enable --now otto`.
+  state = "DISABLED"
 }
 
 resource "aws_cloudwatch_event_target" "sweep" {
