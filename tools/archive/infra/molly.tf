@@ -87,7 +87,7 @@ resource "aws_lambda_function" "molly" {
   filename         = data.archive_file.molly.output_path
   source_code_hash = data.archive_file.molly.output_base64sha256
   timeout          = 900 # a sort: up to 200 documents read, then filed in turns of 40
-  memory_size      = 1024
+  memory_size      = 1536 # a 48 MP phone photo is ~200 MB decoded, shrunk for the reader
 
   environment {
     variables = {
