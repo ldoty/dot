@@ -24,6 +24,7 @@
 // thread (counted toward the daily limit on what Dot-y sends unasked, platform/api/send-limit.mjs).
 import { createHash } from 'node:crypto';
 import { simpleParser } from 'mailparser';
+import { Jimp } from 'jimp';
 import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
@@ -44,6 +45,8 @@ const READ_CHARS = 8_000; // of a document's text, for the reader: the first pag
 const MAX_SCAN_PAGES = 10; // a scan (no text) is read as images: past this it's filed by its name
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const MAX_IMAGE = 3_750_000; // Bedrock's limit for one image
+const SHRINK_TO = 1568; // px on the long side: what the reader looks at anyway, and well under MAX_IMAGE
+const SHRINKS = ['image/jpeg', 'image/png', 'image/gif']; // what jimp can open (not webp)
 const MAX_PDF = 4_500_000;
 const MAX_ROUNDS = 15;
 export const MAX_SORT = 200; // files in one sort
@@ -151,18 +154,39 @@ export function createMolly(deps) {
     return out;
   }
 
+  /**
+   * A photo for the reader: most phone photos are over Bedrock's limit for one image, so a big one is
+   * shrunk (turned upright by its EXIF first) to what the reader would look at anyway. Only the copy
+   * sent is shrunk; the file in the archive keeps every byte. -> { type, data } or null
+   */
+  async function forReader(f) {
+    if (f.bytes.length <= MAX_IMAGE) return { type: f.type, data: f.bytes };
+    if (!SHRINKS.includes(f.type)) return null;
+    try {
+      const img = await Jimp.read(f.bytes);
+      img.scaleToFit({ w: SHRINK_TO, h: SHRINK_TO });
+      const data = await img.getBuffer('image/jpeg', { quality: 85 });
+      return data.length <= MAX_IMAGE ? { type: 'image/jpeg', data } : null;
+    } catch (e) {
+      log({ molly: 'shrink failed', id: f.id, error: e.message });
+      return null;
+    }
+  }
+
   /** The reader: describe one document, from its text, or from the page itself for a scan or photo */
   async function describe(person, f) {
     const content = [];
     // A long scan costs a lot to read as images: filed by its name instead
     if (!f.hasText && f.pages > MAX_SCAN_PAGES) return null;
     // Already in the archive (a sort): the page itself only if there's no text to read
-    if (!f.hasText && !f.bytes && (IMAGE_TYPES.includes(f.type) || f.type === 'application/pdf') && f.size <= MAX_PDF) f.bytes = await deps.getFile(`f/${f.id}`);
+    // (a photo of any size, since a big one is shrunk for the reader)
+    if (!f.hasText && !f.bytes && ((IMAGE_TYPES.includes(f.type) && f.size <= MAX_ATTACHMENT) || (f.type === 'application/pdf' && f.size <= MAX_PDF))) f.bytes = await deps.getFile(`f/${f.id}`);
+    const image = !f.hasText && f.bytes && IMAGE_TYPES.includes(f.type) ? await forReader(f) : null;
     if (f.hasText) {
       const t = await act(person, 'GET /files/{id}/text', { id: f.id });
       content.push({ type: 'text', text: `<document name="${f.name.replace(/"/g, "'")}">\n${String(t.body.text || '').slice(0, READ_CHARS)}\n</document>` });
-    } else if (f.bytes && IMAGE_TYPES.includes(f.type) && f.bytes.length <= MAX_IMAGE) {
-      content.push({ type: 'image', source: { type: 'base64', media_type: f.type, data: f.bytes.toString('base64') } });
+    } else if (image) {
+      content.push({ type: 'image', source: { type: 'base64', media_type: image.type, data: image.data.toString('base64') } });
     } else if (f.bytes && f.type === 'application/pdf' && f.bytes.length <= MAX_PDF) {
       content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.bytes.toString('base64') } });
     } else {
@@ -197,7 +221,7 @@ export function createMolly(deps) {
       if (r.status !== 200) return { error: `${r.status}: ${r.body.error}` };
       if (budget) budget.reads++;
       const d = await describe(person, r.body);
-      return d ?? { error: `couldn't read it (${r.body.hasText ? 'unreadable' : `a scan of ${r.body.pages ?? '?'} pages, or a type the reader can't open`}): file it by its name` };
+      return d ?? { error: `couldn't read it (${r.body.hasText ? 'unreadable' : IMAGE_TYPES.includes(r.body.type) ? 'a photo too big to read' : `a scan of ${r.body.pages ?? '?'} pages, or a type the reader can't open`}): file it by its name` };
     }
     const op = ops.find((o) => o.name === name);
     if (!op) return { error: `no tool ${name}` };

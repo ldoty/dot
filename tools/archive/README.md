@@ -46,7 +46,8 @@ that person (`handler.as`: the archive's own code, held to a borrowed token's wr
 1. attachments (not logos or signatures; up to 20, 25 MB each) are saved in their own drawer under
    `Inbox/`, straight to `f/<id>`, so intake checks and reads them like any upload; duplicates aren't saved again,
 2. a **reader with no tools** describes each new document from its text (or the page itself, for a scan
-   or photo) into a fixed shape (structured output), saved on the file,
+   or photo) into a fixed shape (structured output), saved on the file; a photo over Bedrock's 3.75 MB a
+   picture (most phone photos) is shrunk to 1568 px for the reader (jimp, bundled), the file itself untouched,
 3. **Molly** files them with the archive's tools (drawers, search, file, update, link, unlink) by the
    drawers' notes and the sender's words, and answers in the thread from molly@, asking numbered questions
    when she can't tell. What she can't place stays in `Inbox/`.

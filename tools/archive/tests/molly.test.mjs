@@ -2,6 +2,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { Jimp } from 'jimp';
 import { AMBER, LUKE, archiveApi, bucket, call, intake, reset, sorts, table, token, upload } from './helpers/archive.mjs';
 import { tinyPdf } from './helpers/pdf.mjs';
 import { createMolly, createSweep, documentsIn, SYSTEM } from '../api/molly.mjs';
@@ -296,4 +297,51 @@ test('her readings: long scans aren’t read, and a sort stops reading at the li
   const results = m.calls.filing[1].messages.at(-1).content.map((r) => r.content);
   assert.match(results[0], /a scan of 48 pages/);
   assert.match(results[40], /that's the 40 readings for this sort/);
+});
+
+/** A phone photo: 4032 x 3024, noisy enough to be over Bedrock's 3.75 MB a picture, taken on its side (EXIF 6) */
+async function phonePhoto() {
+  const img = new Jimp({ width: 4032, height: 3024, color: 0x336699ff });
+  for (let i = 0; i < img.bitmap.data.length; i += 4) img.bitmap.data[i] = (i * 7) & 255;
+  const jpeg = await img.getBuffer('image/jpeg', { quality: 95 });
+  // APP1 Exif, big-endian, one IFD entry: Orientation (0x0112) = 6 (rotate 90° to stand it up)
+  const tiff = Buffer.from([0x4d, 0x4d, 0, 0x2a, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0]);
+  const body = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff]);
+  const app1 = Buffer.concat([Buffer.from([0xff, 0xe1, (body.length + 2) >> 8, (body.length + 2) & 255]), body]);
+  return Buffer.concat([jpeg.subarray(0, 2), app1, jpeg.subarray(2)]);
+}
+const PHOTO = await phonePhoto();
+
+test('a phone photo over Bedrock’s limit is shrunk and stood upright for the reader; the archive keeps the original', async () => {
+  assert.ok(PHOTO.length > 3_750_000, `the test photo is ${PHOTO.length} bytes`);
+  const m = molly([say('Filed.\n\nMolly')]);
+  await m.deliver('molly/abc1', email({ attachments: [{ name: 'IMG_8693.jpeg', type: 'image/jpeg', bytes: PHOTO }] }));
+  assert.equal(m.calls.reader.length, 1);
+  const seen = m.calls.reader[0].messages[0].content.find((c) => c.type === 'image');
+  assert.equal(seen.source.media_type, 'image/jpeg');
+  const bytes = Buffer.from(seen.source.data, 'base64');
+  assert.ok(bytes.length <= 3_750_000);
+  const shrunk = await Jimp.read(bytes);
+  assert.deepEqual([shrunk.width, shrunk.height], [1176, 1568], 'upright, 1568 on the long side');
+  assert.doesNotMatch(JSON.stringify(m.calls.filing[0].messages), /the reader couldn’t look at this one/);
+  const kept = [...bucket.values()].find((b) => b.length === PHOTO.length);
+  assert.ok(kept?.equals(PHOTO), 'the file itself is untouched');
+});
+
+test('a sort’s reading shrinks a big photo too; one the reader still can’t take is filed by name, and she’s told why', async () => {
+  const [photo, webp] = (await upload('mine', 'Inbox', [
+    { name: 'IMG_8693.jpeg', bytes: PHOTO, type: 'image/jpeg' },
+    { name: 'pano.webp', bytes: Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4_000_000)]), type: 'image/webp' },
+  ])).body.files.map((f) => f.id);
+  const asked = await call('POST', '/sort', { drawer: 'mine', folder: 'Inbox' });
+  const m = molly([
+    { stop_reason: 'tool_use', usage: {}, content: [{ type: 'tool_use', id: 'r1', name: 'read', input: { id: photo } }, { type: 'tool_use', id: 'r2', name: 'read', input: { id: webp } }] },
+    say('Filed.\n\nMolly'),
+  ]);
+  await m.run({ sort: asked.body.id });
+  assert.equal(m.calls.reader.length, 1);
+  assert.ok(Buffer.from(m.calls.reader[0].messages[0].content[0].source.data, 'base64').length <= 3_750_000);
+  const results = m.calls.filing[1].messages.at(-1).content.map((r) => r.content);
+  assert.match(results[0], /Geico auto policy renewal/);
+  assert.match(results[1], /a photo too big to read/);
 });
