@@ -586,13 +586,14 @@ details.table-view > summary { font: 500 14px var(--body); color: var(--pool) }
       '<details class="card"><summary>All transactions (' + data.txns.length + ")</summary>" + (data.txns.length ? data.txns.map(function (t) { return txRow(t, !!b); }).join("") : '<p class="status">None this month.</p>') + "</details>" +
       '<details class="card"><summary>Accounts &amp; budget</summary><div class="settings">' +
       (b ? '<label>' + (shared() ? "Follow the Shared budget" : "Follow my budget") + ' <select id="tag">' + followOptions(b) + "</select></label>" +
-        '<p class="status">' + (shared() ? "Shared “" + esc(b.version.name) + "”. Read " + esc(when(b.fetchedAt)) + ".</p>" : esc(data.settings.tag === "@working" ? "Working copy" : data.settings.tag.indexOf("@v:") === 0 ? "Saved version" : data.settings.tag) + " → my “" + esc(b.version.name) + "” → Shared " + esc(b.sharedTag || "") + (b.sharedVersion ? " “" + esc(b.sharedVersion.name) + "”" : "") + ". Read " + esc(when(b.fetchedAt)) + ".</p>") : "") +
+        '<p class="status">' + (shared() ? "Shared “" + esc(b.version.name) + "”. Read " + esc(when(b.fetchedAt)) + ".</p>" : esc(data.settings.tag === "@working" ? "Working copy" : data.settings.tag.indexOf("@v:") === 0 ? "Saved version" : data.settings.tag) + " → my “" + esc(b.version.name) + "”" + (b.sharedTag ? " → Shared " + esc(b.sharedTag) + (b.sharedVersion ? " “" + esc(b.sharedVersion.name) + "”" : "") : "") + ". Read " + esc(when(b.fetchedAt)) + ".</p>") : "") +
       data.accounts.map(function (a) {
         return '<div class="acct-row"><span><strong>' + esc(a.name) + "</strong> " + '<span class="acct">' + esc(a.org) + '</span><br><span class="money">' + usd.format(a.balance) + "</span></span>" +
           (shared()
             // Which personal tools it comes from; marking accounts shared happens there
             ? '<span class="acct">from ' + esc((a.sources || []).join(" & ") || "—") + "</span></div>"
-            : '<span class="acct-set"><label>Whose <select data-owner="' + esc(a.id) + '">' + [["mine", "Mine"], ["shared", "Shared (joint)"], ["off", "Off: not counted"]].map(function (o) {
+            // (a business deployment has no joint accounts: cfg.joint is false)
+            : '<span class="acct-set"><label>Whose <select data-owner="' + esc(a.id) + '">' + [["mine", "Mine"], ["shared", "Shared (joint)"], ["off", "Off: not counted"]].filter(function (o) { return o[0] !== "shared" || cfg.joint !== false || a.owner === "shared"; }).map(function (o) {
               return '<option value="' + o[0] + '"' + (a.owner === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
             }).join("") + "</select></label>" +
             // What money moved into a shared account counts toward in my budget

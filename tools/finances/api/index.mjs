@@ -18,11 +18,14 @@ export function liveDeps(env = process.env) {
   const kms = new KMSClient({});
   return {
     // Its own page's tokens, and Dot's (read-only) from the delegated client
-    auth: { issuer: env.ISSUER, clientId: [env.CLIENT_ID, env.DOT_CLIENT_ID].filter(Boolean), group: env.GROUP },
-    dotClientId: env.DOT_CLIENT_ID,
+    // ("-": a deployment nothing else may read has no delegated client)
+    auth: { issuer: env.ISSUER, clientId: [env.CLIENT_ID, env.DOT_CLIENT_ID].filter((c) => c && c !== '-'), group: env.GROUP },
+    dotClientId: env.DOT_CLIENT_ID === '-' ? undefined : env.DOT_CLIENT_ID,
     store: makeStore({ db: DynamoDBDocumentClient.from(new DynamoDBClient({})), table: env.TABLE, pk: env.PARTITION || undefined }),
     title: env.TITLE,
     mode: env.MODE || 'personal',
+    // Personal: whether an account can be marked shared (joint); a business deployment can't
+    joint: env.JOINT !== 'false',
     // Shared Finances: the personal tools it reads ([{ app, name, sub, username, api_url, client_id }])
     sources: env.SOURCES ? JSON.parse(env.SOURCES) : [],
     tool: env.TOOL,

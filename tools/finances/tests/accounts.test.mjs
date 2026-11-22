@@ -213,3 +213,15 @@ test('travel: the fixed Travel line is the person’s part of the travel fund, a
   await runSync(t.deps);
   assert.equal(txn('PAYMENT TO CARD').line, 'L.contrib-share');
 });
+
+test('a deployment without joint accounts (a business) can’t mark one shared, and serves no shared feed', async () => {
+  const t = testDeps();
+  t.deps.joint = false;
+  await runSync(t.deps);
+  const call = (m, p, b) => caller(createApi(t.deps), ROUTES)(m, p, b, token());
+  const card = CARD.slice(5);
+  assert.deepEqual(await call('PUT', `/accounts/${card}`, { owner: 'shared' }), { status: 400, body: { error: 'no joint accounts here' } });
+  assert.equal(table.get('LUKE', CARD).owner, 'mine');
+  assert.deepEqual((await call('PUT', `/accounts/${card}`, { owner: 'off' })).body, { id: card, owner: 'off' });
+  assert.equal((await call('GET', '/shared/2026-01-01')).status, 404);
+});

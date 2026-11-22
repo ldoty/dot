@@ -20,7 +20,7 @@ data "aws_ssm_parameter" "signer_key" {
 }
 
 data "aws_ssm_parameter" "budget" {
-  name = "/family/delegation/family_budget"
+  name = "/family/delegation/${var.budget_app}"
 }
 
 # The SimpleFIN secret. Paste a setup token (or an access URL) over the placeholder in the
@@ -113,13 +113,14 @@ locals {
     GROUP           = module.app.member_group
     ISSUER          = local.issuer
     CLIENT_ID       = module.app.client_id
-    DOT_CLIENT_ID   = module.app.delegated_client_id
+    DOT_CLIENT_ID   = coalesce(module.app.delegated_client_id, "-") # "-": no delegated client (index.mjs)
     SIMPLEFIN_PARAM = local.simplefin_param
     SIGNER          = local.name
     SIGNER_KEY      = data.aws_ssm_parameter.signer_key.value
     BUDGET          = data.aws_ssm_parameter.budget.value
     PERSON          = var.person # whose budget (Budget's doc name), or shared
     MODE            = var.mode
+    JOINT           = tostring(var.joint_accounts)
     SOURCES         = jsonencode([for s in var.sources : merge(s, jsondecode(data.aws_ssm_parameter.source[s.app].value))])
     PARTITION       = var.partition
     TITLE           = var.title
@@ -214,7 +215,7 @@ resource "aws_apigatewayv2_authorizer" "cognito" {
   identity_sources = ["$request.header.Authorization"]
   jwt_configuration {
     issuer   = local.issuer
-    audience = [module.app.client_id, module.app.delegated_client_id]
+    audience = compact([module.app.client_id, module.app.delegated_client_id])
   }
 }
 
@@ -252,8 +253,9 @@ resource "aws_lambda_permission" "api" {
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }
 
-# Where Dot finds this tool (tools/assistant/api/discovery.mjs)
+# Where Dot finds this tool (tools/assistant/api/discovery.mjs), when anything may read it
 resource "aws_ssm_parameter" "delegation" {
+  count       = length(var.delegates) > 0 ? 1 : 0
   name        = "/family/delegation/${local.name}"
   description = "${var.title} API and delegated client, for Dot and Shared Finances"
   type        = "String"
@@ -261,4 +263,9 @@ resource "aws_ssm_parameter" "delegation" {
     api_url   = aws_apigatewayv2_api.api.api_endpoint
     client_id = module.app.delegated_client_id
   })
+}
+
+moved {
+  from = aws_ssm_parameter.delegation
+  to   = aws_ssm_parameter.delegation[0]
 }

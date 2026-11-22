@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<title>SDC/SCE Budget</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&amp;family=Karla:ital,wght@0,400;0,500;0,600;1,400&amp;family=Young+Serif&amp;family=DM+Mono:wght@400;500&amp;display=swap">
+<style id="budget-css">
+/* The household Budget's layout and Daylight tokens (tools/budget), for one business budget:
+   summary tiles up top, income and category ledgers in one column, versions and tags beside them. */
+:root {
+  --bg: #fbf9f3; --surface: #ffffff; --raised: #f3efe4; --ink: #1e2a24; --muted: #5d6a62; --line: #e4ddcd;
+  --leaf: #2f9e5b; --pool: #0b7b7e; --sun: #e9a41a; --ember: #e8612c; --bloom: #e0607e; --wood: #a5622d;
+  --on-accent: #ffffff;
+  --display: "Jost", "Futura", "Avenir Next", system-ui, sans-serif;
+  --body: "Karla", "Helvetica Neue", system-ui, sans-serif;
+  --serif: "Young Serif", Georgia, serif;
+  --mono: "DM Mono", ui-monospace, Menlo, monospace;
+  --r-sm: 8px; --r-md: 14px; --r-pill: 999px;
+  color-scheme: light;
+}
+:root {
+  --accent: var(--pool);
+  --accent-soft: color-mix(in srgb, var(--pool) 14%, var(--surface));
+  --good: color-mix(in srgb, var(--leaf) 60%, var(--ink));
+  --bad: color-mix(in srgb, var(--ember) 60%, var(--ink));
+  --field: var(--raised);
+}
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body) }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 32px 20px 64px }
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 24px }
+h1 { font: 500 clamp(30px, 4.5vw, 46px)/1.05 var(--display); margin: 0; letter-spacing: -0.02em; text-wrap: balance; display: flex; align-items: center; gap: 12px }
+h1 svg { width: .9em; height: .9em; flex: none }
+.sub { color: var(--muted); margin: 6px 0 0; max-width: 62ch }
+.savebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
+.status { font-size: 13px; color: var(--muted) }
+button { font: 600 14px var(--body); border-radius: var(--r-pill); padding: 8px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink) }
+button.primary { background: var(--pool); border-color: var(--pool); color: var(--on-accent) }
+button:disabled { opacity: .45; cursor: default }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.note { background: color-mix(in srgb, var(--sun) 16%, var(--surface)); border-radius: var(--r-sm); padding: 10px 14px; font-size: 13.5px; margin: 18px 0 24px }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 28px }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 16px }
+.tile .lbl { font: 600 11.5px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted) }
+.tile .val { font: 400 30px/1.2 var(--serif); font-variant-numeric: tabular-nums; margin-top: 4px }
+.tile .per { font-size: 12.5px; color: var(--muted); font-family: var(--mono) }
+.val.pos { color: var(--good) } .val.neg { color: var(--bad) }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr) } }
+.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); display: grid; gap: 16px }
+@media (max-width: 900px) { .rail { position: static } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px }
+.panel h3 { font: 600 16px var(--display); margin: 0 0 12px }
+
+section.cat { margin-bottom: 26px }
+.cat-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 12px; border-bottom: 2px solid var(--wood); padding-bottom: 6px }
+.cat-head h2 { font: 500 21px var(--display); margin: 0; flex: 1 1 200px; min-width: 0; display: flex; align-items: center }
+.cat-head .tot { margin-left: auto; font: 500 15px var(--mono); font-variant-numeric: tabular-nums }
+.cat-head .tot small { color: var(--muted); font-size: 12px }
+/* Category names edit in place: they read as headings until hovered or focused */
+.cat-name { font: inherit; letter-spacing: inherit; color: inherit; background: none; border-color: transparent; padding: 2px 6px; margin-left: -6px }
+.cat-name:hover { background: var(--field) }
+.cat-name::placeholder { color: var(--muted) }
+.cat-tools { display: flex; gap: 4px; align-items: center }
+.cat-tools button { padding: 3px 10px; font-size: 12px; font-weight: 600; color: var(--muted); background: none }
+.cat-tools button:hover:not(:disabled) { color: var(--ink); border-color: var(--muted) }
+.cat-tools .kind[aria-pressed="true"] { color: var(--good); border-color: color-mix(in srgb, var(--leaf) 50%, var(--line)) }
+.cat-tools .cdel.arm { color: var(--bad); border-color: var(--bad) }
+@media (hover: hover) {
+  .cat-tools { opacity: 0; transition: opacity .15s }
+  .cat-head:hover .cat-tools, .cat-head:focus-within .cat-tools, .cat-tools:has(.arm) { opacity: 1 }
+}
+.add-cat { display: block; margin: -8px 0 26px }
+
+.row { display: grid; grid-template-columns: minmax(0, 1fr) 112px 78px 96px 30px; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line) }
+.row.labels { font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); padding: 6px 0 4px }
+.row.labels span:first-child { padding-left: 22px }
+.row.labels span:nth-child(4) { text-align: right }
+.name-cell { min-width: 0; display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 4px; align-items: center }
+.grip { cursor: grab; color: var(--muted); opacity: .45; font-size: 15px; line-height: 1; text-align: center; user-select: none; -webkit-user-select: none; border-radius: 4px; padding: 4px 0 }
+.row:hover .grip, .grip:focus-visible { opacity: 1; color: var(--pool) }
+.grip:active { cursor: grabbing }
+.row.dragging { opacity: .35 }
+.row.drop-before { box-shadow: inset 0 3px 0 var(--pool) }
+.row.drop-after { box-shadow: inset 0 -3px 0 var(--pool) }
+section.cat.drop-into { outline: 2px dashed var(--pool); outline-offset: 6px; border-radius: var(--r-sm) }
+input, select { font: 14px var(--body); color: var(--ink); background: var(--field); border: 1.5px solid transparent; border-radius: var(--r-sm); padding: 6px 8px; width: 100%; min-width: 0 }
+input:hover, select:hover { border-color: var(--line) }
+input:focus, select:focus { border-color: var(--pool); outline: none }
+input.amt { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums }
+.mo { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums }
+.del { border: none; background: none; color: var(--muted); padding: 4px; font-size: 18px; line-height: 1 }
+.del:hover { color: var(--bad) }
+.add { margin-top: 10px; border-style: dashed; font-weight: 500; color: var(--muted); font-size: 13px; padding: 6px 12px }
+.empty { font-size: 13.5px; color: var(--muted); margin: 10px 0 0 }
+@media (max-width: 640px) {
+  .row { grid-template-columns: 1fr 1fr 30px; row-gap: 6px }
+  .row .name-cell { grid-column: 1 / -1 }
+  .row .mo { grid-column: 1 / -2; text-align: left; font-size: 13px; color: var(--muted) }
+  .row .mo::before { content: "Monthly: " }
+  .row.labels { display: none }
+}
+
+.bars { display: grid; gap: 9px }
+.bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; font-size: 13px }
+.bar-row .amt { font-family: var(--mono); font-variant-numeric: tabular-nums }
+.track { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--raised); overflow: hidden }
+.fill { height: 100%; background: var(--leaf); border-radius: 3px }
+@media (prefers-reduced-motion: no-preference) { .fill { transition: width .3s ease } }
+.foot { font-size: 12.5px; color: var(--muted); margin: 6px 0 0 }
+
+.v-save { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px }
+.v-save #v-name { grid-column: 1 / -1 }
+.v-save input { background: var(--field); border-color: var(--line) }
+.v-save button { flex: none }
+.v-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px }
+.v-item { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center }
+.v-item.on { border-color: var(--pool); background: var(--accent-soft) }
+.v-name { font-weight: 600; overflow-wrap: anywhere }
+.v-meta { grid-column: 1 / -1; font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums }
+.v-acts { grid-column: 2; grid-row: 1; display: flex; gap: 4px }
+.v-acts button { padding: 5px 9px; font-size: 12.5px }
+.v-acts .v-del { color: var(--muted) }
+.v-acts .v-del.arm { color: var(--bad); border-color: var(--bad) }
+.v-empty { font-size: 13px; color: var(--muted); margin: 10px 0 0 }
+/* Tags sit on their own line under the version name and never break mid-word */
+.v-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px }
+.tagchip { white-space: nowrap; overflow-wrap: normal; font: 600 10.5px var(--mono); color: var(--pool); background: var(--accent-soft); border-radius: 99px; padding: 1px 7px }
+.t-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px }
+.t-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 8px; align-items: center }
+.t-item select { background: var(--field) }
+.t-item .v-meta { grid-column: 1 / -1 }
+.t-item .t-del { padding: 4px 9px; font-size: 12px; color: var(--muted) }
+.t-item .t-del.arm { color: var(--bad); border-color: var(--bad) }
+/* Version editor: one stacked column (it replaces the row's two-column layout) */
+.v-edit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; border-color: var(--pool); padding: 12px }
+.v-edit .v-lbl { font: 600 11px var(--display); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin-top: 6px }
+.v-edit .v-lbl:first-child { margin-top: 0 }
+.v-edit input { width: 100%; font: 14px var(--body); background: var(--field); border: 1.5px solid var(--line); border-radius: var(--r-sm); padding: 7px 10px }
+.v-edit button { white-space: nowrap }
+.ve-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 22px }
+.ve-tags .tagchip { display: inline-flex; align-items: center; gap: 2px }
+.ve-tags .tagchip button { border: 0; background: none; padding: 0 2px; font-size: 13px; line-height: 1; color: inherit }
+.ve-none { font-size: 12.5px; color: var(--muted) }
+.ve-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px }
+.ve-add button { padding: 5px 12px; font-size: 12.5px }
+.ve-hint { font-size: 12px; color: var(--muted); margin: 0 }
+.ve-acts { display: flex; gap: 6px; margin-top: 8px }
+.ve-acts button { padding: 6px 16px; font-size: 13px }
+.ve-replace { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; display: grid; gap: 2px; justify-items: start }
+.ve-replace button { border: 0; background: none; padding: 0; font-size: 13px; color: var(--pool); text-decoration: underline; text-underline-offset: 2px }
+.ve-replace button.arm { color: var(--bad); text-decoration: none; font-weight: 700 }
+.resume { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -8px 0 22px }
+.resume span { flex: 1 1 260px }
+.resume button { padding: 5px 12px; font-size: 13px }
+.resume button.arm { color: var(--bad); border-color: var(--bad) }
+.cur { font-size: 12.5px; color: var(--muted); margin: 8px 0 0 }
+.cur strong { color: var(--ink) }
+.cur .v-update { margin-left: 6px; padding: 3px 10px; font-size: 12px }
+.gate { max-width: 460px; margin: 12vh auto 0; display: grid; gap: 14px; justify-items: start }
+.gate .note { margin: 0 }
+.home-link { font-size: 13px; color: var(--muted); text-decoration: none }
+.home-link:hover { color: var(--pool) }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="family-auth.js"></script>
+<script id="app-js">
+(function () {
+  // One budget ("doc"): a working copy that saves itself (rev-checked, so one person's edit never
+  // overwrites the other's), saved versions, and tags naming versions ("default" opens on load).
+  // SDC/SCE Finances follows one of its tags, so tagging a version is how it reaches Finances.
+  var DOC = "Business";
+  var TAG_RE = /^[a-z0-9][a-z0-9_-]{0,29}$/;
+  var cfg, doc = null, rev = null, versions = [], tags = [], resumed = false, editing = null, armed = null;
+  var app = document.getElementById("app");
+  var money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function uid() { return "x" + Math.random().toString(36).slice(2, 9); }
+  function cleanTag(s) { return s.trim().toLowerCase().replace(/\s+/g, "-"); }
+  function normalize(d) {
+    d = d || {};
+    d.income = Array.isArray(d.income) ? d.income : [];
+    d.categories = Array.isArray(d.categories) ? d.categories : [];
+    d.categories.forEach(function (c) { c.items = Array.isArray(c.items) ? c.items : []; if (c.kind !== "save") c.kind = "spend"; });
+    return d;
+  }
+
+  // --- Math: every item is per month or per year; totals are per month ---------------
+  function monthly(it) { var a = Number(it.amount) || 0; return it.freq === "yr" ? a / 12 : a; }
+  function sum(items) { return items.reduce(function (s, it) { return s + monthly(it); }, 0); }
+  function summary(d) {
+    var income = sum(d.income), out = 0, save = 0;
+    var cats = d.categories.map(function (c) {
+      var t = sum(c.items);
+      if (c.kind === "save") save += t; else out += t;
+      return { c: c, t: t };
+    });
+    return { income: income, out: out, save: save, net: income - out - save, cats: cats };
+  }
+
+  // --- Tags and versions --------------------------------------------------------------
+  function tagFor(name) { return tags.filter(function (t) { return t.name === name; })[0]; }
+  function tagsOn(id) { return tags.filter(function (t) { return t.versionId === id; }).map(function (t) { return t.name; }).sort(); }
+  function versionById(id) { return versions.filter(function (v) { return v.id === id; })[0]; }
+  function snapshot() { var s = clone(doc); delete s.version; delete s.edited; delete s.updated; return s; }
+  // Key-order-independent JSON, to compare numbers regardless of how they were saved
+  function stable(o) {
+    if (Array.isArray(o)) return "[" + o.map(stable).join(",") + "]";
+    if (o && typeof o === "object") return "{" + Object.keys(o).sort().map(function (k) { return JSON.stringify(k) + ":" + stable(o[k]); }).join(",") + "}";
+    return JSON.stringify(o);
+  }
+  function numbers(st) { var c = normalize(clone(st)); delete c.version; delete c.edited; delete c.updated; return stable(c); }
+  // True when the working copy holds work that isn't saved in any version
+  function unsaved() { return !(doc.version && !doc.edited && versions.some(function (v) { return v.name === doc.version; })); }
+  function loadVersion(v) { doc = normalize(clone(v.state)); doc.version = v.name; doc.edited = false; resumed = false; persist(true); }
+  // Opens on the default version, unless that would throw away unsaved work
+  function openDefault() {
+    var t = tagFor("default"), v = t && versionById(t.versionId);
+    if (!v || (doc.version === v.name && !doc.edited)) return;
+    if (numbers(doc) === numbers(v.state)) { doc.version = v.name; doc.edited = false; persist(true); return; }
+    if (unsaved()) { resumed = true; return; }
+    loadVersion(v);
+  }
+
+  // --- Rendering -------------------------------------------------------------------------
+  function tile(lbl, id) { return '<div class="tile"><div class="lbl">' + lbl + '</div><div class="val" id="' + id + '"></div><div class="per" id="' + id + '-yr"></div></div>'; }
+  var LABELS = '<div class="row labels"><span>Item</span><span>Amount</span><span>Per</span><span>Monthly</span><span></span></div>';
+  function rowHtml(it) {
+    return '<div class="row" data-id="' + it.id + '"><div class="name-cell"><span class="grip" draggable="true" tabindex="0" role="button" data-grip="' + it.id + '" aria-label="Move ' + esc(it.name || "item") + '. Drag, or use the arrow keys." title="Drag to move">⠿</span>' +
+      '<input id="n-' + it.id + '" data-f="name" aria-label="Item name" value="' + esc(it.name || "") + '"></div>' +
+      '<input id="a-' + it.id + '" class="amt" data-f="amount" inputmode="decimal" aria-label="Amount" value="' + (it.amount || 0) + '">' +
+      '<select id="f-' + it.id + '" data-f="freq" aria-label="Frequency"><option value="mo"' + (it.freq !== "yr" ? " selected" : "") + '>/ mo</option><option value="yr"' + (it.freq === "yr" ? " selected" : "") + ">/ yr</option></select>" +
+      '<div class="mo" id="m-' + it.id + '"></div>' +
+      '<button class="del" data-del="' + it.id + '" aria-label="Remove ' + esc(it.name || "item") + '" title="Remove">&times;</button></div>';
+  }
+  function catHtml(c, i, n) {
+    var save = c.kind === "save";
+    return '<section class="cat" data-cat="' + c.id + '"><div class="cat-head"><h2>' +
+      '<input class="cat-name" id="cn-' + c.id + '" data-cname="' + c.id + '" aria-label="Category name" placeholder="Name this category" maxlength="60" value="' + esc(c.name || "") + '"></h2>' +
+      '<div class="cat-tools">' +
+      '<button class="kind" data-ckind="' + c.id + '" aria-pressed="' + save + '" title="Set aside counts toward Set aside instead of Expenses">' + (save ? "Set aside" : "Expense") + "</button>" +
+      '<button data-cmove="' + c.id + '" data-dir="-1" aria-label="Move ' + esc(c.name || "category") + ' up"' + (i ? "" : " disabled") + ">↑</button>" +
+      '<button data-cmove="' + c.id + '" data-dir="1" aria-label="Move ' + esc(c.name || "category") + ' down"' + (i < n - 1 ? "" : " disabled") + ">↓</button>" +
+      '<button class="cdel" data-cdel="' + c.id + '">Delete</button></div>' +
+      '<div class="tot"><span id="t-' + c.id + '"></span> <small>/ mo</small></div></div>' +
+      LABELS + c.items.map(rowHtml).join("") +
+      '<button class="add" data-add="' + c.id + '">+ Add item</button></section>';
+  }
+  function resumeBanner() {
+    return '<div class="note resume"><span>The budget has unsaved changes' + (doc.updated ? " from " + esc(doc.updated) : "") +
+      ", so it didn’t switch to its default version. Save them as a version to keep them.</span>" +
+      '<button id="resume-keep">Keep editing</button><button id="resume-default">Discard and load default</button></div>';
+  }
+  var LOGO = '<svg viewBox="0 0 44 44" aria-hidden="true"><rect x="6" y="14" width="32" height="24" rx="4" fill="var(--pool)"/><path d="M16 14 V10 a3 3 0 0 1 3-3 h6 a3 3 0 0 1 3 3 V14" stroke="var(--wood)" stroke-width="3" fill="none"/></svg>';
+  function render() {
+    app.innerHTML = '<div class="wrap">' +
+      '<header class="top"><div><h1>' + LOGO + "<span>SDC/SCE Budget</span></h1>" + '<a class="home-link" href="https://dot-y.co/">← dot-y.co</a></div>' +
+      '<div class="savebar"><span class="status" id="status"></span><button id="signout">Sign out</button></div></header>' +
+      (resumed ? resumeBanner() : "") +
+      '<div class="tiles">' + tile("Income", "k-inc") + tile("Expenses", "k-out") + tile("Set aside", "k-save") + tile("Net", "k-net") + "</div>" +
+      '<div class="layout"><div>' +
+      '<section class="cat" data-cat="inc"><div class="cat-head"><h2>Income</h2><div class="tot"><span id="t-inc"></span> <small>/ mo</small></div></div>' +
+      LABELS + doc.income.map(rowHtml).join("") +
+      (doc.income.length ? "" : '<p class="empty">Add the business’s income to see what’s left each month.</p>') +
+      '<button class="add" data-add="inc">+ Add income</button></section>' +
+      doc.categories.map(function (c, i, a) { return catHtml(c, i, a.length); }).join("") +
+      '<button class="add add-cat" id="add-cat">+ Add category</button></div>' +
+      '<aside class="rail">' +
+      '<div class="panel"><h3>Saved versions</h3><div class="v-save"><input id="v-name" placeholder="Name this version" aria-label="Version name" maxlength="60">' +
+      '<input id="v-tag" list="tag-names" placeholder="Tag it (optional)" aria-label="Tag this version" maxlength="30"><datalist id="tag-names"></datalist>' +
+      '<button class="primary" id="v-save">Save</button></div><p class="cur" id="v-cur"></p><ul class="v-list" id="v-list"></ul></div>' +
+      '<div class="panel"><h3>Tags</h3><ul class="t-list" id="t-list"></ul><p class="foot">The version tagged default opens when the page loads. SDC/SCE Finances follows a tag you pick there, so edits reach it once saved and tagged.</p></div>' +
+      '<div class="panel"><h3>Where the money goes</h3><div class="bars" id="bars"></div></div>' +
+      "</aside></div></div>";
+    totals();
+    renderVersions();
+  }
+  function set(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+  function totals() {
+    var S = summary(doc);
+    doc.income.forEach(function (it) { set("m-" + it.id, money.format(monthly(it))); });
+    S.cats.forEach(function (x) {
+      x.c.items.forEach(function (it) { set("m-" + it.id, money.format(monthly(it))); });
+      set("t-" + x.c.id, money.format(x.t));
+    });
+    set("t-inc", money.format(S.income));
+    set("k-inc", money.format(S.income)); set("k-inc-yr", money.format(S.income * 12) + " / yr");
+    set("k-out", money.format(S.out)); set("k-out-yr", money.format(S.out * 12) + " / yr");
+    set("k-save", money.format(S.save)); set("k-save-yr", money.format(S.save * 12) + " / yr" + (S.income ? " · " + Math.round(S.save / S.income * 100) + "% of income" : ""));
+    set("k-net", money.format(S.net)); set("k-net-yr", S.income ? (S.net >= 0 ? money.format(S.net * 12) + " / yr to spare" : "Over by " + money.format(-S.net * 12) + " / yr") : "Add income to see this");
+    var nv = document.getElementById("k-net"); if (nv) nv.className = "val" + (S.income ? (S.net >= 0 ? " pos" : " neg") : "");
+    var bars = document.getElementById("bars"); if (!bars) return;
+    var rows = S.cats.map(function (x) { return { name: x.c.name || "Untitled", t: x.t }; }).filter(function (r) { return r.t > 0; }).sort(function (a, b) { return b.t - a.t; });
+    var max = rows.length ? rows[0].t : 1;
+    bars.innerHTML = rows.map(function (r) {
+      return '<div class="bar-row"><span>' + esc(r.name) + '</span><span class="amt">' + money.format(r.t) + '</span><div class="track"><div class="fill" style="width:' + (r.t / max * 100).toFixed(1) + '%"></div></div></div>';
+    }).join("") || '<p class="foot">Nothing budgeted yet.</p>';
+  }
+
+  var dateFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
+  function renderVersions() {
+    var ul = document.getElementById("v-list"); if (!ul) return;
+    var loaded = doc.version && versions.filter(function (v) { return v.name === doc.version; })[0];
+    document.getElementById("v-cur").innerHTML = doc.version
+      ? "Working from <strong>" + esc(doc.version) + "</strong>" + (doc.edited ? ", with unsaved changes" : "") +
+        (doc.edited && loaded ? '<button class="v-update" id="v-update" data-vid="' + esc(loaded.id) + '">Update “' + esc(doc.version) + '”</button>' : "")
+      : "Not saved as a version yet. Save one and tag it default.";
+    ul.innerHTML = versions.map(function (v) {
+      if (v.id === editing) return versionEditor(v);
+      var S = summary(normalize(clone(v.state))), vt = tagsOn(v.id);
+      return '<li class="v-item' + (v.name === doc.version ? " on" : "") + '"><span class="v-name">' + esc(v.name) +
+        (vt.length ? '<span class="v-tags">' + vt.map(function (n) { return '<span class="tagchip">' + esc(n) + "</span>"; }).join("") + "</span>" : "") + "</span>" +
+        '<span class="v-acts"><button data-vload="' + esc(v.id) + '">Load</button><button data-vedit="' + esc(v.id) + '" aria-label="Edit ' + esc(v.name) + '">Edit</button><button class="v-del" data-vdel="' + esc(v.id) + '" aria-label="Delete ' + esc(v.name) + '">Delete</button></span>' +
+        '<span class="v-meta">Net ' + money.format(S.net) + "/mo" + (v.savedAt ? " · " + dateFmt.format(new Date(v.savedAt)) : "") + "</span></li>";
+    }).join("");
+    ul.hidden = !versions.length;
+    renderTags();
+  }
+  // Inline editor for one saved version: rename, tags, replace its numbers with the working copy
+  function versionEditor(v) {
+    var vt = tagsOn(v.id);
+    return '<li class="v-item v-edit" data-veditor="' + esc(v.id) + '">' +
+      '<label class="v-lbl" for="ve-name">Name</label><input id="ve-name" value="' + esc(v.name) + '" maxlength="60">' +
+      '<span class="v-lbl">Tags</span><div class="ve-tags">' + (vt.map(function (n) {
+        return '<span class="tagchip">' + esc(n) + (n === "default" ? "" : '<button data-vuntag="' + esc(n) + '" aria-label="Remove tag ' + esc(n) + '">&times;</button>') + "</span>";
+      }).join("") || '<span class="ve-none">No tags</span>') + "</div>" +
+      '<div class="ve-add"><input id="ve-tag" list="tag-names" placeholder="Tag name" aria-label="Add a tag" maxlength="30"><button data-vaddtag="' + esc(v.id) + '">Add tag</button></div>' +
+      '<div class="ve-acts"><button class="primary" data-vsave="' + esc(v.id) + '">Save</button><button data-vdone>Cancel</button></div>' +
+      '<div class="ve-replace"><button data-vreplace="' + esc(v.id) + '">Replace with current numbers</button>' +
+      '<p class="ve-hint">Overwrites this version with what’s on screen now.</p></div></li>';
+  }
+  function renderTags() {
+    var tl = document.getElementById("t-list"); if (!tl) return;
+    var dl = document.getElementById("tag-names");
+    if (dl) dl.innerHTML = tags.map(function (t) { return '<option value="' + esc(t.name) + '">'; }).join("");
+    var names = tags.map(function (t) { return t.name; }).sort(function (a, b) { return a === "default" ? -1 : b === "default" ? 1 : a < b ? -1 : 1; });
+    tl.innerHTML = names.map(function (n) {
+      var t = tagFor(n);
+      var opts = versions.map(function (v) { return '<option value="' + esc(v.id) + '"' + (v.id === t.versionId ? " selected" : "") + ">" + esc(v.name) + "</option>"; }).join("");
+      return '<li class="t-item"><span class="tagchip">' + esc(n) + "</span>" +
+        '<select data-tagsel="' + esc(n) + '" aria-label="Version tagged ' + esc(n) + '">' + opts + "</select>" +
+        (n === "default" ? "<span></span>" : '<button class="t-del" data-tagdel="' + esc(n) + '" aria-label="Delete tag ' + esc(n) + '">Delete</button>') +
+        (n === "default" ? '<span class="v-meta">Opens on load</span>' : "") + "</li>";
+    }).join("") || '<li class="v-empty">No tags yet. Save a version with the tag “default”.</li>';
+  }
+
+  // --- Saving versions and tags ---------------------------------------------------------
+  function putVersion(v) {
+    return api("PUT", "/docs/" + DOC + "/versions/" + v.id, v).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      versions = [v].concat(versions.filter(function (x) { return x.id !== v.id; })).sort(function (a, b) { return b.savedAt - a.savedAt; });
+    });
+  }
+  function setTag(name, versionId) {
+    return api("PUT", "/docs/" + DOC + "/tags/" + name, { versionId: versionId }).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      tags = tags.filter(function (t) { return t.name !== name; }).concat([{ name: name, versionId: versionId }]);
+    });
+  }
+  function deleteTag(tn) {
+    return api("DELETE", "/docs/" + DOC + "/tags/" + tn).then(function (res) {
+      if (!res.ok) throw new Error(res.status);
+      tags = tags.filter(function (x) { return x.name !== tn; });
+      renderVersions(); setStatus("Deleted tag " + tn + ".");
+    }).catch(function () { setStatus("Couldn’t delete the tag. Try again."); });
+  }
+  function saveVersion() {
+    var inp = document.getElementById("v-name"), name = inp.value.trim() || doc.version || "";
+    if (!name) { inp.focus(); setStatus("Give the version a name first."); return; }
+    var tinp = document.getElementById("v-tag"), tag = cleanTag(tinp.value);
+    if (tag && !TAG_RE.test(tag)) { tinp.focus(); setStatus("Tags use letters, numbers, - and _."); return; }
+    var existing = versions.filter(function (v) { return v.name.toLowerCase() === name.toLowerCase(); })[0];
+    var v = { id: existing ? existing.id : uid(), name: name, savedAt: Date.now(), state: snapshot() };
+    putVersion(v).then(function () {
+      doc.version = name; doc.edited = false; persist(true); inp.value = "";
+      if (resumed) { resumed = false; render(); }
+      if (!tag) { renderVersions(); setStatus((existing ? "Updated “" : "Saved “") + name + "”"); return; }
+      return setTag(tag, v.id).then(function () {
+        tinp.value = ""; renderVersions(); setStatus("Saved “" + name + "” and tagged it " + tag + ".");
+      });
+    }).catch(function () { setStatus("Couldn’t save the version. Try again."); });
+  }
+  function saveVersionDetails(id) {
+    var old = versionById(id); if (!old) return;
+    var name = document.getElementById("ve-name").value.trim();
+    if (!name) { setStatus("Give the version a name."); return; }
+    if (versions.some(function (x) { return x.id !== id && x.name.toLowerCase() === name.toLowerCase(); })) { setStatus("Another version is already called “" + name + "”."); return; }
+    if (name === old.name) { editing = null; renderVersions(); return; }
+    putVersion({ id: id, name: name, savedAt: old.savedAt, state: old.state }).then(function () {
+      if (doc.version === old.name) { doc.version = name; persist(true); }
+      editing = null; renderVersions(); setStatus("Saved “" + name + "”");
+    }).catch(function () { setStatus("Couldn’t save the version. Try again."); });
+  }
+  function replaceNumbers(id) {
+    var old = versionById(id); if (!old) return;
+    putVersion({ id: id, name: old.name, savedAt: Date.now(), state: snapshot() }).then(function () {
+      doc.version = old.name; doc.edited = false; persist(true);
+      editing = null; renderVersions(); setStatus("Updated “" + old.name + "” with the current numbers");
+    }).catch(function () { setStatus("Couldn’t update the version. Try again."); });
+  }
+  function addTag(id) {
+    var inp = document.getElementById("ve-tag"), tn = cleanTag(inp.value);
+    if (!tn) { inp.focus(); return; }
+    if (!TAG_RE.test(tn)) { inp.focus(); setStatus("Tags use letters, numbers, - and _."); return; }
+    var prev = tagFor(tn), v = versionById(id);
+    setTag(tn, id).then(function () {
+      renderVersions(); var again = document.getElementById("ve-tag"); if (again) again.focus();
+      setStatus(prev && prev.versionId !== id ? "Moved " + tn + " to “" + (v ? v.name : "") + "”." : "Tagged “" + (v ? v.name : "") + "” " + tn + ".");
+    }).catch(function () { setStatus("Couldn’t add the tag. Try again."); });
+  }
+
+  function setStatus(msg) {
+    var st = document.getElementById("status"); if (!st) return;
+    // Only confirmations and problems show here, and they fade after a few seconds
+    clearTimeout(setStatus.t);
+    st.textContent = msg || "";
+    if (msg) setStatus.t = setTimeout(function () { st.textContent = ""; }, 4000);
+  }
+  // Marks the budget changed and queues its save
+  function persist(keepClean) {
+    if (!keepClean && doc.version) doc.edited = true;
+    doc.updated = new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    scheduleSave();
+    var c = document.getElementById("v-cur");
+    if (c && doc.version && doc.edited && c.textContent.indexOf("unsaved") < 0) renderVersions();
+  }
+
+  // --- Lists: income is the "inc" list, each category its own ---------------------------
+  function lists() { return [doc.income].concat(doc.categories.map(function (c) { return c.items; })); }
+  function listFor(key) { if (key === "inc") return doc.income; var c = catById(key); return c && c.items; }
+  function catById(id) { return doc.categories.filter(function (c) { return c.id === id; })[0]; }
+  function catIndex(id) { for (var i = 0; i < doc.categories.length; i++) if (doc.categories[i].id === id) return i; return -1; }
+  function locate(id) {
+    var ls = lists();
+    for (var i = 0; i < ls.length; i++) for (var j = 0; j < ls[i].length; j++) if (ls[i][j].id === id) return { list: ls[i], index: j };
+  }
+  function findItem(id) { var l = locate(id); return l && l.list[l.index]; }
+  function keys() { return ["inc"].concat(doc.categories.map(function (c) { return c.id; })); }
+  function moveItem(id, key, beforeId) {
+    var from = locate(id), to = listFor(key); if (!from || !to) return false;
+    var it = from.list.splice(from.index, 1)[0];
+    var at = beforeId ? to.findIndex(function (x) { return x.id === beforeId; }) : -1;
+    to.splice(at < 0 ? to.length : at, 0, it);
+    return true;
+  }
+  function focusCat(id) { var el = document.getElementById("cn-" + id); if (el) el.focus(); }
+  // A two-step button: the first click arms it for three seconds, the second does it
+  function arm(t, key, label, idle) {
+    if (armed === key) { armed = null; return true; }
+    armed = key; t.textContent = label; t.classList.add("arm");
+    setTimeout(function () { if (armed === key) { armed = null; t.textContent = idle; t.classList.remove("arm"); } }, 3000);
+    return false;
+  }
+
+  app.addEventListener("input", function (e) {
+    var t = e.target;
+    if (t.dataset.cname) { var cc = catById(t.dataset.cname); if (!cc) return; cc.name = t.value; totals(); persist(); return; }
+    var row = t.closest(".row"); if (!row || !t.dataset.f) return;
+    var it = findItem(row.dataset.id); if (!it) return;
+    it[t.dataset.f] = t.dataset.f === "amount" ? (parseFloat(t.value.replace(/[^0-9.\-]/g, "")) || 0) : t.value;
+    totals(); persist();
+  });
+  app.addEventListener("click", function (e) {
+    var t = e.target.closest("button"); if (!t) return;
+    if (t.dataset.del) {
+      var loc = locate(t.dataset.del); if (!loc) return;
+      loc.list.splice(loc.index, 1); persist(); render();
+    } else if (t.dataset.add) {
+      var list = listFor(t.dataset.add); if (!list) return;
+      var item = { id: uid(), name: "", amount: 0, freq: "mo" };
+      list.push(item); persist(); render();
+      var inp = document.getElementById("n-" + item.id); if (inp) inp.focus();
+    } else if (t.id === "add-cat") {
+      var nc = { id: uid(), name: "", kind: "spend", items: [] };
+      doc.categories.push(nc); persist(); render(); focusCat(nc.id);
+    } else if (t.dataset.cmove) {
+      var cs = doc.categories, ci = catIndex(t.dataset.cmove), cj = ci + Number(t.dataset.dir);
+      if (ci < 0 || cj < 0 || cj >= cs.length) return;
+      cs.splice(cj, 0, cs.splice(ci, 1)[0]); persist(); render();
+      var mb = app.querySelector('[data-cmove="' + t.dataset.cmove + '"][data-dir="' + t.dataset.dir + '"]');
+      if (mb && !mb.disabled) mb.focus(); else focusCat(t.dataset.cmove);
+    } else if (t.dataset.ckind) {
+      var kc = catById(t.dataset.ckind); if (!kc) return;
+      kc.kind = kc.kind === "save" ? "spend" : "save"; persist(); render();
+      var kb = app.querySelector('[data-ckind="' + kc.id + '"]'); if (kb) kb.focus();
+    } else if (t.dataset.cdel) {
+      var di = catIndex(t.dataset.cdel); if (di < 0) return;
+      var dc = doc.categories[di], n = dc.items.length;
+      if (!arm(t, "cat:" + dc.id, n ? "Delete with " + n + " item" + (n > 1 ? "s" : "") + "?" : "Confirm", "Delete")) return;
+      doc.categories.splice(di, 1); persist(); render();
+      setStatus("Deleted “" + (dc.name || "Untitled") + "”" + (n ? " and its " + n + " item" + (n > 1 ? "s" : "") : ""));
+    } else if (t.id === "v-save") {
+      saveVersion();
+    } else if (t.dataset.vload) {
+      var v = versionById(t.dataset.vload); if (!v) return;
+      loadVersion(v); render(); setStatus("Loaded “" + v.name + "”");
+    } else if (t.dataset.vdel) {
+      var onIt = tagsOn(t.dataset.vdel);
+      if (onIt.length) { setStatus("That version is tagged " + onIt.join(", ") + ". Point the tag at another version first."); return; }
+      if (!arm(t, t.dataset.vdel, "Confirm", "Delete")) return;
+      var gid = t.dataset.vdel, gone = versionById(gid);
+      api("DELETE", "/docs/" + DOC + "/versions/" + gid).then(function (res) {
+        if (res.status === 409) { setStatus("That version is tagged. Point the tag at another version first."); return; }
+        if (!res.ok) throw new Error(res.status);
+        versions = versions.filter(function (x) { return x.id !== gid; });
+        if (gone && doc.version === gone.name) { delete doc.version; delete doc.edited; persist(true); }
+        renderVersions(); setStatus(gone ? "Deleted “" + gone.name + "”" : "");
+      }).catch(function () { setStatus("Couldn’t delete the version. Try again."); });
+    } else if (t.dataset.vedit) {
+      editing = t.dataset.vedit; renderVersions();
+      var ne = document.getElementById("ve-name"); if (ne) { ne.focus(); ne.select(); }
+    } else if (t.dataset.vdone != null) {
+      editing = null; renderVersions();
+    } else if (t.dataset.vsave) {
+      saveVersionDetails(t.dataset.vsave);
+    } else if (t.dataset.vaddtag) {
+      addTag(t.dataset.vaddtag);
+    } else if (t.dataset.vuntag) {
+      deleteTag(t.dataset.vuntag);
+    } else if (t.dataset.vreplace) {
+      if (!arm(t, "replace:" + t.dataset.vreplace, "Click again to replace", "Replace with current numbers")) return;
+      replaceNumbers(t.dataset.vreplace);
+    } else if (t.id === "v-update") {
+      replaceNumbers(t.dataset.vid);
+    } else if (t.id === "resume-keep") {
+      resumed = false; render();
+    } else if (t.id === "resume-default") {
+      if (!arm(t, "resume", "Click again to discard", "Discard and load default")) return;
+      var dt = tagFor("default"), dv = dt && versionById(dt.versionId);
+      if (dv) { loadVersion(dv); render(); setStatus("Loaded the default, “" + dv.name + "”"); }
+    } else if (t.dataset.tagdel) {
+      if (!arm(t, "tag:" + t.dataset.tagdel, "Confirm", "Delete")) return;
+      deleteTag(t.dataset.tagdel);
+    } else if (t.id === "signout") {
+      flush(); FamilyAuth.logout();
+    }
+  });
+  app.addEventListener("change", function (e) {
+    if (!e.target.dataset.tagsel) return;
+    var tn = e.target.dataset.tagsel, vid = e.target.value, vv = versionById(vid);
+    setTag(tn, vid).then(function () {
+      renderVersions(); setStatus(tn + " now points at “" + (vv ? vv.name : "") + "”.");
+    }).catch(function () { setStatus("Couldn’t move the tag. Try again."); renderVersions(); });
+  });
+
+  // Drag and drop: rows move within or between income and the categories
+  var dragId = null;
+  function clearMarks() { app.querySelectorAll(".drop-before,.drop-after,.drop-into,.dragging").forEach(function (el) { el.classList.remove("drop-before", "drop-after", "drop-into", "dragging"); }); }
+  function dropTarget(e) {
+    var sec = e.target.closest && e.target.closest("section.cat"); if (!sec) return null;
+    var row = e.target.closest(".row[data-id]");
+    if (row && row.dataset.id !== dragId) {
+      var r = row.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2;
+      var next = after ? row.nextElementSibling : row;
+      if (next && next.dataset && next.dataset.id === dragId) next = next.nextElementSibling;
+      if (next && !next.matches(".row[data-id]")) next = null;
+      return { sec: sec, row: row, after: after, key: sec.dataset.cat, beforeId: next ? next.dataset.id : null };
+    }
+    return { sec: sec, key: sec.dataset.cat, beforeId: null };
+  }
+  app.addEventListener("dragstart", function (e) {
+    var g = e.target.closest && e.target.closest(".grip"); if (!g) return;
+    dragId = g.dataset.grip;
+    var row = g.closest(".row");
+    e.dataTransfer.effectAllowed = "move";
+    try { e.dataTransfer.setData("text/plain", dragId); e.dataTransfer.setDragImage(row, 24, 20); } catch (err) {}
+    setTimeout(function () { row.classList.add("dragging"); }, 0);
+  });
+  app.addEventListener("dragover", function (e) {
+    if (!dragId) return;
+    var t = dropTarget(e); if (!t) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = "move";
+    app.querySelectorAll(".drop-before,.drop-after,.drop-into").forEach(function (el) { el.classList.remove("drop-before", "drop-after", "drop-into"); });
+    if (t.row) t.row.classList.add(t.after ? "drop-after" : "drop-before"); else t.sec.classList.add("drop-into");
+  });
+  app.addEventListener("drop", function (e) {
+    if (!dragId) return;
+    var t = dropTarget(e); e.preventDefault();
+    var id = dragId; dragId = null; clearMarks();
+    if (t && moveItem(id, t.key, t.beforeId)) { persist(); render(); }
+  });
+  app.addEventListener("dragend", function () { dragId = null; clearMarks(); });
+  app.addEventListener("keydown", function (e) {
+    var g = e.target.closest && e.target.closest(".grip");
+    if (g && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      var id = g.dataset.grip, loc = locate(id), ks = keys(), up = e.key === "ArrowUp";
+      var ki = ks.indexOf(ks.filter(function (k) { return listFor(k) === loc.list; })[0]), moved = false;
+      if (up && loc.index > 0) moved = moveItem(id, ks[ki], loc.list[loc.index - 1].id);
+      else if (!up && loc.index < loc.list.length - 1) moved = moveItem(id, ks[ki], loc.list[loc.index + 2] ? loc.list[loc.index + 2].id : null);
+      else for (var k = ki + (up ? -1 : 1); k >= 0 && k < ks.length && !moved; k += up ? -1 : 1) {
+        var dest = listFor(ks[k]);
+        moved = moveItem(id, ks[k], up ? null : (dest[0] ? dest[0].id : null));
+      }
+      if (moved) { persist(); render(); var ng = app.querySelector('[data-grip="' + id + '"]'); if (ng) { ng.focus(); if (ng.scrollIntoView) ng.scrollIntoView({ block: "nearest" }); } }
+      return;
+    }
+    if (e.target.id === "v-name" && e.key === "Enter") { e.preventDefault(); saveVersion(); }
+    if (e.target.id === "ve-name" && e.key === "Enter") { e.preventDefault(); saveVersionDetails(e.target.closest("[data-veditor]").dataset.veditor); }
+    if (e.target.id === "ve-tag" && e.key === "Enter") { e.preventDefault(); addTag(e.target.closest("[data-veditor]").dataset.veditor); }
+    if (editing && e.key === "Escape" && e.target.closest && e.target.closest("[data-veditor]")) { editing = null; renderVersions(); }
+    if (e.target.dataset && e.target.dataset.cname && e.key === "Enter") { e.preventDefault(); e.target.blur(); }
+  });
+
+  // --- API -------------------------------------------------------------------
+  function api(method, path, body) {
+    return FamilyAuth.accessToken().then(function (tok) {
+      if (!tok) { FamilyAuth.login(); return new Promise(function () {}); }
+      return fetch(cfg.apiUrl + path, {
+        method: method, keepalive: method === "PUT" && /\/state$/.test(path),
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    });
+  }
+  // Edits save about a second after the last change. Only one request is in flight; a newer edit
+  // made meanwhile goes out right after. A stale rev (the other person saved first) loads theirs.
+  var sync = { timer: null, saving: false, dirty: false };
+  function scheduleSave() { sync.dirty = true; clearTimeout(sync.timer); sync.timer = setTimeout(flush, 900); }
+  function flush() {
+    clearTimeout(sync.timer); sync.timer = null;
+    if (!sync.dirty || sync.saving || !doc) return;
+    sync.saving = true; sync.dirty = false;
+    var retry = false;
+    api("PUT", "/docs/" + DOC + "/state", { state: doc, rev: rev }).then(function (res) {
+      if (res.status === 409) return res.json().then(function (c) {
+        rev = c.rev; doc = normalize(c.state); sync.dirty = false; render();
+        setStatus("The budget was just changed somewhere else, so that version is loaded now.");
+      });
+      if (!res.ok) throw new Error(res.status);
+      return res.json().then(function (r) { rev = r.rev; });
+    }).catch(function () {
+      sync.dirty = retry = true;
+      setStatus("Couldn’t save. Retrying in a few seconds…");
+    }).then(function () {
+      sync.saving = false;
+      if (retry) sync.timer = setTimeout(flush, 5000); else if (sync.dirty) scheduleSave();
+    });
+  }
+  // Pull in what the other person changed: tags, versions, and the budget if no local edit is pending
+  function refresh() {
+    return api("GET", "/all").then(function (res) { return res.ok ? res.json() : null; }).then(function (all) {
+      if (!all) return;
+      tags = all.tags[DOC] || []; versions = all.versions[DOC] || [];
+      var srv = all.docs[DOC];
+      if (srv && !sync.dirty && !sync.saving && srv.rev !== rev) { doc = normalize(srv.state); rev = srv.rev; }
+      render();
+    });
+  }
+  window.addEventListener("pagehide", function () { flush(); });
+  window.addEventListener("focus", function () { if (doc) refresh().catch(function () {}); });
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") flush(); });
+
+  function gate(msg, err) {
+    app.innerHTML = '<div class="wrap"><div class="gate"><h1><span>SDC/SCE Budget</span></h1>' +
+      (err ? '<div class="note">' + esc(err) + "</div>" : '<p class="sub">' + msg + "</p>") +
+      '<button class="primary" id="signin">Sign in</button><a class="home-link" href="https://dot-y.co/">← dot-y.co</a></div></div>';
+    document.getElementById("signin").onclick = function () { FamilyAuth.login(); };
+  }
+
+  fetch("config.json").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    return FamilyAuth.init(c);
+  }).then(function (user) {
+    if (!user) return FamilyAuth.autoLogin() || gate("Sign in with your family account to open the budget.");
+    return api("GET", "/all").then(function (res) {
+      if (res.status === 403) return gate("", "Your account doesn’t have access to this budget. Ask Luke to add you.");
+      if (!res.ok) throw new Error("Couldn’t load the budget (" + res.status + "). Reload to try again.");
+      return res.json().then(function (all) {
+        tags = all.tags[DOC] || []; versions = all.versions[DOC] || [];
+        var srv = all.docs[DOC];
+        doc = normalize(srv ? srv.state : null); rev = srv ? srv.rev : null;
+        openDefault();
+        render();
+      });
+    });
+  }).catch(function (e) { gate("", e.message); });
+})();
+</script>
+</body>
+</html>

@@ -231,6 +231,8 @@ export function createApi(depsOrFactory) {
         }
         const owner = typeof body.include === 'boolean' ? (body.include ? 'mine' : 'off') : body.owner;
         if (!OWNERS.includes(owner)) return json(400, { error: 'bad request' });
+        // A deployment without joint accounts (a business) has no Shared Finances to hand them to
+        if (owner === 'shared' && deps.joint === false) return json(400, { error: 'no joint accounts here' });
         const { include, ...rest } = a;
         await store.put({ ...rest, owner });
         return json(200, { id: p.id, owner });
@@ -280,7 +282,7 @@ export function createApi(depsOrFactory) {
       }
 
       case 'GET /shared/{from}': {
-        if (deps.mode === 'shared') return json(404, { error: 'no route' });
+        if (deps.mode === 'shared' || deps.joint === false) return json(404, { error: 'no route' });
         if (!/^\d{4}-\d{2}-\d{2}$/.test(p.from ?? '')) return json(400, { error: 'bad date' });
         const [accounts, txns] = await Promise.all([store.accounts(), store.txns()]);
         const shared = accounts.filter((a) => ownerOf(a) === 'shared');

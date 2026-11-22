@@ -39,5 +39,6 @@ resource "aws_s3_object" "config" {
     title       = var.title
     tool        = var.tool
     mode        = var.mode # the page shows the household (shared) or a person's budget
+    joint       = var.joint_accounts
   })
 }

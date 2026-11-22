@@ -3,6 +3,9 @@
 Read the root `AGENTS.md` first; this adds what's specific to Finances (`tools/finances` + three deployments).
 
 One codebase; each deployment is `tools/<x>-finances/infra/main.tf` calling `../../finances/infra`
+(the three household ones, and `tools/sdc-sce-finances` for the business: `budget_app = "sdc_sce_budget"`,
+`person = "Business"`, `joint_accounts = false` (no account can be marked shared, no `GET /shared` feed) and
+`delegates = []` (no delegated client: nothing else reads it))
 with `tool`, `group`, `title`, `tile_description`, `partition` and `owner` (whose access reads the
 budget on the nightly sync). Personal deployments set `person` (Budget's doc name). Shared sets
 `mode = "shared"`, `sources` (the personal tools to read, and as whom), `delegates = ["dot"]` and a

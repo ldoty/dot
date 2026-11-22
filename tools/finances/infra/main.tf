@@ -1,5 +1,6 @@
-# One finances tool, deployed once per person (tools/luke-finances, tools/amber-finances) and once
-# for the household (tools/shared-finances, mode = "shared"). Each deployment is its own root with
+# One finances tool, deployed once per person (tools/luke-finances, tools/amber-finances), once
+# for the household (tools/shared-finances, mode = "shared") and once for the business
+# (tools/sdc-sce-finances, against the SDC/SCE Budget). Each deployment is its own root with
 # its own state; this module is everything it creates.
 #
 # Personal: the person's bank and card transactions from their own SimpleFIN Bridge connection,
@@ -76,6 +77,18 @@ variable "schedule" {
   description = "Nightly sync, New York time. Shared runs after the personal tools have synced."
 }
 
+variable "budget_app" {
+  type        = string
+  default     = "family_budget"
+  description = "The Budget it follows (its /family/delegation/<group>): the household Budget, or tools/sdc-sce-budget"
+}
+
+variable "joint_accounts" {
+  type        = bool
+  default     = true
+  description = "Personal: whether accounts can be marked shared (joint), for Shared Finances. A business has no household to share with."
+}
+
 variable "domain_name" {
   type    = string
   default = "dot-y.co"
@@ -114,8 +127,10 @@ module "app" {
   name          = local.name
   user_pool_id  = local.pool_id
   callback_urls = [local.app_url, local.dev_url]
-  delegated     = true # Dot reads it for its members (read-only), via its GET /dot manifest
-  delegates     = var.delegates
+  # Dot reads it for its members (read-only), via its GET /dot manifest. With no delegates there's
+  # no delegated client at all, and nothing publishes it at /family/delegation/<group>.
+  delegated = length(var.delegates) > 0
+  delegates = var.delegates
   tile = {
     title       = var.title
     description = var.tile_description

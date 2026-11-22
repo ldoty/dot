@@ -14,10 +14,12 @@ with OpenTofu. The users are Luke and Amber (and invitees). The operator is Luke
 |---|---|---|---|
 | `platform/core/portal` | dot-y.co | (any member) | Home page: a tile per tool you can use; also `/handoff`, `/sms`, `/privacy`, `/terms` |
 | `tools/budget` | budget.dot-y.co | `family_budget` | Household budget: Shared + one per person, versions and tags |
-| `tools/finances` | (code only) | | Finances code + infra module, deployed three times: |
+| `tools/finances` | (code only) | | Finances code + infra module, deployed four times: |
 | `tools/luke-finances` | luke-finances.dot-y.co | `luke_finances` | Luke’s bank accounts (SimpleFIN) filed under his budget |
 | `tools/amber-finances` | amber-finances.dot-y.co | `amber_finances` | Amber’s, the same way |
 | `tools/shared-finances` | shared-finances.dot-y.co | `shared_finances` | The joint accounts from both, against the Shared budget |
+| `tools/sdc-sce-budget` | sdc-sce-budget.dot-y.co | `sdc_sce_budget` | The SDC/SCE business's budget: one doc (`Business`) with Budget's versions and tags, none of its household parts |
+| `tools/sdc-sce-finances` | sdc-sce-finances.dot-y.co | `sdc_sce_finances` | The business's accounts (its own SimpleFIN) filed under the SDC/SCE Budget; no joint accounts; Dot and Claude Code can't read either |
 | `tools/assistant` | assistant.dot-y.co | `family_assistant` | **Dot**: chat with Claude (Bedrock) + calendars + any tool that describes itself |
 | `tools/calendars` | calendars.dot-y.co | `family_calendars` | The family's Google calendars and who may see or change each; the week ahead. The only holder of the Google key: Dot's calendar tools call it as the person. Notes in `tools/calendars/AGENTS.md` |
 | `tools/lists` | lists.dot-y.co | `family_lists` | To-dos and checklists (checklist, Eisenhower matrix, board), private until shared with people or family groups; reminders by text or email from an every-minute sweep. Notes in `tools/lists/AGENTS.md` |
@@ -73,6 +75,7 @@ person* from the other tool's **delegated client** (`platform/api/delegation.mjs
   `POST /commands` (Dot's `house_control`), editing lists the person can edit (Dot's `lists_change`), never sharing, and events on calendars they may change (Dot's calendar tools). Reads are audited by the reader.
 
 Current links: Dot → any tool with a manifest (today the three finances tools, House, Lists, Health, the Archive, Otto and Cards); finances tools → Budget (as their person);
+SDC/SCE Finances → the SDC/SCE Budget (as Luke or Amber; its only reader);
 Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`); Claude Code (`platform/mcp`, signer `mcp`, Luke only for now) → the tools
 whose `delegates` list `"mcp"` (Luke’s and Shared Finances, House, Lists, Health, Archive, Otto, Cards). It never confirms a write that needs the person's OK, except Otto's
 (`CONFIRM_APPS` in `platform/mcp/main.tf`, Luke's choice): there the OK is Claude Code's own permission prompt, from `ask` rules on

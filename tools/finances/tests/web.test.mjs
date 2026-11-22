@@ -27,7 +27,7 @@ async function setup(opts) {
 }
 beforeEach(() => setup());
 
-async function open(hash = '#2026-10') {
+async function open(hash = '#2026-10', cfg = {}) {
   const requests = [];
   const dom = new JSDOM(HTML, {
     runScripts: 'dangerously', url: `https://luke-finances.dot-y.co/${hash}`, pretendToBeVisual: true,
@@ -35,7 +35,7 @@ async function open(hash = '#2026-10') {
       w.FamilyAuth = { init: async () => ({ email: 't' }), accessToken: async () => token(), autoLogin: () => false, login() {}, logout() {} };
       w.fetch = async (url, o = {}) => {
         const json = (status, body) => ({ ok: status < 300, status, json: async () => body });
-        if (url === 'config.json') return json(200, { apiUrl: API, title: 'Luke’s Finances', tool: 'luke-finances' });
+        if (url === 'config.json') return json(200, { apiUrl: API, title: 'Luke’s Finances', tool: 'luke-finances', ...cfg });
         const path = url.slice(API.length);
         requests.push(`${o.method || 'GET'} ${path}`);
         const r = await call(o.method || 'GET', path, o.body ? JSON.parse(o.body) : undefined);
@@ -475,4 +475,14 @@ test('sync now', async () => {
   assert.ok(p.requests.includes('POST /sync'));
   assert.equal(t.syncs.length, 1);
   p.close();
+});
+
+test('a business deployment (joint: false) offers no Shared (joint) owner', async () => {
+  const p = await open('#2026-10', { joint: false });
+  const sel = p.d.querySelector('[data-owner]');
+  assert.deepEqual([...sel.options].map((o) => o.value), ['mine', 'off']);
+  p.close();
+  const q = await open();
+  assert.deepEqual([...q.d.querySelector('[data-owner]').options].map((o) => o.value), ['mine', 'shared', 'off']);
+  q.close();
 });
