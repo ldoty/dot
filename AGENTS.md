@@ -75,7 +75,7 @@ person* from the other tool's **delegated client** (`platform/api/delegation.mjs
   `POST /commands` (Dot's `house_control`), editing lists the person can edit (Dot's `lists_change`), never sharing, and events on calendars they may change (Dot's calendar tools). Reads are audited by the reader.
 
 Current links: Dot → any tool with a manifest (today the three finances tools, House, Lists, Health, the Archive, Otto and Cards); finances tools → Budget (as their person);
-SDC/SCE Finances → the SDC/SCE Budget (as Luke or Amber; its only reader);
+SDC/SCE Finances → the SDC/SCE Budget (as Luke, Amber or Lindsay; its only reader);
 Shared Finances → Luke’s and Amber’s finances (their `GET /shared/{from}`); Claude Code (`platform/mcp`, signer `mcp`, Luke only for now) → the tools
 whose `delegates` list `"mcp"` (Luke’s and Shared Finances, House, Lists, Health, Archive, Otto, Cards). It never confirms a write that needs the person's OK, except Otto's
 (`CONFIRM_APPS` in `platform/mcp/main.tf`, Luke's choice): there the OK is Claude Code's own permission prompt, from `ask` rules on

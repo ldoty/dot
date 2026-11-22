@@ -1,6 +1,6 @@
 # SDC/SCE Budget
 
-`https://sdc-sce-budget.dot-y.co/` · permission group **`sdc_sce_budget`** (Luke and Amber) · table `family-sdc-sce-budget` (partition `BUSINESS#sdc-sce`)
+`https://sdc-sce-budget.dot-y.co/` · permission group **`sdc_sce_budget`** (Luke, Amber and Lindsay) · table `family-sdc-sce-budget` (partition `BUSINESS#sdc-sce`)
 
 The business's budget: income, expense categories and categories set aside (taxes, a reserve), each
 item per month or per year. It works like the household Budget (`tools/budget`) without the household

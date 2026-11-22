@@ -1,6 +1,6 @@
 # SDC/SCE Finances
 
-`https://sdc-sce-finances.dot-y.co/` · permission group **`sdc_sce_finances`** (Luke and Amber) · table `family-sdc-sce-finances` (partition `SDC_SCE`)
+`https://sdc-sce-finances.dot-y.co/` · permission group **`sdc_sce_finances`** (Luke, Amber and Lindsay) · table `family-sdc-sce-finances` (partition `SDC_SCE`)
 
 A deployment of the finances tool (code, page, tests and infra module in `tools/finances`) for the
 business: its own SimpleFIN connection, filed under the **SDC/SCE Budget** (`tools/sdc-sce-budget`,

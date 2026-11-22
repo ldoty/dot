@@ -1,4 +1,4 @@
-# SDC/SCE's business budget at sdc-sce-budget.dot-y.co, for members of sdc_sce_budget (Luke and Amber).
+# SDC/SCE's business budget at sdc-sce-budget.dot-y.co, for members of sdc_sce_budget (Luke, Amber and Lindsay).
 #
 # Access is checked at four layers:
 #  1. Cognito: the pre-token gate issues no token for this app unless the user is in sdc_sce_budget.
