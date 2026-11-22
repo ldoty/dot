@@ -287,11 +287,11 @@ resource "aws_ssm_parameter" "delegation_key" {
 variable "delegation_signers" {
   type = map(object({ users = list(string) }))
   default = {
-    luke_finances    = { users = ["44f8c468-4011-70b8-76aa-ec2b68b0b004"] }                                         # Luke
-    amber_finances   = { users = ["74c8b418-e0b1-7075-7ae5-ca791980dd07"] }                                         # Amber
-    shared_finances  = { users = ["44f8c468-4011-70b8-76aa-ec2b68b0b004", "74c8b418-e0b1-7075-7ae5-ca791980dd07"] } # reads each personal tool as its owner
-    sdc_sce_finances = { users = ["44f8c468-4011-70b8-76aa-ec2b68b0b004", "74c8b418-e0b1-7075-7ae5-ca791980dd07"] } # reads the SDC/SCE Budget (only), as Luke or Amber
-    mcp              = { users = ["44f8c468-4011-70b8-76aa-ec2b68b0b004"] }                                         # platform/mcp: Claude Code, as Luke for now
+    luke_finances    = { users = ["44f8c468-4011-70b8-76aa-ec2b68b0b004"] }                                                                                 # Luke
+    amber_finances   = { users = ["74c8b418-e0b1-7075-7ae5-ca791980dd07"] }                                                                                 # Amber
+    shared_finances  = { users = ["44f8c468-4011-70b8-76aa-ec2b68b0b004", "74c8b418-e0b1-7075-7ae5-ca791980dd07"] }                                         # reads each personal tool as its owner
+    sdc_sce_finances = { users = ["44f8c468-4011-70b8-76aa-ec2b68b0b004", "74c8b418-e0b1-7075-7ae5-ca791980dd07", "44081478-e0c1-7040-c241-34f9ab7a5b97"] } # reads the SDC/SCE Budget (only), as Luke, Amber or Lindsay
+    mcp              = { users = ["44f8c468-4011-70b8-76aa-ec2b68b0b004"] }                                                                                 # platform/mcp: Claude Code, as Luke for now
   }
 }
 
