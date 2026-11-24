@@ -171,10 +171,16 @@ test('after answering: step through KataGo’s line, leave it with your own move
   const p = await open();
   await p.click('[data-study="fix"]');
   await p.click('[data-pt="49"]');
+  // Under the board, before the answer, folded until used
+  const order = [...p.d.querySelectorAll('.drill > *')].map((e) => e.getAttribute('class') || e.tagName);
+  assert.ok(order.indexOf('explore') > order.indexOf('board') && order.indexOf('explore') < order.indexOf('answer'), order.join(' '));
+  assert.equal(p.el('#explore').open, false);
   await p.click('[data-line="best"]');
+  assert.equal(p.el('#explore').open, true, 'opens when a line is chosen, and stays open');
   assert.match(p.el('#exinfo').textContent, /Move 1: Black E4 \(KataGo’s line, 1 of 3\)/);
   await p.click('[data-step="fwd"]');
   assert.match(p.el('#exinfo').textContent, /Move 2: White D4/);
+  assert.equal(p.el('#explore').open, true);
   const nums = () => [...p.d.querySelectorAll('svg text')].map((t) => t.textContent).filter((t) => /^\d+$/.test(t) && Number(t) < 10 && t.length === 1);
   assert.ok(nums().includes('2'), 'move numbers on the stones');
   await p.click('[data-step="end"]');

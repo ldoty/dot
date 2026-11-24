@@ -41,7 +41,7 @@ details > summary { cursor: pointer; color: var(--pool) }
 .prompt { font-size: 18px }
 .board { width: 100%; max-width: 480px; justify-self: center; touch-action: manipulation; user-select: none }
 .board .pt { cursor: pointer }
-.answer, .explore { display: grid; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 18px }
+.answer, .explore > div { display: grid; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 18px }
 .right { color: var(--leaf); font-weight: 600 }
 .wrong { color: var(--ember); font-weight: 600 }
 .grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px }
@@ -70,8 +70,12 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 14px; justify-content: center }
 .legend span { display: inline-flex; align-items: center; gap: 6px }
 .legend svg { width: 20px; height: 20px }
-.explore h3 { font-family: var(--body); font-size: 14px; font-weight: 600; margin: 0 }
+.explore { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md) }
+.explore > summary { cursor: pointer; padding: 12px 18px; font-weight: 600; color: var(--pool); list-style-position: inside }
+.explore[open] > summary { padding-bottom: 4px }
+.explore > div { border: 0; background: none; padding-top: 8px }
 .explore .row { gap: 8px }
+.explore [data-line] { padding: 7px 14px; font-size: 14px }
 .explore .on { background: var(--pool); color: var(--on-accent) }
 .steps button { min-width: 48px; padding: 8px 12px }
 #exinfo { color: var(--muted); font-size: 14px }
@@ -341,7 +345,7 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
   function renderDrill() {
     var s = session, cur = s.cur, d = cur.d;
     var n = s.queue.length, pct = Math.round(100 * s.at / n);
-    var marks = {}, own = null, feedback = cur.answered ? cur.feedback + explorePanel() : "";
+    var marks = {}, own = null, feedback = cur.answered ? cur.feedback : "", explore = cur.answered ? explorePanel() : "";
     var ex = cur.answered && cur.ex.pos > 0 ? played(cur) : null;
     var key = cur.answered && !ex && d.kind !== "count" ? legend(d, cur) : "";
     if (cur.answered && d.kind === "fix") { (d.answers || []).forEach(function (a) { marks[a] = "best"; }); marks[d.played] = "played"; }
@@ -354,7 +358,7 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
         '<label class="meta">by <input id="margin" type="number" min="0" max="81" step="0.5" inputmode="decimal" aria-label="By how many points"></label><button class="btn primary">Check</button></form>' : "";
     main.innerHTML = '<div class="drill"><button class="back" data-home>← Go</button><div class="progress"><i style="width:' + pct + '%"></i></div>' +
       '<div class="row">' + (d._section ? '<span class="chip due">' + d._section + "</span>" : "") + '<span class="chip">' + KIND[d.kind] + "</span>" + (d.kind === "fix" && THEMES[d.theme] ? '<span class="chip">' + esc(THEMES[d.theme][0]) + "</span>" : "") + '<small class="grow">' + (s.at + 1) + " of " + n + "</small></div>" +
-      '<p class="prompt">' + promptFor(d) + "</p>" + (ex ? boardSvg(d, ex.board, { numbers: ex.numbers, clickable: true, last: -1 }) : boardSvg(d, cur.board, { marks: marks, own: own, clickable: clickable, last: cur.last })) + key + guess + feedback + '<p class="status" id="status"></p></div>';
+      '<p class="prompt">' + promptFor(d) + "</p>" + (ex ? boardSvg(d, ex.board, { numbers: ex.numbers, clickable: true, last: -1 }) : boardSvg(d, cur.board, { marks: marks, own: own, clickable: clickable, last: cur.last })) + key + explore + guess + feedback + '<p class="status" id="status"></p></div>';
   }
 
   // Grade from how it went: right and quick is easy, right is good, right but slow is hard, wrong is again
@@ -411,11 +415,11 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
       var said = who + " " + (m < 0 ? "plays elsewhere" : pt(m, d.size));
       info = "Move " + ex.pos + ": " + said + (ex.line && k === ex.pos ? " (" + ex.line[1] + ", " + ex.pos + " of " + ex.line[2].length + ")." : ". " + (ex.line ? "Your own moves since move " + (k + 1) + "." : "Your own moves."));
     }
-    return '<div class="explore"><h3>Explore</h3>' + (lines.length ? '<div class="row">' + lines.map(function (l) {
+    return '<details class="explore" id="explore"' + (cur.exOpen ? " open" : "") + "><summary>" + (lines.length ? "Explore the lines" : "Explore") + "</summary><div>" + (lines.length ? '<div class="row">' + lines.map(function (l) {
       return '<button class="btn ghost' + (ex.line && ex.line[0] === l[0] ? " on" : "") + '" data-line="' + l[0] + '">' + esc(l[1]) + "</button>";
     }).join("") + "</div>" : "") +
       '<div class="row steps"><button class="btn ghost" data-step="start" aria-label="To the start">⏮</button><button class="btn ghost" data-step="back" aria-label="Back one">◀</button>' +
-      '<button class="btn ghost" data-step="fwd" aria-label="Forward one">▶</button><button class="btn ghost" data-step="end" aria-label="To the end">⏭</button></div><div id="exinfo">' + esc(info) + "</div></div>";
+      '<button class="btn ghost" data-step="fwd" aria-label="Forward one">▶</button><button class="btn ghost" data-step="end" aria-label="To the end">⏭</button></div><div id="exinfo">' + esc(info) + "</div></div></details>";
   }
   function step(how) {
     var ex = session.cur.ex, line = ex.line ? ex.line[2] : [];
@@ -435,14 +439,14 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
   function chooseLine(name) {
     var ex = session.cur.ex, l = linesOf(session.cur.d).filter(function (x) { return x[0] === name; })[0];
     if (!l) return;
-    ex.line = l; ex.seq = l[2].slice(0, 1); ex.pos = 1;
+    ex.line = l; ex.seq = l[2].slice(0, 1); ex.pos = 1; session.cur.exOpen = true;
     renderDrill();
   }
   /** Your own move while exploring: whoever's turn it is, there; it replaces anything after it */
   function exploreMove(i) {
     var cur = session.cur, ex = cur.ex, at = played(cur);
     if (!R.play(at.board, cur.d.size, i, at.next, at.ko)) return status("Not a legal move.");
-    ex.seq = ex.seq.slice(0, ex.pos).concat([i]); ex.pos++;
+    ex.seq = ex.seq.slice(0, ex.pos).concat([i]); ex.pos++; cur.exOpen = true;
     renderDrill();
   }
   function themeNote(d) { var t = THEMES[d.theme]; return t ? "<small>" + esc(t[1]) + "</small>" : ""; }
@@ -548,6 +552,10 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
       var mi = document.getElementById("margin"); if (mi) mi.focus();
     }
   });
+  // Whether the explore bar is open survives the re-render after each step
+  main.addEventListener("toggle", function (e) {
+    if (e.target.id === "explore" && session && session.cur) session.cur.exOpen = e.target.open;
+  }, true);
   main.addEventListener("submit", function (e) { if (e.target.id === "guess") checkCount(e); });
   document.addEventListener("keydown", function (e) {
     if (!session || !session.cur || !session.cur.answered) return;
