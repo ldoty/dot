@@ -4,6 +4,10 @@
 //   GET  /study?kind=<k>[&theme=<t>][&mine=1] -> { due: [drill…], new: [drill…], newLeft } what to drill now: every
 //                                           due one (oldest first), then new ones up to today's limit
 //   POST /drills/{kind}/{id}/review      { grade, ms?, ok?, err? } -> { schedule }
+//   GET  /today                          -> { plan, progress, sections: { warmup, focus, count, review }, left }
+//                                           the training program (plan.mjs) and what's left of today's session
+//   POST /plan                           { action: start | next, rev? } -> { plan, progress } start the program
+//                                           from the error database, or move on to the next focus
 // Drills are written by scripts/upload.mjs from the KataGo analysis of his games (scripts/), never by the
 // page; the page only reads them and reviews them. The token is re-verified here (signature, issuer, client,
 // expiry, group); API Gateway's authorizer is not trusted on its own.
@@ -11,10 +15,13 @@
 // Rows: DRILL#<kind> / <id>    { kind, theme, size, stones, toMove, last, answers…, sched, rev } (kinds below)
 //       STAT / <local date>    { n, miss, ms, kinds: { <kind>: { n, miss, err } }, themes: { <theme>: { n, miss } }, rev }
 //       PROFILE / mistakes     { games, moves, byKind: { <kind>: { n, points } }, at } (from scripts/classify.mjs)
+//       WEEK / <monday>        { games, moves, byKind } his real games that week (from scripts/classify.mjs)
+//       PLAN / current         the training program (plan.mjs)
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { verifyAccessToken } from './verify-token.mjs';
 import { GRADES, isDue, isNew, review } from './schedule.mjs';
+import { FOCUS, advance, newPlan, nextLevel, progress, today as todaysSession } from './plan.mjs';
 
 //   fix      find a better move than the one played (his mistakes, and his opponents'); theme = the kind of mistake
 //   threat   the opponent just played: where's the threat?
@@ -98,8 +105,56 @@ export function createApi(deps) {
     }
   }
 
+  const planOut = ({ pk, sk, ...p }) => ({ ...p, focus: p.order[p.at], heuristic: FOCUS[p.order[p.at]] });
+
+  /** The program and today's session; the life-and-death level is brought up to date first */
+  async function todayRoute() {
+    const [plan, stats] = await Promise.all([get('PLAN', 'current'), all('STAT')]);
+    if (!plan) return json(200, { plan: null });
+    const now = deps.now(), day = today();
+    // The last three days before today: how the warm-ups went
+    const recent = stats.filter((s) => s.sk < day && s.sk >= dayIn(new Date(now.getTime() - 3 * 86_400_000), deps.timeZone));
+    const tsumego = await all('DRILL#tsumego');
+    const ranks = tsumego.map((d) => d.rank ?? 0);
+    const level = nextLevel(plan.level, recent, { min: Math.min(...ranks, 0), max: Math.max(...ranks, 40) });
+    let cur = plan;
+    if (level !== plan.level && plan.levelDay !== day) {
+      const item = { ...plan, level, levelDay: day, rev: plan.rev + 1 };
+      if (await putAt(item, plan.rev)) cur = item;
+    }
+    const drills = Object.fromEntries(await Promise.all(KINDS.map(async (k) => [k, k === 'tsumego' ? tsumego : await all(`DRILL#${k}`)])));
+    const sections = todaysSession({ plan: cur, drills, stat: stats.find((s) => s.sk === day), nowIso: now.toISOString(), isDue, isNew });
+    const outs = Object.fromEntries(Object.entries(sections).map(([k, ds]) => [k, ds.map(out)]));
+    return json(200, { plan: planOut(cur), progress: progress(cur, stats, now), sections: outs, left: Object.values(outs).reduce((n, ds) => n + ds.length, 0) });
+  }
+
+  async function planRoute(body) {
+    const now = deps.now();
+    const plan = await get('PLAN', 'current');
+    if (body.action === 'start') {
+      if (plan) return json(409, { error: 'the program has already started', current: planOut(plan) });
+      const profile = await get('PROFILE', 'mistakes');
+      const ranks = (await all('DRILL#tsumego')).map((d) => d.rank ?? 0);
+      const p = newPlan(profile, now, ranks.length ? Math.min(...ranks) : 5);
+      if (!p) return json(400, { error: 'no mistakes to work on yet' });
+      const item = { pk: 'PLAN', sk: 'current', ...p, rev: 1 };
+      if (!(await putAt(item))) return json(409, { error: 'the program has already started' });
+      return json(201, { plan: planOut(item), progress: progress(item, [], now) });
+    }
+    if (body.action === 'next') {
+      if (!plan) return json(404, { error: 'no program yet' });
+      if (body.rev !== plan.rev) return json(409, { error: 'changed meanwhile', current: planOut(plan) });
+      const next = advance(plan, progress(plan, await all('STAT'), now), now);
+      if (!next) return json(400, { error: 'that was the last focus' });
+      const item = { ...next, rev: plan.rev + 1 };
+      if (!(await putAt(item, plan.rev))) return json(409, { error: 'changed meanwhile' });
+      return json(200, { plan: planOut(item), progress: progress(item, [], now) });
+    }
+    return json(400, { error: 'action: start or next' });
+  }
+
   async function summary() {
-    const [lists, stats, profile] = await Promise.all([Promise.all(KINDS.map((k) => all(`DRILL#${k}`))), all('STAT'), get('PROFILE', 'mistakes')]);
+    const [lists, stats, profile, weekRows, plan] = await Promise.all([Promise.all(KINDS.map((k) => all(`DRILL#${k}`))), all('STAT'), get('PROFILE', 'mistakes'), all('WEEK'), get('PLAN', 'current')]);
     const t = nowIso();
     const tally = (ds) => ({ total: ds.length, due: ds.filter((d) => isDue(d.sched, t)).length, new: ds.filter((d) => isNew(d.sched)).length, mine: ds.filter((d) => d.mine).length });
     const kinds = Object.fromEntries(KINDS.map((k, i) => [k, tally(lists[i])]));
@@ -126,6 +181,8 @@ export function createApi(deps) {
       kinds,
       themes: Object.fromEntries(Object.entries(themes).map(([k, ds]) => [k, tally(ds)])),
       profile: profile ? { games: profile.games, moves: profile.moves, byKind: profile.byKind, at: profile.at } : null,
+      weeks: weekRows.map((w) => ({ week: w.sk, games: w.games, byKind: w.byKind })),
+      plan: plan ? planOut(plan) : null,
       today: { n: s?.n ?? 0, miss: s?.miss ?? 0, minutes: Math.round((s?.ms ?? 0) / 60_000) },
       streak, week,
     });
@@ -155,6 +212,10 @@ export function createApi(deps) {
     switch (route) {
       case 'GET /summary':
         return summary();
+      case 'GET /today':
+        return todayRoute();
+      case 'POST /plan':
+        return planRoute(body);
       case 'GET /study': {
         const q = event.queryStringParameters ?? {};
         if (!KINDS.includes(q.kind)) return json(400, { error: `kind: ${KINDS.join(', ')}` });

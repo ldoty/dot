@@ -8,7 +8,7 @@ const SITE = 'https://go.dot-y.co';
 const config = await (await fetch(`${SITE}/config.json`)).json();
 
 test('every API route refuses requests without a token', async () => {
-  for (const [method, path] of [['GET', '/summary'], ['GET', '/study?kind=fix'], ['POST', '/drills/fix/x1/review']]) {
+  for (const [method, path] of [['GET', '/summary'], ['GET', '/study?kind=fix'], ['POST', '/drills/fix/x1/review'], ['GET', '/today'], ['POST', '/plan']]) {
     assert.equal((await fetch(config.apiUrl + path, { method })).status, 401, `${method} ${path}`);
   }
 });

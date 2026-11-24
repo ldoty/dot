@@ -1,5 +1,5 @@
 locals {
-  routes = ["GET /summary", "GET /study", "POST /drills/{kind}/{id}/review"]
+  routes = ["GET /summary", "GET /study", "POST /drills/{kind}/{id}/review", "GET /today", "POST /plan"]
 }
 
 # The tool's handler plus the platform's shared token check
@@ -13,6 +13,10 @@ data "archive_file" "api" {
   source {
     content  = file("${path.module}/../../../platform/api/schedule.mjs")
     filename = "schedule.mjs"
+  }
+  source {
+    content  = file("${path.module}/../api/plan.mjs")
+    filename = "plan.mjs"
   }
   source {
     content  = file("${path.module}/../../../platform/api/verify-token.mjs")

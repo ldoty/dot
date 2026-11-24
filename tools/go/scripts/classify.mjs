@@ -136,6 +136,26 @@ export function profile(games) {
   return { games: games.length, moves, byKind };
 }
 
+/** The Monday a date falls in (its week), YYYY-MM-DD in UTC */
+export function weekOf(iso) {
+  const d = new Date(iso);
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+}
+
+/** His real games week by week: [{ week, games, moves, byKind }], oldest first (the program's progress chart) */
+export function weeks(games) {
+  const by = new Map();
+  for (const g of games) {
+    if (!g.a.ended) continue;
+    const w = weekOf(g.a.ended);
+    if (!by.has(w)) by.set(w, []);
+    by.get(w).push(g);
+  }
+  return [...by.keys()].sort().map((week) => ({ week, ...profile(by.get(week)) }));
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   const files = readdirSync(`${PRIVATE}analysis`).filter((f) => /^\d+\.json$/.test(f));
   const games = files.map((f) => readJson(`${PRIVATE}analysis/${f}`)).filter((a) => a.me).map((a) => ({ a, judged: judge(a) }));
@@ -147,7 +167,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (l) d.lines = linesFor(d.kind, l);
   }
   const p = profile(games);
-  writeJson(`${PRIVATE}bank.json`, { at: new Date().toISOString(), profile: p, ...bank });
+  writeJson(`${PRIVATE}bank.json`, { at: new Date().toISOString(), profile: p, weeks: weeks(games), ...bank });
   console.log(`${p.games} games, ${p.moves} of your moves`);
   const total = KINDS.reduce((n, k) => n + p.byKind[k].points, 0);
   for (const k of [...KINDS].sort((x, y) => p.byKind[y].points - p.byKind[x].points)) {

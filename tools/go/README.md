@@ -19,6 +19,16 @@ point (the point touching both colours elsewhere), endgame order, played in the 
 but the wrong move. KataGo only gives scores, best moves and ownership; the kinds come from those plus
 the board.
 
+## The training program (`api/plan.mjs`)
+
+One focus at a time, in the order his mistakes cost him in real games (from the error database), each with
+one rule to play by. A session a day, about 20 minutes: a life-and-death warm-up at his level (the level
+moves up when warm-ups are 90% right over three days, down under 70%), up to 12 focus drills (his own
+positions first), 3 counting positions, and up to 10 other drills that are due. What's done today comes off.
+After a week, 40 focus drills and 85% right, the page suggests moving on; he decides (skipping early asks
+first). The real test is the chart of his real games week by week (`WEEK` rows): points lost a game, for the
+focus and overall, with the week training started marked.
+
 ## Building the drills (on the Mac, not in AWS)
 
 ```sh
@@ -26,8 +36,11 @@ brew install katago                                   # comes with the b18 netwo
 node tools/go/scripts/analyze.mjs --games 200         # OGS games (cached, 1 request/s) -> KataGo -> private/analysis/
 node tools/go/scripts/classify.mjs                    # -> private/bank.json, prints his mistakes by kind
 node tools/go/scripts/fetch-tsumego.mjs               # -> private/tsumego.json
-node tools/go/scripts/upload.mjs                      # new drills into family-go; existing ones (and their schedules) kept
+node tools/go/scripts/lines.mjs                       # KataGo's lines to step through, cached per game
+node tools/go/scripts/upload.mjs                      # new drills into family-go; existing ones keep their schedules
 ```
+
+Each week: `node tools/go/scripts/weekly.mjs` does all of it for his newest games (only new ones are analysed).
 
 Everything fetched or computed stays in gitignored `private/`. The page never calls OGS or KataGo.
 
@@ -38,6 +51,8 @@ Everything fetched or computed stays in gitignored `private/`. The page never ca
 | `DRILL#<kind>` / `<id>` | the position (`stones`: 81 digits, 0 empty 1 black 2 white), `toMove`, `last`, the answers, `theme`, `mine`, `sched`, `rev` |
 | `STAT` / `<local date>` | that day's drills and misses, by kind and theme, and counting error |
 | `PROFILE` / `mistakes` | the error database: his mistakes by kind (count, points lost) and how many games |
+| `WEEK` / `<monday>` | his real games that week: games, moves, mistakes by kind |
+| `PLAN` / `current` | the program: focus order, current focus and when it started, life-and-death level, history |
 
 ## Deploy
 

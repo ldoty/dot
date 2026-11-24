@@ -32,6 +32,7 @@ async function open() {
   const dom = new JSDOM(HTML, {
     runScripts: 'dangerously', url: 'https://go.dot-y.co/', pretendToBeVisual: true,
     beforeParse(w) {
+      w.confirm = () => true;
       w.FamilyAuth = { init: async () => ({ email: 't' }), accessToken: async () => token(), autoLogin: () => false, login() {}, logout() {} };
       w.fetch = async (url, o = {}) => {
         const json = (status, body) => ({ ok: status < 300, status, json: async () => body });
@@ -213,5 +214,49 @@ test('a threat’s “ignore it” line starts with playing elsewhere; life and 
   await p.click('[data-line="answer"]');
   await p.click('[data-step="end"]');
   assert.match(p.el('#exinfo').textContent, /Move 3: Black A2 \(The answer, 3 of 3\)/);
+  p.close();
+});
+
+test('the program: start it, see the focus and its rule, do today’s session in order, see real games by week', async () => {
+  table.put({ pk: 'PROFILE', sk: 'mistakes', games: 20, moves: 500, byKind: { lost_stones: { n: 20, points: 380 }, wrong_area: { n: 24, points: 180 } }, at: 'x' });
+  table.put({ pk: 'WEEK', sk: '2026-11-09', games: 10, moves: 250, byKind: { lost_stones: { n: 10, points: 200 } } });
+  table.put({ pk: 'WEEK', sk: '2026-11-16', games: 10, moves: 250, byKind: { lost_stones: { n: 8, points: 150 }, wrong_area: { n: 5, points: 40 } } });
+  table.put(drill('tsumego', { rank: 5, stones: '0'.repeat(81), tree: JSON.stringify({ x: -1, y: -1, branches: [{ x: 0, y: 0, correct_answer: true }] }) }));
+  table.put(drill('fix', { theme: 'lost_stones', answers: [49], mine: true }));
+  table.put(drill('count', { lead: 2 }));
+  const p = await open();
+  assert.match(p.text(), /First: Let stones die\. Then played in the wrong area\./);
+  await p.click('[data-plan="start"]');
+  await wait(60);
+  assert.match(p.text(), /Focus 1 of 2: Let stones die/);
+  assert.match(p.el('.train .rule').textContent, /weakest group/);
+  assert.match(p.el('[data-today]').textContent, /3 left/);
+  // Two charts (the focus and everything), and the table under them
+  assert.deepEqual([...p.d.querySelectorAll('.chart h3')].map((h) => h.textContent), ['Let stones die: points a game', 'All mistakes: points a game']);
+  assert.match(p.d.querySelector('.chart title').textContent, /Week of 2026-11-09: 20.0 points a game \(10 games\)/);
+  assert.deepEqual([...p.d.querySelectorAll('table.weeks td')].slice(0, 4).map((x) => x.textContent), ['2026-11-09', '10', '20.0', '20.0']);
+  // Today: the warm-up first, then the focus, then counting
+  await p.click('[data-today]');
+  assert.match(p.el('.chip.due').textContent, /Warm-up/);
+  await p.click('[data-pt="0"]');
+  await p.click('.grades .pick');
+  assert.match(p.el('.chip.due').textContent, /Focus/);
+  await p.click('[data-pt="49"]');
+  await p.click('.grades .pick');
+  assert.match(p.el('.chip.due').textContent, /Counting/);
+  await p.click('[data-side="b"]');
+  p.el('#margin').value = '2';
+  p.el('#guess').dispatchEvent(new p.d.defaultView.Event('submit', { bubbles: true, cancelable: true }));
+  await wait();
+  await p.click('.grades .pick');
+  assert.match(p.text(), /That’s today’s training/);
+  await p.click('[data-home]');
+  await wait(60);
+  assert.match(p.text(), /Today’s training is done/);
+  assert.match(p.text(), /1 focus drill, 100% right/);
+  // Skipping ahead (not ready yet) asks first, then moves on
+  await p.click('[data-plan="next"]');
+  await wait(60);
+  assert.match(p.text(), /Focus 2 of 2: Played in the wrong area/);
   p.close();
 });

@@ -2,7 +2,7 @@
 // error database into the deployed table, as profile ldoty.
 //   node tools/go/scripts/upload.mjs [--dry]
 // A drill already there keeps its schedule (his history); only its lines are brought up to date. The error
-// database (PROFILE / mistakes) is replaced each time. What goes up:
+// database (PROFILE / mistakes) and his games week by week (WEEK / <monday>) are replaced each time. What goes up:
 //   fix      every one of his mistakes, and up to OTHERS_PER_THEME of his opponents' per kind, the costliest first
 //   threat   up to MAX_THREATS, his own first, then the biggest
 //   count    up to MAX_COUNTS
@@ -56,4 +56,6 @@ async function worker() {
 }
 await Promise.all([...Array(8)].map(worker));
 await db.send(new PutCommand({ TableName: TABLE, Item: { pk: 'PROFILE', sk: 'mistakes', ...bank.profile, at: bank.at } }));
+// His real games week by week, for the program's progress chart (replaced each time)
+for (const w of bank.weeks ?? []) await db.send(new PutCommand({ TableName: TABLE, Item: { pk: 'WEEK', sk: w.week, games: w.games, moves: w.moves, byKind: w.byKind } }));
 console.log(`added ${added}, already there ${kept}; error database from ${bank.profile.games} games`);
