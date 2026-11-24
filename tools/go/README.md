@@ -45,7 +45,8 @@ What counts:
   dead group is 40 points), so a points change alone is weaker evidence.
 - A change is **real** only past twice its standard error, on 10+ games (`progress.mjs` says which). At
   ~20 games a week, two weeks only shows a big change: losing stones would have to fall from about 1.1 a
-  game to about 0.55, all mistakes from about 5.1 to about 4.0. A month (~80 games) shows about half that.
+  game to about 0.55, all mistakes from about 5.1 to about 4.0. A month (~80 games) can show a smaller
+  change: stones under about 0.65, all under about 4.3.
 - **The focus should move first**: stones lost, the first focus, should drop before the others do. Kinds
   not yet trained are the control: if everything moves together, it's more likely form than the drills.
 - **OGS rank** is the other measure (printed by `progress.mjs`). Win rate isn't: OGS pairs him with
