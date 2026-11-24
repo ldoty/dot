@@ -266,3 +266,31 @@ test('the program: start it, see the focus and its rule, do today’s session in
   assert.match(p.text(), /Focus 2 of 2: Played in the wrong area/);
   p.close();
 });
+
+test('what happened in the game, and side by side with KataGo’s line, stepping together', async () => {
+  // KataGo: E4 (49), D4 (48), F5 (41). The game: C9 (2), E4 (49)
+  table.put(drill('fix', { answers: [49], played: 2, lines: { best: [49, 48, 41], played: [2, 49], game: [2, 49, 48] } }));
+  const p = await open();
+  await p.click('[data-study="fix"]');
+  await p.click('[data-pt="49"]');
+  assert.deepEqual([...p.d.querySelectorAll('[data-line]')].map((b) => b.textContent), ['KataGo’s line', 'What happened', 'How it’s punished']);
+  await p.click('[data-line="played"]');
+  assert.match(p.el('#exinfo').textContent, /Move 1: Black C9 \(What happened, 1 of 2\)/);
+  await p.click('[data-compare]');
+  assert.deepEqual([...p.d.querySelectorAll('.pair figcaption')].map((c) => c.textContent), ['KataGo’s line', 'What happened']);
+  assert.match(p.el('#exinfo').textContent, /Move 1: KataGo Black E4 · the game Black C9/);
+  await p.click('[data-step="fwd"]');
+  assert.match(p.el('#exinfo').textContent, /Move 2: KataGo White D4 · the game White E4/);
+  await p.click('[data-step="end"]');
+  assert.match(p.el('#exinfo').textContent, /Move 3: KataGo Black F5 · the game done/);
+  assert.equal(p.d.querySelectorAll('.pair svg').length, 2);
+  assert.ok(!p.d.querySelector('.legend'));
+  // Leave the game's line at move 2: White E4 stands, and Black plays J1 on one board
+  await p.click('[data-step="back"]');
+  await p.click('[data-from="played"] [data-pt="80"]');
+  assert.ok(!p.d.querySelector('.pair'));
+  assert.match(p.el('#exinfo').textContent, /Move 3: Black J1\. Your own moves since move 3/);
+  await p.click('[data-step="back"]');
+  assert.match(p.el('#exinfo').textContent, /Move 2: White E4 \(What happened, 2 of 2\)/);
+  p.close();
+});

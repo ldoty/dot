@@ -75,7 +75,12 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
 .explore[open] > summary { padding-bottom: 4px }
 .explore > div { border: 0; background: none; padding-top: 8px }
 .explore .row { gap: 8px }
-.explore [data-line] { padding: 7px 14px; font-size: 14px }
+.explore [data-line], .explore [data-compare] { padding: 7px 14px; font-size: 14px }
+/* Side by side: KataGo's line and what happened, stepping together */
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px }
+.pair figure { margin: 0; display: grid; gap: 6px; justify-items: center }
+.pair figcaption { font-size: 14px; font-weight: 600 }
+.pair .board { max-width: 100% }
 .explore .on { background: var(--pool); color: var(--on-accent) }
 .steps button { min-width: 48px; padding: 8px 12px }
 #exinfo { color: var(--muted); font-size: 14px }
@@ -346,8 +351,9 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
     var s = session, cur = s.cur, d = cur.d;
     var n = s.queue.length, pct = Math.round(100 * s.at / n);
     var marks = {}, own = null, feedback = cur.answered ? cur.feedback : "", explore = cur.answered ? explorePanel() : "";
-    var ex = cur.answered && cur.ex.pos > 0 ? played(cur) : null;
-    var key = cur.answered && !ex && d.kind !== "count" ? legend(d, cur) : "";
+    var ex = cur.answered && cur.ex.pos > 0 && !cur.ex.compare ? played(cur) : null;
+    var pair = cur.answered && cur.ex.compare ? comparePair(d) : null;
+    var key = cur.answered && !ex && !pair && d.kind !== "count" ? legend(d, cur) : "";
     if (cur.answered && d.kind === "fix") { (d.answers || []).forEach(function (a) { marks[a] = "best"; }); marks[d.played] = "played"; }
     if (cur.answered && d.kind === "threat") (d.answers || []).forEach(function (a) { marks[a] = "follow"; });
     if (cur.picked != null && !marks[cur.picked]) marks[cur.picked] = "pick";
@@ -358,7 +364,10 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
         '<label class="meta">by <input id="margin" type="number" min="0" max="81" step="0.5" inputmode="decimal" aria-label="By how many points"></label><button class="btn primary">Check</button></form>' : "";
     main.innerHTML = '<div class="drill"><button class="back" data-home>← Go</button><div class="progress"><i style="width:' + pct + '%"></i></div>' +
       '<div class="row">' + (d._section ? '<span class="chip due">' + d._section + "</span>" : "") + '<span class="chip">' + KIND[d.kind] + "</span>" + (d.kind === "fix" && THEMES[d.theme] ? '<span class="chip">' + esc(THEMES[d.theme][0]) + "</span>" : "") + '<small class="grow">' + (s.at + 1) + " of " + n + "</small></div>" +
-      '<p class="prompt">' + promptFor(d) + "</p>" + (ex ? boardSvg(d, ex.board, { numbers: ex.numbers, clickable: true, last: -1 }) : boardSvg(d, cur.board, { marks: marks, own: own, clickable: clickable, last: cur.last })) + key + explore + guess + feedback + '<p class="status" id="status"></p></div>';
+      '<p class="prompt">' + promptFor(d) + "</p>" + (pair ? '<div class="pair">' + pair.map(function (l) {
+        var at = playSeq(d, l[2], cur.ex.pos);
+        return '<figure data-from="' + l[0] + '"><figcaption>' + esc(l[1]) + "</figcaption>" + boardSvg(d, at.board, { numbers: at.numbers, clickable: true, last: -1 }) + "</figure>";
+      }).join("") + "</div>" : ex ? boardSvg(d, ex.board, { numbers: ex.numbers, clickable: true, last: -1 }) : boardSvg(d, cur.board, { marks: marks, own: own, clickable: clickable, last: cur.last })) + key + explore + guess + feedback + '<p class="status" id="status"></p></div>';
   }
 
   // Grade from how it went: right and quick is easy, right is good, right but slow is hard, wrong is again
@@ -377,17 +386,18 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
   // A line is points from the drill's position, the player to move first; -1 means they play elsewhere.
   function linesOf(d) {
     var l = d.lines || {}, out = [];
-    if (d.kind === "fix") { if (l.best) out.push(["best", "KataGo’s line", l.best]); if (l.game) out.push(["game", "After the game move", l.game]); }
-    if (d.kind === "threat") { if (l.answer) out.push(["answer", "If you answer", l.answer]); if (l.ignore) out.push(["ignore", "If you ignore it", l.ignore]); }
-    if (d.kind === "count" && l.best) out.push(["best", "Best play from here", l.best]);
+    if (d.kind === "fix") { if (l.best) out.push(["best", "KataGo’s line", l.best]); if (l.played) out.push(["played", "What happened", l.played]); if (l.game) out.push(["game", "How it’s punished", l.game]); }
+    if (d.kind === "threat") { if (l.answer) out.push(["answer", "If you answer", l.answer]); if (l.ignore) out.push(["ignore", "If you ignore it", l.ignore]); if (l.played) out.push(["played", "What happened", l.played]); }
+    if (d.kind === "count") { if (l.best) out.push(["best", "Best play from here", l.best]); if (l.played) out.push(["played", "What happened", l.played]); }
     if (d.kind === "tsumego") { var path = solution(d); if (path.length) out.push(["answer", "The answer", path]); }
     return out.filter(function (x) { return x[2] && x[2].length; });
   }
   /** The explored position: the drill's start, then ex.seq up to ex.pos, colours alternating, with captures */
-  function played(cur) {
-    var d = cur.d, size = d.size, b = boardOf(d), color = d.toMove === "b" ? 1 : 2, ko = -1, numbers = {}, last = -1;
-    for (var k = 0; k < cur.ex.pos; k++) {
-      var m = cur.ex.seq[k];
+  function played(cur) { return playSeq(cur.d, cur.ex.seq, cur.ex.pos); }
+  function playSeq(d, seq, pos) {
+    var size = d.size, b = boardOf(d), color = d.toMove === "b" ? 1 : 2, ko = -1, numbers = {}, last = -1;
+    for (var k = 0; k < pos && k < seq.length; k++) {
+      var m = seq[k];
       if (m >= 0) {
         var r = R.play(b, size, m, color, ko);
         if (!r) break;
@@ -406,23 +416,43 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
     while (k < ex.pos && k < line.length && ex.seq[k] === line[k]) k++;
     return k;
   }
+  /** Side by side: KataGo's line against what happened, when there are both */
+  function comparePair(d) {
+    var ls = linesOf(d), by = {};
+    ls.forEach(function (l) { by[l[0]] = l; });
+    var kata = by.best || by.answer;
+    return kata && by.played ? [kata, by.played] : null;
+  }
+  function moveText(d, seq, k) {
+    if (k < 1) return "the start";
+    if (k > seq.length) return "done";
+    var m = seq[k - 1], who = colorName(((k - 1) % 2 === 0) === (d.toMove === "b") ? "b" : "w");
+    return who + " " + (m < 0 ? "elsewhere" : pt(m, d.size));
+  }
   function explorePanel() {
     var cur = session.cur, d = cur.d, ex = cur.ex, lines = linesOf(d);
     var info;
-    if (!ex.pos) info = lines.length ? "Step through a line, or click the board to try your own moves." : "Click the board to try your own moves.";
+    var pair = comparePair(d);
+    if (ex.compare) info = (ex.pos ? "Move " + ex.pos + ": KataGo " + moveText(d, pair[0][2], ex.pos) + " · the game " + moveText(d, pair[1][2], ex.pos) + ". " : "") + "Click either board to play on from there.";
+    else if (!ex.pos) info = lines.length ? "Step through a line, or click the board to try your own moves." : "Click the board to try your own moves.";
     else {
       var k = onLine(ex), m = ex.seq[ex.pos - 1], who = colorName(((ex.pos - 1) % 2 === 0) === (d.toMove === "b") ? "b" : "w");
       var said = who + " " + (m < 0 ? "plays elsewhere" : pt(m, d.size));
       info = "Move " + ex.pos + ": " + said + (ex.line && k === ex.pos ? " (" + ex.line[1] + ", " + ex.pos + " of " + ex.line[2].length + ")." : ". " + (ex.line ? "Your own moves since move " + (k + 1) + "." : "Your own moves."));
     }
     return '<details class="explore" id="explore"' + (cur.exOpen ? " open" : "") + "><summary>" + (lines.length ? "Explore the lines" : "Explore") + "</summary><div>" + (lines.length ? '<div class="row">' + lines.map(function (l) {
-      return '<button class="btn ghost' + (ex.line && ex.line[0] === l[0] ? " on" : "") + '" data-line="' + l[0] + '">' + esc(l[1]) + "</button>";
-    }).join("") + "</div>" : "") +
+      return '<button class="btn ghost' + (!ex.compare && ex.line && ex.line[0] === l[0] ? " on" : "") + '" data-line="' + l[0] + '">' + esc(l[1]) + "</button>";
+    }).join("") + (pair ? '<button class="btn ghost' + (ex.compare ? " on" : "") + '" data-compare>Side by side</button>' : "") + "</div>" : "") +
       '<div class="row steps"><button class="btn ghost" data-step="start" aria-label="To the start">⏮</button><button class="btn ghost" data-step="back" aria-label="Back one">◀</button>' +
       '<button class="btn ghost" data-step="fwd" aria-label="Forward one">▶</button><button class="btn ghost" data-step="end" aria-label="To the end">⏭</button></div><div id="exinfo">' + esc(info) + "</div></div></details>";
   }
   function step(how) {
     var ex = session.cur.ex, line = ex.line ? ex.line[2] : [];
+    if (ex.compare) {
+      var pair = comparePair(session.cur.d), most = Math.max(pair[0][2].length, pair[1][2].length);
+      ex.pos = how === "start" ? 0 : how === "back" ? Math.max(0, ex.pos - 1) : how === "fwd" ? Math.min(most, ex.pos + 1) : most;
+      return renderDrill();
+    }
     // Forward follows what's been played; past that, the chosen line if still on it
     var known = ex.seq.length, canLine = onLine(ex) === ex.pos && ex.pos >= known && line.length > known;
     if (how === "start") ex.pos = 0;
@@ -436,8 +466,22 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
     }
     renderDrill();
   }
-  function chooseLine(name) {
+  function compare() {
+    var ex = session.cur.ex;
+    ex.compare = !ex.compare; ex.pos = ex.compare ? 1 : 0; ex.seq = []; ex.line = null; session.cur.exOpen = true;
+    renderDrill();
+  }
+  /** A click on one of the side-by-side boards: leave that line there, on one board, with your own move */
+  function departFrom(name, i) {
     var ex = session.cur.ex, l = linesOf(session.cur.d).filter(function (x) { return x[0] === name; })[0];
+    if (!l) return;
+    var at = Math.min(ex.pos, l[2].length);
+    ex.compare = false; ex.line = l; ex.seq = l[2].slice(0, at); ex.pos = at;
+    exploreMove(i);
+  }
+  function chooseLine(name) {
+    var ex = session.cur.ex; ex.compare = false;
+    var l = linesOf(session.cur.d).filter(function (x) { return x[0] === name; })[0];
     if (!l) return;
     ex.line = l; ex.seq = l[2].slice(0, 1); ex.pos = 1; session.cur.exOpen = true;
     renderDrill();
@@ -534,9 +578,12 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
   }
 
   main.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-pt],[data-study],[data-home],[data-grade],[data-side],[data-line],[data-step],[data-plan],[data-today]");
+    var t = e.target.closest("[data-pt],[data-study],[data-home],[data-grade],[data-side],[data-line],[data-step],[data-plan],[data-today],[data-compare]");
     if (!t) return;
-    if (t.dataset.pt != null) return clickPoint(Number(t.dataset.pt));
+    if (t.dataset.pt != null) {
+      var from = t.closest("[data-from]");
+      return from ? departFrom(from.dataset.from, Number(t.dataset.pt)) : clickPoint(Number(t.dataset.pt));
+    }
     if (t.dataset.study != null) return study(t.dataset.study, t.dataset.theme || null);
     if (t.dataset.home != null) return home().catch(fail);
     if (t.dataset.plan === "start") return startPlan();
@@ -545,6 +592,7 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
     if (t.dataset.grade) return grade(t.dataset.grade);
     if (t.dataset.line) return chooseLine(t.dataset.line);
     if (t.dataset.step) return step(t.dataset.step);
+    if (t.dataset.compare != null) return compare();
     if (t.dataset.side) {
       session.cur.side = t.dataset.side;
       var all = main.querySelectorAll("[data-side]");

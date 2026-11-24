@@ -19,6 +19,9 @@
 import { readdirSync } from 'node:fs';
 import { PRIVATE, R, readJson, writeJson } from './lib.mjs';
 
+/** How long a line to step through: lines.mjs works out KataGo's this long, and what was played is cut to it */
+export const LINE = 12;
+
 export const MISTAKE = 3;     // points lost
 export const THREAT = 5;      // points a pass would cost
 export const DECIDED = 20;    // past this lead the game is over; mistakes stop counting
@@ -161,10 +164,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const games = files.map((f) => readJson(`${PRIVATE}analysis/${f}`)).filter((a) => a.me).map((a) => ({ a, judged: judge(a) }));
   const bank = { fix: [], threat: [], count: [] };
   for (const g of games) { const d = drills(g.a, g.judged); for (const k of Object.keys(bank)) bank[k].push(...d[k]); }
-  // KataGo's lines (lines.mjs), where they've been worked out, to step through after answering
+  // KataGo's lines (lines.mjs), where they've been worked out, and what was really played from there, to step
+  // through and compare after answering
+  const moves = new Map(games.map((g) => [g.a.id, g.a.moves]));
   for (const k of Object.keys(bank)) for (const d of bank[k]) {
     const l = readJson(`${PRIVATE}lines/${d.game}.json`, {})[d.t];
-    if (l) d.lines = linesFor(d.kind, l);
+    d.lines = { ...(l ? linesFor(d.kind, l) : {}), played: (moves.get(d.game) ?? []).slice(d.t, d.t + LINE) };
   }
   const p = profile(games);
   writeJson(`${PRIVATE}bank.json`, { at: new Date().toISOString(), profile: p, weeks: weeks(games), ...bank });

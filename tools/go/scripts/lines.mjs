@@ -9,10 +9,10 @@
 //   node tools/go/scripts/lines.mjs [--visits 250]
 import { existsSync, readdirSync } from 'node:fs';
 import { PRIVATE, R, katago, readJson, writeJson } from './lib.mjs';
+import { LINE } from './classify.mjs';
 
 const arg = (name, dflt) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : dflt; };
 const VISITS = Number(arg('visits', 250));
-export const LINE = 12;
 
 const bank = readJson(`${PRIVATE}bank.json`);
 if (!bank) throw new Error('no private/bank.json: run classify.mjs first');
