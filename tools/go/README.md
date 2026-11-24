@@ -29,6 +29,28 @@ After a week, 40 focus drills and 85% right, the page suggests moving on; he dec
 first). The real test is the chart of his real games week by week (`WEEK` rows): points lost a game, for the
 focus and overall, with the week training started marked.
 
+## Is it working? (the experiment)
+
+Training started **2026-11-24**. The baseline is every 9x9 game analysed up to then (198 games,
+2026-09-25 to 2026-11-24), recorded in gitignored `private/baseline.json`, with the numbers written up in
+`private/BASELINE.md` (real data stays out of git). To check:
+
+```sh
+node tools/go/scripts/weekly.mjs      # bring in the newest games
+node tools/go/scripts/progress.mjs    # games since the baseline, against it, kind by kind
+```
+
+What counts:
+- **How often each mistake happens a game** is the measure. Points lost a game follow it but are noisy (one
+  dead group is 40 points), so a points change alone is weaker evidence.
+- A change is **real** only past twice its standard error, on 10+ games (`progress.mjs` says which). At
+  ~20 games a week, two weeks only shows a big change: losing stones would have to fall from about 1.1 a
+  game to about 0.55, all mistakes from about 5.1 to about 4.0. A month (~80 games) shows about half that.
+- **The focus should move first**: stones lost, the first focus, should drop before the others do. Kinds
+  not yet trained are the control: if everything moves together, it's more likely form than the drills.
+- **OGS rank** is the other measure (printed by `progress.mjs`). Win rate isn't: OGS pairs him with
+  players his own rank, so it stays near half as the rank climbs.
+
 ## Building the drills (on the Mac, not in AWS)
 
 ```sh

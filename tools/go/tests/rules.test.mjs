@@ -103,3 +103,13 @@ test('a move after which his stones died is lost stones', () => {
   const j = judge(a);
   assert.equal(j[4].kind, 'lost_stones');
 });
+
+test('progress: a change counts as real only past twice its standard error, and only on 10+ games', async () => {
+  const { stats, compare } = await import('../scripts/progress.mjs');
+  assert.deepEqual(stats([1, 2, 3]), { mean: 2, sd: 1, games: 3 });
+  const before = { mean: 1.08, sd: 1.6, games: 198 };
+  assert.equal(compare(before, { mean: 0.4, sd: 0.8, games: 40 }).real, true);
+  assert.equal(compare(before, { mean: 0.9, sd: 1.5, games: 40 }).real, false, 'within the noise');
+  assert.equal(compare(before, { mean: 0, sd: 0, games: 5 }).real, false, 'too few games');
+  assert.equal(compare(before, { mean: 0.4, sd: 0.8, games: 40 }).change, -0.68);
+});
