@@ -14,11 +14,14 @@
 .top a, .back { color: var(--muted); text-decoration: none; font-size: 14px; background: none; border: 0; cursor: pointer; padding: 0; justify-self: start }
 h1 { font-size: clamp(32px, 6vw, 48px) }
 h2 { font-size: 20px; margin: 0 }
-section { display: grid; gap: 10px }
+/* Space between the page's parts: the training card, the stats, each section */
+#main { display: grid; gap: 36px }
+section { display: grid; gap: 12px }
+section > p { margin: 0 }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
 .row > .grow { flex: 1 }
-.stats { display: flex; gap: 12px; flex-wrap: wrap }
-.stat { background: var(--raised); border-radius: var(--r-md); padding: 12px 16px; min-width: 96px }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px }
+.stat { background: var(--raised); border-radius: var(--r-md); padding: 14px 16px; min-width: 0 }
 .stat b { display: block; font-family: var(--display); font-size: 28px }
 .stat span, .meta, small { color: var(--muted); font-size: 14px }
 ul { list-style: none; margin: 0; padding: 0 }
@@ -33,11 +36,12 @@ details > summary { cursor: pointer; color: var(--pool) }
 .tips { display: grid; gap: 10px; margin: 10px 0 0; padding-left: 20px; list-style: decimal }
 .tips li { display: list-item; border: 0; padding: 0 }
 /* A drill */
-.drill { display: grid; gap: 12px }
+.drill { display: grid; gap: 16px }
+.drill .prompt { margin: 0 }
 .prompt { font-size: 18px }
 .board { width: 100%; max-width: 480px; justify-self: center; touch-action: manipulation; user-select: none }
 .board .pt { cursor: pointer }
-.answer { display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 16px }
+.answer, .explore { display: grid; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 18px }
 .right { color: var(--leaf); font-weight: 600 }
 .wrong { color: var(--ember); font-weight: 600 }
 .grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px }
@@ -52,21 +56,25 @@ details > summary { cursor: pointer; color: var(--pool) }
 .seg button:first-child { border-radius: var(--r-pill) 0 0 var(--r-pill) }
 .seg button:last-child { border-radius: 0 var(--r-pill) var(--r-pill) 0 }
 .seg .on { background: var(--pool); color: var(--on-accent) }
-.train { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px; display: grid; gap: 10px }
-.train .rule { font-family: var(--display); font-size: 20px }
-.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px }
-.chart h3 { font-size: 15px; margin: 0 0 4px }
+.train { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 20px; display: grid; gap: 14px }
+.train p { margin: 0 }
+.train .rule { font-family: var(--display); font-size: 20px; line-height: 1.35 }
+.train .row { gap: 10px }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px }
+.chart h3 { font-family: var(--body); font-size: 14px; font-weight: 600; margin: 0 0 8px }
 .chart svg { width: 100%; height: auto; overflow: visible }
 .chart .hit { fill: transparent; cursor: default }
 table.weeks { border-collapse: collapse; font-size: 14px; width: 100% }
 table.weeks th, table.weeks td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--line) }
 table.weeks th:first-child, table.weeks td:first-child { text-align: left }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); font-size: 14px; justify-content: center }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 14px; justify-content: center }
 .legend span { display: inline-flex; align-items: center; gap: 6px }
 .legend svg { width: 20px; height: 20px }
-.explore { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px }
+.explore h3 { font-family: var(--body); font-size: 14px; font-weight: 600; margin: 0 }
+.explore .row { gap: 8px }
 .explore .on { background: var(--pool); color: var(--on-accent) }
-.steps button { min-width: 44px; padding: 8px 10px }
+.steps button { min-width: 48px; padding: 8px 12px }
+#exinfo { color: var(--muted); font-size: 14px }
 .progress { height: 6px; background: var(--raised); border-radius: 3px; overflow: hidden }
 .progress i { display: block; height: 100%; background: var(--sun) }
 </style>
@@ -218,7 +226,9 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
   function lineChart(title, rows, startWeek) {
     var W = 300, H = 130, L = 30, B = 22, T = 8, R = 8, max = 1;
     rows.forEach(function (r) { max = Math.max(max, r.v); });
-    max = Math.ceil(max / 5) * 5;
+    // A round top, so the middle tick is round too
+    var stepTo = max > 40 ? 20 : max > 20 ? 10 : 4;
+    max = Math.ceil(max / stepTo) * stepTo;
     var x = function (i) { return L + (rows.length < 2 ? (W - L - R) / 2 : i * (W - L - R) / (rows.length - 1)); };
     var y = function (v) { return T + (H - T - B) * (1 - v / max); };
     var out = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + esc(title) + '">';
@@ -250,7 +260,7 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
   // marks: { <point>: "best" | "played" | "pick" | "follow" }, own: ownership (-100..100, Black's side) to shade
   function boardSvg(d, board, opts) {
     opts = opts || {};
-    var size = d.size, c = d.crop || [0, 0, size - 1, size - 1], S = 40, M = 30;
+    var size = d.size, c = d.crop || [0, 0, size - 1, size - 1], S = 40, M = 38;
     var w = (c[2] - c[0]) * S + 2 * M, h = (c[3] - c[1]) * S + 2 * M;
     var X = function (x) { return M + (x - c[0]) * S; }, Y = function (y) { return M + (y - c[1]) * S; };
     var out = '<svg class="board" viewBox="0 0 ' + w + " " + h + '" role="img" aria-label="Go board"><rect width="' + w + '" height="' + h + '" rx="8" fill="var(--sun)" opacity=".55"/>';
@@ -258,7 +268,7 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
     for (var y = c[1]; y <= c[3]; y++) out += '<line y1="' + Y(y) + '" x1="' + (c[0] === 0 ? X(0) : 0) + '" y2="' + Y(y) + '" x2="' + (c[2] === size - 1 ? X(size - 1) : w) + '" stroke="var(--wood)" stroke-width="1"/>';
     if (size === 9) [[2, 2], [6, 2], [4, 4], [2, 6], [6, 6]].forEach(function (s) { out += '<circle cx="' + X(s[0]) + '" cy="' + Y(s[1]) + '" r="3" fill="var(--wood)"/>'; });
     if (!d.crop) for (var k = 0; k < size; k++) {
-      out += '<text x="' + X(k) + '" y="14" text-anchor="middle" font-size="11" fill="var(--muted)">' + GTP[k] + '</text><text x="10" y="' + (Y(k) + 4) + '" text-anchor="middle" font-size="11" fill="var(--muted)">' + (size - k) + "</text>";
+      out += '<text x="' + X(k) + '" y="13" text-anchor="middle" font-size="11" fill="var(--muted)">' + GTP[k] + '</text><text x="9" y="' + (Y(k) + 4) + '" text-anchor="middle" font-size="11" fill="var(--muted)">' + (size - k) + "</text>";
     }
     for (y = c[1]; y <= c[3]; y++) for (x = c[0]; x <= c[2]; x++) {
       var i = y * size + x, v = board[i], m = opts.marks && opts.marks[i];
@@ -401,11 +411,11 @@ table.weeks th:first-child, table.weeks td:first-child { text-align: left }
       var said = who + " " + (m < 0 ? "plays elsewhere" : pt(m, d.size));
       info = "Move " + ex.pos + ": " + said + (ex.line && k === ex.pos ? " (" + ex.line[1] + ", " + ex.pos + " of " + ex.line[2].length + ")." : ". " + (ex.line ? "Your own moves since move " + (k + 1) + "." : "Your own moves."));
     }
-    return '<div class="explore">' + (lines.length ? '<div class="row">' + lines.map(function (l) {
+    return '<div class="explore"><h3>Explore</h3>' + (lines.length ? '<div class="row">' + lines.map(function (l) {
       return '<button class="btn ghost' + (ex.line && ex.line[0] === l[0] ? " on" : "") + '" data-line="' + l[0] + '">' + esc(l[1]) + "</button>";
     }).join("") + "</div>" : "") +
       '<div class="row steps"><button class="btn ghost" data-step="start" aria-label="To the start">⏮</button><button class="btn ghost" data-step="back" aria-label="Back one">◀</button>' +
-      '<button class="btn ghost" data-step="fwd" aria-label="Forward one">▶</button><button class="btn ghost" data-step="end" aria-label="To the end">⏭</button><small class="grow" id="exinfo">' + esc(info) + "</small></div></div>";
+      '<button class="btn ghost" data-step="fwd" aria-label="Forward one">▶</button><button class="btn ghost" data-step="end" aria-label="To the end">⏭</button></div><div id="exinfo">' + esc(info) + "</div></div>";
   }
   function step(how) {
     var ex = session.cur.ex, line = ex.line ? ex.line[2] : [];
